@@ -4,8 +4,8 @@ Revision ID: 0001_multi_company_core
 Revises:
 """
 
-import sqlalchemy as sa
 from alembic import op
+import sqlalchemy as sa
 
 
 revision = "0001_multi_company_core"
@@ -56,7 +56,9 @@ def upgrade():
         sa.Column("user_id", sa.Uuid(), nullable=False),
         sa.Column("role", sa.String(length=20), nullable=False),
         sa.Column("status", sa.String(length=20), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.CheckConstraint(
             "role IN ('admin', 'manager', 'salesperson', 'viewer')",
             name=op.f("ck_company_memberships_role_is_supported"),
