@@ -17,11 +17,11 @@ ROLE_PERMISSIONS = {
     "admin": frozenset({
         "view_dashboard", "view_reports", "create_sales", "edit_sales",
         "delete_sales", "manage_products", "manage_team", "manage_company_settings",
-        "view_audit_logs",
+        "view_audit_logs", "manage_customers",
     }),
     "manager": frozenset({
         "view_dashboard", "view_reports", "create_sales", "edit_sales",
-        "manage_products",
+        "manage_products", "manage_customers",
     }),
     "salesperson": frozenset({"view_dashboard", "view_reports", "create_sales"}),
     "viewer": frozenset({"view_dashboard", "view_reports"}),
