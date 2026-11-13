@@ -46,5 +46,10 @@ jobs:
       - name: Apply migrations to PostgreSQL
         run: flask --app backend/run.py db upgrade
 
+      - name: Verify migration rollback and re-application
+        run: |
+          flask --app backend/run.py db downgrade base
+          flask --app backend/run.py db upgrade
+
       - name: Run tests
         run: pytest
