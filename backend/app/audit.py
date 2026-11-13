@@ -3,7 +3,7 @@
 from uuid import UUID
 
 from flask import Blueprint, jsonify, request, session
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 
 from .auth import login_required
 from .extensions import db
@@ -35,8 +35,8 @@ def record_audit_event(session, actor_user_id: UUID, event_type: str, company_id
 @audit_bp.get("/audit-logs")
 @login_required
 @company_permission_required("view_audit_logs")
-def list_audit_logs(_user):
-    """Return a bounded page of events for the currently selected company."""
+def list_audit_logs(user):
+    """Return bounded company events and the signed-in admin's own account events."""
     try:
         limit = int(request.args.get("limit", "50"))
     except (TypeError, ValueError):
@@ -52,7 +52,12 @@ def list_audit_logs(_user):
     except (KeyError, TypeError, ValueError):
         return jsonify({"error": "Select a company before continuing."}), 409
 
-    query = select(AuditLog).where(AuditLog.company_id == company_id)
+    query = select(AuditLog).where(
+        or_(
+            AuditLog.company_id == company_id,
+            and_(AuditLog.company_id.is_(None), AuditLog.actor_user_id == user.id),
+        )
+    )
     entries = db.session.scalars(
         query.order_by(AuditLog.occurred_at.desc(), AuditLog.id.desc()).limit(limit)
     ).all()
@@ -63,7 +68,7 @@ def list_audit_logs(_user):
                     "id": str(item.id),
                     "event_type": item.event_type,
                     "actor_user_id": str(item.actor_user_id) if item.actor_user_id else None,
-                    "company_id": str(item.company_id),
+                    "company_id": str(item.company_id) if item.company_id else None,
                     "occurred_at": item.occurred_at.isoformat(),
                 }
                 for item in entries
