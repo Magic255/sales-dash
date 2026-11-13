@@ -27,12 +27,9 @@ def upgrade():
         $$;
         """
     )
+    op.execute("GRANT SELECT ON users, companies, company_memberships TO sales_dash_app")
     op.execute(
-        """
-        GRANT SELECT ON users, companies, company_memberships TO sales_dash_app;
-        CREATE INDEX ix_company_memberships_user_id
-            ON company_memberships (user_id);
-        """
+        "CREATE INDEX ix_company_memberships_user_id ON company_memberships (user_id)"
     )
 
     # No context means no rows. FORCE also applies policies to the table owner;
@@ -47,14 +44,20 @@ def upgrade():
         FOR SELECT TO sales_dash_app
         USING (
             id = NULLIF(current_setting('app.current_user_id', true), '')::uuid
-        );
-
+        )
+        """
+    )
+    op.execute(
+        """
         CREATE POLICY memberships_read_self ON company_memberships
         FOR SELECT TO sales_dash_app
         USING (
             user_id = NULLIF(current_setting('app.current_user_id', true), '')::uuid
-        );
-
+        )
+        """
+    )
+    op.execute(
+        """
         CREATE POLICY companies_read_active_membership ON companies
         FOR SELECT TO sales_dash_app
         USING (
@@ -66,19 +69,15 @@ def upgrade():
                       NULLIF(current_setting('app.current_user_id', true), '')::uuid
                   AND membership.status = 'active'
             )
-        );
+        )
         """
     )
 
 
 def downgrade():
-    op.execute(
-        """
-        DROP POLICY IF EXISTS companies_read_active_membership ON companies;
-        DROP POLICY IF EXISTS memberships_read_self ON company_memberships;
-        DROP POLICY IF EXISTS users_read_self ON users;
-        """
-    )
+    op.execute("DROP POLICY IF EXISTS companies_read_active_membership ON companies")
+    op.execute("DROP POLICY IF EXISTS memberships_read_self ON company_memberships")
+    op.execute("DROP POLICY IF EXISTS users_read_self ON users")
     for table in ("users", "companies", "company_memberships"):
         op.execute(f"ALTER TABLE {table} NO FORCE ROW LEVEL SECURITY")
         op.execute(f"ALTER TABLE {table} DISABLE ROW LEVEL SECURITY")
