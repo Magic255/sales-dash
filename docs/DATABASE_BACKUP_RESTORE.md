@@ -31,7 +31,7 @@ pg_dump --format=custom --no-owner --file="$BACKUP_DIR/sales-dash-$(date -u +%Y%
 
 After the dump completes:
 1. Check the command exit status and file size.
-2. Run `pg_restore --list <backup-file>` to confirm the archive can be read.
+2. Run `pg_restore --list "$BACKUP_FILE"` to confirm the archive can be read.
 3. Encrypt or move the archive to the approved encrypted backup destination.
 4. Record the backup timestamp, database identifier, application commit, and Alembic revision without recording credentials.
 5. Confirm the backup destination's retention and access policies.
@@ -47,7 +47,7 @@ Never test a restore over the live production database. Use a new isolated datab
 3. Restore the archive as the designated database owner:
 
 ```sh
-pg_restore --exit-on-error --no-owner --dbname="$RESTORE_DATABASE_URL" <backup-file>
+pg_restore --exit-on-error --no-owner --dbname="$RESTORE_DATABASE_URL" "$BACKUP_FILE"
 ```
 
 4. Verify the restored Alembic revision, expected tables, row counts, indexes, constraints, RLS enabled/forced flags, policies, and role grants.
