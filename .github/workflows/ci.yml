@@ -9,6 +9,22 @@ on:
 jobs:
   quality:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: sales_dash
+          POSTGRES_PASSWORD: sales_dash_dev
+          POSTGRES_DB: sales_dash
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sales_dash -d sales_dash"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql+psycopg://sales_dash:sales_dash_dev@127.0.0.1:5432/sales_dash
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -26,6 +42,9 @@ jobs:
 
       - name: Run lint checks
         run: ruff check .
+
+      - name: Apply migrations to PostgreSQL
+        run: flask --app backend/run.py db upgrade
 
       - name: Run tests
         run: pytest
