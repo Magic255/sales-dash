@@ -4,6 +4,7 @@ Revision ID: 0001_multi_company_core
 Revises:
 """
 
+# ruff: noqa: I001
 from alembic import op
 import sqlalchemy as sa
 
