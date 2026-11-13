@@ -278,7 +278,7 @@ def test_admin_can_edit_draft_sale_and_report_export_is_company_scoped():
         exported = client.get("/api/reports/sales.csv?from=2026-11-11&to=2026-11-13")
         assert exported.status_code == 200
         assert exported.mimetype == "text/csv"
-        assert "' =Unsafe Customer" in exported.get_data(as_text=True)
+        assert "'=Unsafe Customer" in exported.get_data(as_text=True)
         assert exported.headers["Cache-Control"] == "no-store"
     finally:
         with application.app_context():
