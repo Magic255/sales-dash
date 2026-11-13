@@ -60,7 +60,7 @@ The secure authentication milestone now includes:
 - Login rate limiting (Redis-backed storage is required in production).
 - A narrowly scoped RLS policy that allows lookup of only the submitted normalized email during login.
 - A restricted database runtime role used by the web app; migrations and initial administrator provisioning use a separate admin connection.
-- Company selection that verifies active user status, company status, and active membership on the server.
+- Company selection that verifies active user status, company status, and active membership on the server.\n- A backend permission matrix for Admin, Manager, Salesperson, and Viewer roles; tenant API routes can enforce permissions only after revalidating the active company membership on each request.
 - An operator-only `create-admin` command; public self-registration is deliberately not enabled.
 
 The existing local setup walkthrough remains at [docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md).
