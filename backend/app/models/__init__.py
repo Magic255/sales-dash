@@ -115,7 +115,6 @@ class CompanyMembership(db.Model):
     user: Mapped[User] = relationship(back_populates="memberships")
 
 
-
 class AuditLog(db.Model):
     """Minimal security events, scoped by company and never edited by the app."""
 
