@@ -257,3 +257,48 @@ def test_incrementing_auth_version_revokes_existing_sessions(app):
         db.session.commit()
 
     assert client.get("/api/auth/me").json["authenticated"] is False
+
+
+def test_password_change_requires_current_password_and_revokes_sessions(app):
+    client = app.test_client()
+    original_password = "a-very-strong-test-password"
+    login_response = client.post(
+        "/api/auth/login",
+        json={"email": "admin@example.test", "password": original_password},
+    )
+    assert login_response.status_code == 200
+
+    rejected = client.post(
+        "/api/auth/password",
+        json={
+            "current_password": "incorrect-current-password",
+            "new_password": "a-different-strong-password",
+        },
+    )
+    assert rejected.status_code == 403
+
+    changed = client.post(
+        "/api/auth/password",
+        json={
+            "current_password": original_password,
+            "new_password": "a-different-strong-password",
+        },
+    )
+    assert changed.status_code == 200
+    assert changed.json["authenticated"] is False
+    assert client.get("/api/auth/me").json["authenticated"] is False
+
+    old_password_login = client.post(
+        "/api/auth/login",
+        json={"email": "admin@example.test", "password": original_password},
+    )
+    assert old_password_login.status_code == 401
+
+    new_password_login = client.post(
+        "/api/auth/login",
+        json={
+            "email": "admin@example.test",
+            "password": "a-different-strong-password",
+        },
+    )
+    assert new_password_login.status_code == 200
