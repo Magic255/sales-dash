@@ -112,6 +112,39 @@ def login():
     return jsonify({"authenticated": True})
 
 
+@auth_bp.post("/password")
+@login_required
+@limiter.limit("5 per hour")
+def change_password(user):
+    """Change the current password and revoke every existing account session."""
+    data = request.get_json(silent=True) or {}
+    current_password = data.get("current_password", "")
+    new_password = data.get("new_password", "")
+    if (
+        not isinstance(current_password, str)
+        or not current_password
+        or len(current_password) > 1024
+        or not isinstance(new_password, str)
+        or len(new_password) < 12
+        or len(new_password) > 1024
+    ):
+        return jsonify({"error": "Enter your current password and a new password of at least 12 characters."}), 400
+
+    try:
+        password_hasher.verify(user.password_hash or _DUMMY_PASSWORD_HASH, current_password)
+    except (VerifyMismatchError, VerificationError, InvalidHashError):
+        return jsonify({"error": "Current password is incorrect."}), 403
+
+    if password_hasher.verify(user.password_hash, new_password):
+        return jsonify({"error": "Choose a password different from your current password."}), 400
+
+    user.password_hash = password_hasher.hash(new_password)
+    user.auth_version += 1
+    db.session.commit()
+    session.clear()
+    return jsonify({"password_changed": True, "authenticated": False})
+
+
 @auth_bp.get("/me")
 def me():
     user = _current_user()
