@@ -104,3 +104,12 @@ footer span { color: #51d6bd; padding: 0 6px; }
   .metric { padding: 12px; }
   .module-tab { padding: 10px 9px; }
 }
+
+
+.report-filter-form {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  align-items: end;
+}
+.report-filter-form label {
+  align-self: end;
+}
