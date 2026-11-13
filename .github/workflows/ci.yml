@@ -1,62 +1,16 @@
-name: SALES DASH checks
+import os
 
-on:
-  push:
-    branches: ["main"]
-  pull_request:
-    branches: ["main"]
+from dotenv import load_dotenv
 
-jobs:
-  quality:
-    runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: sales_dash
-          POSTGRES_PASSWORD: sales_dash_dev
-          POSTGRES_DB: sales_dash
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U sales_dash -d sales_dash"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-    env:
-      DATABASE_URL: postgresql+psycopg://sales_dash:sales_dash_dev@127.0.0.1:5432/sales_dash
-      ADMIN_DATABASE_URL: postgresql+psycopg://sales_dash:sales_dash_dev@127.0.0.1:5432/sales_dash
-      APP_DATABASE_URL: postgresql+psycopg://sales_dash_runtime:ci-runtime-password@127.0.0.1:5432/sales_dash
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
+from app import create_app
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: "pip"
+load_dotenv()
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements-dev.txt
+app = create_app()
 
-      - name: Run lint checks
-        run: ruff check .
-
-      - name: Apply migrations to PostgreSQL
-        run: flask --app backend/run.py db upgrade
-
-      - name: Verify migration rollback and re-application
-        run: |
-          flask --app backend/run.py db downgrade base
-          flask --app backend/run.py db upgrade
-
-      - name: Create restricted web runtime database login
-        run: |
-          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE ROLE sales_dash_runtime LOGIN PASSWORD 'ci-runtime-password'"
-          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "GRANT sales_dash_app TO sales_dash_runtime"
-
-      - name: Run tests
-        run: pytest
+if __name__ == "__main__":
+    app.run(
+        host=os.environ.get("HOST", "127.0.0.1"),
+        port=int(os.environ.get("PORT", "5000")),
+        debug=os.environ.get("FLASK_ENV") == "development",
+    )
