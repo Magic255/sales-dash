@@ -92,7 +92,15 @@ Before production deployment:
 - Restrict database network access, back up the database, and rotate credentials.
 - Configure email verification, password reset, MFA, and invitation workflows before opening account creation to the public.
 
-## 10. Run quality checks
+## 10. Install and use the app offline
+
+Open SALES DASH over HTTPS (or localhost during development) in a supported browser. Use the browser's install option, or the **Install SALES DASH** button when it is offered.
+
+The service worker caches only the public app shell (the home page, CSS, JavaScript, manifest, and app icon). It does not cache API requests, authentication responses, customer records, product records, sales, reports, or CSV exports. Signing in and loading company data require an internet connection. When offline, the cached shell can open but private workspace data is unavailable.
+
+To remove the offline app shell, clear this site's stored data in the browser.
+
+## 11. Run quality checks
 
 ```powershell
 ruff check .
