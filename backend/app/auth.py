@@ -93,7 +93,12 @@ def login():
     except (VerifyMismatchError, VerificationError, InvalidHashError):
         password_valid = False
 
-    if not user or not user.is_active or not password_valid:
+    if (
+        not user
+        or not user.is_active
+        or not user.password_hash
+        or not password_valid
+    ):
         return jsonify({"error": "Email or password is incorrect."}), 401
 
     user_id = user.id
@@ -135,8 +140,11 @@ def change_password(user):
             400,
         )
 
+    if not user.password_hash:
+        return jsonify({"error": "This account must complete password setup before changing its password."}), 403
+
     try:
-        password_hasher.verify(user.password_hash or _DUMMY_PASSWORD_HASH, current_password)
+        password_hasher.verify(user.password_hash, current_password)
     except (VerifyMismatchError, VerificationError, InvalidHashError):
         return jsonify({"error": "Current password is incorrect."}), 403
 
