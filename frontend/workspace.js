@@ -3,6 +3,7 @@ let workspaceRole = "";
 let workspaceUserId = "";
 let customers = [];
 let products = [];
+let workspaceGeneration = 0;
 
 function workspaceMessage(message) {
   document.querySelector("#workspace-message").textContent = message;
@@ -94,8 +95,9 @@ function fillSaleChoices() {
   )));
 }
 
-async function loadSales() {
+async function loadSales(generation) {
   const data = await workspaceRequest("/api/sales");
+  if (generation !== workspaceGeneration) return;
   const body = document.querySelector("#sales-rows");
   body.replaceChildren();
   if (!data.items.length) return emptyRow(body, 6, "No sales recorded yet.");
@@ -157,6 +159,7 @@ async function loadSales() {
 }
 
 async function loadWorkspace() {
+  const generation = workspaceGeneration;
   workspaceMessage("Loading company data…");
   try {
     const [summary, customerData, productData] = await Promise.all([
@@ -164,6 +167,7 @@ async function loadWorkspace() {
       workspaceRequest("/api/customers"),
       workspaceRequest("/api/products"),
     ]);
+    if (generation !== workspaceGeneration) return;
     customers = customerData.items;
     products = productData.items;
     document.querySelector("#metric-customers").textContent = summary.customers;
@@ -175,7 +179,7 @@ async function loadWorkspace() {
     renderCustomers();
     renderProducts();
     fillSaleChoices();
-    await loadSales();
+    await loadSales(generation);
     workspaceMessage("Company data is up to date.");
   } catch (error) {
     workspaceMessage(error.message);
@@ -188,6 +192,7 @@ function localDate() {
 }
 
 document.addEventListener("salesdash:company-selected", (event) => {
+  workspaceGeneration += 1;
   workspaceRole = event.detail.role;
   workspaceUserId = event.detail.userId;
   workspace.hidden = false;
@@ -198,6 +203,7 @@ document.addEventListener("salesdash:company-selected", (event) => {
 });
 
 document.addEventListener("salesdash:signed-out", () => {
+  workspaceGeneration += 1;
   workspace.hidden = true;
 });
 
