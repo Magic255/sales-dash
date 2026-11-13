@@ -22,7 +22,40 @@ def postgres_app():
     with app.app_context():
         if db.engine.dialect.name != "postgresql":
             pytest.skip("PostgreSQL row-level security tests require PostgreSQL.")
-    return app
+        with db.engine.begin() as connection:
+            connection.exec_driver_sql("DROP TABLE IF EXISTS tenant_boundary_probe")
+            connection.exec_driver_sql(
+                """
+                CREATE TABLE tenant_boundary_probe (
+                    id uuid PRIMARY KEY,
+                    company_id uuid NOT NULL,
+                    payload text NOT NULL
+                )
+                """
+            )
+            connection.exec_driver_sql(
+                "ALTER TABLE tenant_boundary_probe ENABLE ROW LEVEL SECURITY"
+            )
+            connection.exec_driver_sql(
+                "ALTER TABLE tenant_boundary_probe FORCE ROW LEVEL SECURITY"
+            )
+            connection.exec_driver_sql(
+                """
+                CREATE POLICY tenant_boundary_probe_company_isolation
+                ON tenant_boundary_probe
+                FOR SELECT TO sales_dash_app
+                USING (
+                    company_id =
+                    NULLIF(current_setting('app.current_company_id', true), '')::uuid
+                )
+                """
+            )
+            connection.exec_driver_sql(
+                "GRANT SELECT ON tenant_boundary_probe TO sales_dash_app"
+            )
+        yield app
+        with db.engine.begin() as connection:
+            connection.exec_driver_sql("DROP TABLE IF EXISTS tenant_boundary_probe")
 
 
 def make_identity():
@@ -43,23 +76,49 @@ def make_identity():
     return user, company_a, company_b
 
 
-def test_company_rows_are_hidden_without_verified_context(postgres_app):
+def test_company_rows_and_tenant_records_are_isolated(postgres_app):
     with postgres_app.app_context():
         user, company_a, company_b = make_identity()
         try:
+            db.session.execute(
+                text(
+                    """
+                    INSERT INTO tenant_boundary_probe (id, company_id, payload)
+                    VALUES (:id_a, :company_a, 'Company A secret'),
+                           (:id_b, :company_b, 'Company B secret')
+                    """
+                ),
+                {
+                    "id_a": str(uuid4()),
+                    "id_b": str(uuid4()),
+                    "company_a": str(company_a.id),
+                    "company_b": str(company_b.id),
+                },
+            )
+            db.session.commit()
+
             with db.session.begin():
                 db.session.execute(text("SET LOCAL ROLE sales_dash_app"))
-                visible_ids = set(db.session.scalars(db.select(Company.id)).all())
+                visible_companies = set(db.session.scalars(db.select(Company.id)).all())
+                visible_records = db.session.execute(
+                    text("SELECT payload FROM tenant_boundary_probe")
+                ).scalars().all()
 
-            assert visible_ids == set()
+            assert visible_companies == set()
+            assert visible_records == []
 
             with db.session.begin():
                 db.session.execute(text("SET LOCAL ROLE sales_dash_app"))
                 set_tenant_context(db.session, user.id, company_a.id)
-                visible_ids = set(db.session.scalars(db.select(Company.id)).all())
+                visible_companies = set(db.session.scalars(db.select(Company.id)).all())
+                visible_records = db.session.execute(
+                    text("SELECT payload FROM tenant_boundary_probe")
+                ).scalars().all()
 
-            assert visible_ids == {company_a.id}
-            assert company_b.id not in visible_ids
+            assert visible_companies == {company_a.id}
+            assert visible_records == ["Company A secret"]
+            assert company_b.id not in visible_companies
+            assert "Company B secret" not in visible_records
         finally:
             db.session.rollback()
             db.session.delete(user)
