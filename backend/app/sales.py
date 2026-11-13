@@ -4,14 +4,14 @@ from datetime import date
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from uuid import UUID, uuid4
 
-from flask import Blueprint, jsonify, request, session
+from flask import Blueprint, g, jsonify, request, session
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
 from .auth import login_required
 from .extensions import db
-from .models import Customer, Product, Sale, SaleItem, User
-from .permissions import ROLE_PERMISSIONS, company_permission_required
+from .models import Customer, Product, Sale, SaleItem
+from .permissions import company_permission_required
 
 sales_bp = Blueprint("sales", __name__, url_prefix="/api")
 CENT = Decimal("0.01")
@@ -89,7 +89,7 @@ def _sale_json(item, customer_name=None, line_items=None):
     }
 
 
-@ sales_bp.get("/customers")
+@sales_bp.get("/customers")
 @login_required
 @company_permission_required("view_reports")
 def list_customers(_user):
