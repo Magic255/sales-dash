@@ -5,10 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#101827">
   <meta name="description" content="Secure multi-company sales management and business intelligence.">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
   <title>SALES DASH</title>
   <link rel="stylesheet" href="/static/styles.css">
   <script src="/static/workspace.js" defer></script>
   <script src="/static/auth.js" defer></script>
+  <script src="/static/pwa.js" defer></script>
 </head>
 <body>
   <main class="page">
@@ -174,6 +177,10 @@
       <article class="feature"><span class="number">04</span><h2>Insights</h2><p>Turn business activity into clear reports.</p></article>
     </section>
 
+    <div class="pwa-controls">
+      <button id="install-app" type="button" class="secondary-button" hidden>Install SALES DASH</button>
+      <p id="app-status" role="status" aria-live="polite">Offline mode keeps only the app shell. Sign-in and company data require an internet connection.</p>
+    </div>
     <footer>SALES DASH <span>·</span> Secure by design, built in milestones.</footer>
   </main>
 </body>
