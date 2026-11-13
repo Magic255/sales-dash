@@ -55,7 +55,13 @@ def login():
     data = request.get_json(silent=True) or {}
     email = str(data.get("email", "")).strip().lower()
     password = data.get("password", "")
-    if not email or len(email) > 320 or not isinstance(password, str) or not password:
+    if (
+        not email
+        or len(email) > 320
+        or not isinstance(password, str)
+        or not password
+        or len(password) > 1024
+    ):
         return jsonify({"error": "Enter your email and password."}), 400
 
     user = find_login_user(db.session, email)
@@ -68,15 +74,16 @@ def login():
     if not user or not user.is_active or not password_valid:
         return jsonify({"error": "Email or password is incorrect."}), 401
 
+    user_id = user.id
     try:
-        set_user_context(db.session, user.id)
+        set_user_context(db.session, user_id)
         db.session.commit()
     except TenantAccessDenied:
         db.session.rollback()
         return jsonify({"error": "Unable to sign in. Contact your administrator."}), 401
 
     session.clear()
-    session["user_id"] = str(user.id)
+    session["user_id"] = str(user_id)
     session.permanent = True
     return jsonify({"authenticated": True})
 
@@ -143,14 +150,16 @@ def select_company(user):
         db.session.rollback()
         return jsonify({"error": "You do not have access to that company."}), 403
 
+    selected_company = {
+        "id": str(membership.company_id),
+        "name": membership.company.name,
+        "role": membership.role,
+    }
     db.session.commit()
-    session["company_id"] = str(membership.company_id)
+    session["company_id"] = selected_company["id"]
     return jsonify(
         {
-            "selected_company": {
-                "id": str(membership.company_id),
-                "name": membership.company.name,
-                "role": membership.role,
+            "selected_company": selected_company,
             }
         }
     )
