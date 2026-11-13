@@ -39,7 +39,6 @@ def list_audit_logs(_user):
     """Return a bounded page of events for the currently selected company."""
     try:
         limit = int(request.args.get("limit", "50"))
-        
     except (TypeError, ValueError):
         return jsonify({"error": "Invalid audit log pagination."}), 400
 
