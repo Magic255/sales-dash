@@ -9,6 +9,7 @@ const auditPanel = document.querySelector("#audit-panel");
 const auditRows = document.querySelector("#audit-rows");
 const auditMessage = document.querySelector("#audit-message");
 let csrfToken = "";
+let signedInUserId = "";
 
 async function refreshCsrfToken() {
   const response = await fetch("/api/auth/csrf", { credentials: "same-origin" });
@@ -42,6 +43,7 @@ function showLogin(message = "") {
   loginMessage.textContent = message;
   workspaceReady.hidden = true;
   auditPanel.hidden = true;
+  document.dispatchEvent(new CustomEvent("salesdash:signed-out"));
 }
 
 function showCompanies(data) {
@@ -74,6 +76,7 @@ function showSelectedCompany(company) {
   auditPanel.hidden = company.role !== "admin";
   auditRows.replaceChildren();
   if (company.role === "admin") loadAuditLogs();
+  document.dispatchEvent(new CustomEvent("salesdash:company-selected", { detail: { ...company, userId: signedInUserId } }));
 }
 
 async function loadAuditLogs() {
@@ -114,6 +117,7 @@ async function loadCurrentUser() {
     showLogin();
     return;
   }
+  signedInUserId = data.user.id;
   showCompanies(data);
 }
 
@@ -146,7 +150,10 @@ loginForm.addEventListener("submit", async (event) => {
 companySelect.addEventListener("change", async () => {
   workspaceReady.hidden = true;
   auditPanel.hidden = true;
-  if (!companySelect.value) return;
+  if (!companySelect.value) {
+    document.dispatchEvent(new CustomEvent("salesdash:signed-out"));
+    return;
+  }
   companyMessage.textContent = "Checking company access…";
   try {
     const data = await apiRequest("/api/auth/company", {
