@@ -302,3 +302,33 @@ def test_password_change_requires_current_password_and_revokes_sessions(app):
         },
     )
     assert new_password_login.status_code == 200
+
+
+def test_account_without_password_cannot_use_dummy_hash_or_change_password(app):
+    with app.app_context():
+        passwordless_user = User(
+            email="passwordless@example.test",
+            display_name="Passwordless User",
+            password_hash=None,
+        )
+        db.session.add(passwordless_user)
+        db.session.commit()
+
+    client = app.test_client()
+    login_response = client.post(
+        "/api/auth/login",
+        json={
+            "email": "passwordless@example.test",
+            "password": "not-a-real-sales-dash-password",
+        },
+    )
+    assert login_response.status_code == 401
+
+    change_response = client.post(
+        "/api/auth/password",
+        json={
+            "current_password": "not-a-real-sales-dash-password",
+            "new_password": "a-new-secure-password-value",
+        },
+    )
+    assert change_response.status_code == 401
