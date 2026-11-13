@@ -207,3 +207,36 @@ def test_csrf_token_is_required_for_login():
         )
         assert allowed_through_csrf.status_code == 401
         db.drop_all()
+
+
+def test_login_is_rate_limited_per_account_across_different_ips():
+    application = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "account-rate-limit-test-secret",
+            "SQLALCHEMY_DATABASE_URI": "sqlite://",
+            "WTF_CSRF_ENABLED": False,
+            "RATELIMIT_ENABLED": True,
+            "RATELIMIT_STORAGE_URI": "memory://",
+        }
+    )
+    with application.app_context():
+        db.create_all()
+        try:
+            for index in range(10):
+                response = application.test_client().post(
+                    "/api/auth/login",
+                    json={"email": "target@example.test"},
+                    environ_base={"REMOTE_ADDR": f"192.0.2.{index + 1}"},
+                )
+                assert response.status_code == 400
+
+            blocked = application.test_client().post(
+                "/api/auth/login",
+                json={"email": "target@example.test"},
+                environ_base={"REMOTE_ADDR": "198.51.100.77"},
+            )
+            assert blocked.status_code == 429
+        finally:
+            db.session.remove()
+            db.drop_all()
