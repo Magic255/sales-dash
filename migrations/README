@@ -9,3 +9,14 @@ Review the generated migration carefully before applying it:
     flask --app backend/run.py db upgrade
 
 Never edit an already-applied migration to change production schema history. Add a new migration instead.
+
+## Initial multi-company schema
+
+The first migration creates global users, companies, and company memberships. It is
+applied in CI against PostgreSQL 16 before the test suite runs.
+
+The migration is additive and has a downgrade that drops only these three new
+tables. Before applying future production migrations, take a database backup and
+review the generated SQL. This initial schema does not yet enable PostgreSQL row
+level security or authenticate users; those controls require the later
+company-context and authentication milestones.
