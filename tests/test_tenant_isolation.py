@@ -137,6 +137,7 @@ def test_user_cannot_select_a_company_without_active_membership(postgres_app):
     with postgres_app.app_context():
         user, company_a, company_b = make_identity()
         user_id, company_a_id, company_b_id = user.id, company_a.id, company_b.id
+        db.session.commit()
         try:
             with db.session.begin():
                 db.session.execute(text("SET LOCAL ROLE sales_dash_app"))
