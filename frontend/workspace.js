@@ -9,13 +9,15 @@ function workspaceMessage(message) {
 }
 
 async function workspaceRequest(path, options = {}) {
+  const method = (options.method || "GET").toUpperCase();
+  const headers = new Headers(options.headers || {});
+  if (options.body) headers.set("Content-Type", "application/json");
+  if (!["GET", "HEAD", "OPTIONS"].includes(method)) {
+    if (!csrfToken) await refreshCsrfToken();
+    headers.set("X-CSRFToken", csrfToken);
+  }
   const response = await fetch(path, {
-    ...options,
-    credentials: "same-origin",
-    headers: {
-      ...(options.body ? { "Content-Type": "application/json" } : {}),
-      ...(options.headers || {}),
-    },
+    ...options, method, headers, credentials: "same-origin",
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.error || "Could not complete that action.");
