@@ -3,6 +3,8 @@
 Always use these guards on tenant API routes. The selected company ID comes from
 the signed session, but access is revalidated against the database on every request.
 """
+
+# ruff: noqa: I001
 import functools
 import uuid
 
