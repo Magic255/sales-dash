@@ -52,7 +52,10 @@ def _decimal(value, field, *, minimum=Decimal("0"), places=CENT):
     if not amount.is_finite() or amount < minimum:
         raise ValueError(f"{field.replace('_', ' ').capitalize()} is invalid.")
     try:
-        return amount.quantize(places, rounding=ROUND_HALF_UP)
+        rounded = amount.quantize(places, rounding=ROUND_HALF_UP)
+        if rounded < minimum:
+            raise ValueError(f"{field.replace('_', ' ').capitalize()} is too small.")
+        return rounded
     except InvalidOperation:
         raise ValueError(f"{field.replace('_', ' ').capitalize()} is invalid.") from None
 
