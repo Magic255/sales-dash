@@ -6,7 +6,6 @@ Revises: 0005_security_audit_logs
 
 # ruff: noqa: I001
 from alembic import op
-import sqlalchemy as sa
 
 
 revision = "0006_sales_domain"
@@ -16,223 +15,159 @@ depends_on = None
 
 
 def upgrade():
-    op.create_table(
-        "customers",
-        sa.Column("id", sa.Uuid(), nullable=False),
-        sa.Column("company_id", sa.Uuid(), nullable=False),
-        sa.Column("name", sa.String(length=160), nullable=False),
-        sa.Column("email", sa.String(length=320), nullable=True),
-        sa.Column("phone", sa.String(length=40), nullable=True),
-        sa.Column("organization", sa.String(length=160), nullable=True),
-        sa.Column("notes", sa.String(length=2000), nullable=True),
-        sa.Column("is_active", sa.Boolean(), server_default=sa.true(), nullable=False),
-        sa.Column("created_by_user_id", sa.Uuid(), nullable=False),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.func.now(),
-            nullable=False
-        s),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.func.now(),
-            nullable=False
-        s),
-        sa.CheckConstraint("length(trim(name)) > 0", name="ck_customers_name_not_empty"),
-        sa.CheckConstraint(
-            "email IS NULL OR email = lower(trim(email))",
-            name="ck_customers_email_normalized"
-        sa.CheckCo),
-        sa.ForeignKeyConstraint(
-            ["company_id"],
-            ["companies.id"],
-            ondelete="CASCADE",
-            name="fk_customers_company_id_companies"
-        sa.ForeignKeyCo),
-        sa.ForeignKeyConstraint(
-            ["company_id", "created_by_user_id"],
-            ["company_memberships.company_id", "company_memberships.user_id"],
-            ondelete="NO ACTION",
-            name="fk_customers_creator_membership"
-        sa.ForeignKeyCo),
-        sa.PrimaryKeyConstraint("id", name="pk_customers"),
-        sa.UniqueConstraint("company_id", "id", name="uq_customers_company_id_id"),
-        sa.UniqueConstraint("company_id", "email", name="uq_customers_company_email"),
+    op.execute(
+        """
+        CREATE TABLE customers (
+            id UUID PRIMARY KEY,
+            company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+            name VARCHAR(160) NOT NULL,
+            email VARCHAR(320),
+            phone VARCHAR(40),
+            organization VARCHAR(160),
+            notes VARCHAR(2000),
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_by_user_id UUID NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            CONSTRAINT uq_customers_company_id_id UNIQUE (company_id, id),
+            CONSTRAINT uq_customers_company_email UNIQUE (company_id, email),
+            CONSTRAINT ck_customers_name_not_empty CHECK (length(trim(name)) > 0),
+            CONSTRAINT ck_customers_email_normalized
+                CHECK (email IS NULL OR email = lower(trim(email))),
+            CONSTRAINT fk_customers_creator_membership
+                FOREIGN KEY (company_id, created_by_user_id)
+                REFERENCES company_memberships(company_id, user_id)
+                ON DELETE NO ACTION
+        )
+        """
     )
-    op.create_index("ix_customers_company_name", "customers", ["company_id", "name"])
-
-    op.create_table(
-        "products",
-        sa.Column("id", sa.Uuid(), nullable=False),
-        sa.Column("company_id", sa.Uuid(), nullable=False),
-        sa.Column("sku", sa.String(length=64), nullable=False),
-        sa.Column("name", sa.String(length=160), nullable=False),
-        sa.Column("description", sa.String(length=2000), nullable=True),
-        sa.Column("unit_price", sa.Numeric(12, 2), nullable=False),
-        sa.Column("currency", sa.String(length=3), server_default="TZS", nullable=False),
-        sa.Column("is_active", sa.Boolean(), server_default=sa.true(), nullable=False),
-        sa.Column("created_by_user_id", sa.Uuid(), nullable=False),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.func.now(),
-            nullable=False
-        s),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.func.now(),
-            nullable=False
-        s),
-        sa.CheckConstraint("length(trim(sku)) > 0", name="ck_products_sku_not_empty"),
-        sa.CheckConstraint("length(trim(name)) > 0", name="ck_products_name_not_empty"),
-        sa.CheckConstraint("unit_price >= 0", name="ck_products_unit_price_nonnegative"),
-        sa.CheckConstraint(
-            "currency = upper(currency) AND length(currency) = 3",
-            name="ck_products_currency_iso_code"
-        sa.CheckCo),
-        sa.ForeignKeyConstraint(
-            ["company_id"],
-            ["companies.id"],
-            ondelete="CASCADE",
-            name="fk_products_company_id_companies"
-        sa.ForeignKeyCo),
-        sa.ForeignKeyConstraint(
-            ["company_id", "created_by_user_id"],
-            ["company_memberships.company_id", "company_memberships.user_id"],
-            ondelete="NO ACTION",
-            name="fk_products_creator_membership"
-        sa.ForeignKeyCo),
-        sa.PrimaryKeyConstraint("id", name="pk_products"),
-        sa.UniqueConstraint("company_id", "id", name="uq_products_company_id_id"),
-        sa.UniqueConstraint("company_id", "sku", name="uq_products_company_sku"),
+    op.execute(
+        """
+        CREATE TABLE products (
+            id UUID PRIMARY KEY,
+            company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+            sku VARCHAR(64) NOT NULL,
+            name VARCHAR(160) NOT NULL,
+            description VARCHAR(2000),
+            unit_price NUMERIC(12, 2) NOT NULL,
+            currency VARCHAR(3) NOT NULL DEFAULT 'TZS',
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_by_user_id UUID NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            CONSTRAINT uq_products_company_id_id UNIQUE (company_id, id),
+            CONSTRAINT uq_products_company_sku UNIQUE (company_id, sku),
+            CONSTRAINT ck_products_sku_not_empty CHECK (length(trim(sku)) > 0),
+            CONSTRAINT ck_products_name_not_empty CHECK (length(trim(name)) > 0),
+            CONSTRAINT ck_products_unit_price_nonnegative CHECK (unit_price >= 0),
+            CONSTRAINT ck_products_currency_iso_code
+                CHECK (currency = upper(currency) AND length(currency) = 3),
+            CONSTRAINT fk_products_creator_membership
+                FOREIGN KEY (company_id, created_by_user_id)
+                REFERENCES company_memberships(company_id, user_id)
+                ON DELETE NO ACTION
+        )
+        """
     )
-    op.create_index("ix_products_company_name", "products", ["company_id", "name"])
-
-    op.create_table(
-        "sales",
-        sa.Column("id", sa.Uuid(), nullable=False),
-        sa.Column("company_id", sa.Uuid(), nullable=False),
-        sa.Column("sale_number", sa.String(length=40), nullable=False),
-        sa.Column("customer_id", sa.Uuid(), nullable=False),
-        sa.Column("salesperson_user_id", sa.Uuid(), nullable=False),
-        sa.Column("created_by_user_id", sa.Uuid(), nullable=False),
-        sa.Column("status", sa.String(length=20), server_default="draft", nullable=False),
-        sa.Column("sale_date", sa.Date(), nullable=False),
-        sa.Column("currency", sa.String(length=3), server_default="TZS", nullable=False),
-        sa.Column("subtotal", sa.Numeric(14, 2), server_default="0", nullable=False),
-        sa.Column("discount_amount", sa.Numeric(14, 2), server_default="0", nullable=False),
-        sa.Column("tax_amount", sa.Numeric(14, 2), server_default="0", nullable=False),
-        sa.Column("total_amount", sa.Numeric(14, 2), server_default="0", nullable=False),
-        sa.Column("notes", sa.String(length=2000), nullable=True),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.func.now(),
-            nullable=False
-        s),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.func.now(),
-            nullable=False
-        s),
-        sa.CheckConstraint("length(trim(sale_number)) > 0", name="ck_sales_sale_number_not_empty"),
-        sa.CheckConstraint(
-            "status IN ('draft', 'completed', 'void')",
-            name="ck_sales_status_is_supported"
-        sa.CheckCo),
-        sa.CheckConstraint(
-            "length(currency) = 3 AND currency = upper(currency)",
-            name="ck_sales_currency_iso_code"
-        sa.CheckCo),
-        sa.CheckConstraint("subtotal >= 0", name="ck_sales_subtotal_nonnegative"),
-        sa.CheckConstraint("discount_amount >= 0", name="ck_sales_discount_nonnegative"),
-        sa.CheckConstraint("tax_amount >= 0", name="ck_sales_tax_nonnegative"),
-        sa.CheckConstraint("total_amount >= 0", name="ck_sales_total_nonnegative"),
-        sa.ForeignKeyConstraint(
-            ["company_id"],
-            ["companies.id"],
-            ondelete="CASCADE",
-            name="fk_sales_company_id_companies"
-        sa.ForeignKeyCo),
-        sa.ForeignKeyConstraint(
-            ["company_id", "customer_id"],
-            ["customers.company_id", "customers.id"],
-            ondelete="NO ACTION",
-            name="fk_sales_customer_same_company"
-        sa.ForeignKeyCo),
-        sa.ForeignKeyConstraint(
-            ["company_id", "salesperson_user_id"],
-            ["company_memberships.company_id", "company_memberships.user_id"],
-            ondelete="NO ACTION",
-            name="fk_sales_salesperson_membership"
-        sa.ForeignKeyCo),
-        sa.ForeignKeyConstraint(
-            ["company_id", "created_by_user_id"],
-            ["company_memberships.company_id", "company_memberships.user_id"],
-            ondelete="NO ACTION",
-            name="fk_sales_creator_membership"
-        sa.ForeignKeyCo),
-        sa.PrimaryKeyConstraint("id", name="pk_sales"),
-        sa.UniqueConstraint("company_id", "id", name="uq_sales_company_id_id"),
-        sa.UniqueConstraint("company_id", "sale_number", name="uq_sales_company_sale_number"),
+    op.execute(
+        """
+        CREATE TABLE sales (
+            id UUID PRIMARY KEY,
+            company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+            sale_number VARCHAR(40) NOT NULL,
+            customer_id UUID NOT NULL,
+            salesperson_user_id UUID NOT NULL,
+            created_by_user_id UUID NOT NULL,
+            status VARCHAR(20) NOT NULL DEFAULT 'draft',
+            sale_date DATE NOT NULL,
+            currency VARCHAR(3) NOT NULL DEFAULT 'TZS',
+            subtotal NUMERIC(14, 2) NOT NULL DEFAULT 0,
+            discount_amount NUMERIC(14, 2) NOT NULL DEFAULT 0,
+            tax_amount NUMERIC(14, 2) NOT NULL DEFAULT 0,
+            total_amount NUMERIC(14, 2) NOT NULL DEFAULT 0,
+            notes VARCHAR(2000),
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            CONSTRAINT uq_sales_company_id_id UNIQUE (company_id, id),
+            CONSTRAINT uq_sales_company_sale_number UNIQUE (company_id, sale_number),
+            CONSTRAINT ck_sales_sale_number_not_empty
+                CHECK (length(trim(sale_number)) > 0),
+            CONSTRAINT ck_sales_status_is_supported
+                CHECK (status IN ('draft', 'completed', 'void')),
+            CONSTRAINT ck_sales_currency_iso_code
+                CHECK (length(currency) = 3 AND currency = upper(currency)),
+            CONSTRAINT ck_sales_subtotal_nonnegative CHECK (subtotal >= 0),
+            CONSTRAINT ck_sales_discount_nonnegative CHECK (discount_amount >= 0),
+            CONSTRAINT ck_sales_tax_nonnegative CHECK (tax_amount >= 0),
+            CONSTRAINT ck_sales_total_nonnegative CHECK (total_amount >= 0),
+            CONSTRAINT fk_sales_customer_same_company
+                FOREIGN KEY (company_id, customer_id)
+                REFERENCES customers(company_id, id)
+                ON DELETE NO ACTION,
+            CONSTRAINT fk_sales_salesperson_membership
+                FOREIGN KEY (company_id, salesperson_user_id)
+                REFERENCES company_memberships(company_id, user_id)
+                ON DELETE NO ACTION,
+            CONSTRAINT fk_sales_creator_membership
+                FOREIGN KEY (company_id, created_by_user_id)
+                REFERENCES company_memberships(company_id, user_id)
+                ON DELETE NO ACTION
+        )
+        """
     )
-    op.create_index("ix_sales_company_date", "sales", ["company_id", "sale_date"])
-    op.create_index("ix_sales_company_customer", "sales", ["company_id", "customer_id"])
-    op.create_index("ix_sales_company_salesperson", "sales", ["company_id", "salesperson_user_id"])
-
-    op.create_table(
-        "sale_items",
-        sa.Column("id", sa.Uuid(), nullable=False),
-        sa.Column("company_id", sa.Uuid(), nullable=False),
-        sa.Column("sale_id", sa.Uuid(), nullable=False),
-        sa.Column("product_id", sa.Uuid(), nullable=False),
-        sa.Column("product_name", sa.String(length=160), nullable=False),
-        sa.Column("sku_snapshot", sa.String(length=64), nullable=False),
-        sa.Column("quantity", sa.Numeric(12, 3), nullable=False),
-        sa.Column("unit_price", sa.Numeric(12, 2), nullable=False),
-        sa.Column("discount_amount", sa.Numeric(14, 2), server_default="0", nullable=False),
-        sa.Column("line_total", sa.Numeric(14, 2), nullable=False),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.func.now(),
-            nullable=False
-        s),
-        sa.CheckConstraint(
-            "length(trim(product_name)) > 0",
-            name="ck_sale_items_product_name_not_empty"
-        sa.CheckCo),
-        sa.CheckConstraint("quantity > 0", name="ck_sale_items_quantity_positive"),
-        sa.CheckConstraint("unit_price >= 0", name="ck_sale_items_unit_price_nonnegative"),
-        sa.CheckConstraint("discount_amount >= 0", name="ck_sale_items_discount_nonnegative"),
-        sa.CheckConstraint("line_total >= 0", name="ck_sale_items_line_total_nonnegative"),
-        sa.ForeignKeyConstraint(
-            ["company_id"],
-            ["companies.id"],
-            ondelete="CASCADE",
-            name="fk_sale_items_company_id_companies"
-        sa.ForeignKeyCo),
-        sa.ForeignKeyConstraint(
-            ["company_id", "sale_id"],
-            ["sales.company_id", "sales.id"],
-            ondelete="CASCADE",
-            name="fk_sale_items_sale_same_company"
-        sa.ForeignKeyCo),
-        sa.ForeignKeyConstraint(
-            ["company_id", "product_id"],
-            ["products.company_id", "products.id"],
-            ondelete="NO ACTION",
-            name="fk_sale_items_product_same_company"
-        sa.ForeignKeyCo),
-        sa.PrimaryKeyConstraint("id", name="pk_sale_items"),
+    op.execute(
+        """
+        CREATE TABLE sale_items (
+            id UUID PRIMARY KEY,
+            company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+            sale_id UUID NOT NULL,
+            product_id UUID NOT NULL,
+            product_name VARCHAR(160) NOT NULL,
+            sku_snapshot VARCHAR(64) NOT NULL,
+            quantity NUMERIC(12, 3) NOT NULL,
+            unit_price NUMERIC(12, 2) NOT NULL,
+            discount_amount NUMERIC(14, 2) NOT NULL DEFAULT 0,
+            line_total NUMERIC(14, 2) NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            CONSTRAINT ck_sale_items_product_name_not_empty
+                CHECK (length(trim(product_name)) > 0),
+            CONSTRAINT ck_sale_items_quantity_positive CHECK (quantity > 0),
+            CONSTRAINT ck_sale_items_unit_price_nonnegative CHECK (unit_price >= 0),
+            CONSTRAINT ck_sale_items_discount_nonnegative CHECK (discount_amount >= 0),
+            CONSTRAINT ck_sale_items_line_total_nonnegative CHECK (line_total >= 0),
+            CONSTRAINT fk_sale_items_sale_same_company
+                FOREIGN KEY (company_id, sale_id)
+                REFERENCES sales(company_id, id)
+                ON DELETE CASCADE,
+            CONSTRAINT fk_sale_items_product_same_company
+                FOREIGN KEY (company_id, product_id)
+                REFERENCES products(company_id, id)
+                ON DELETE NO ACTION
+        )
+        """
     )
-    op.create_index("ix_sale_items_company_sale", "sale_items", ["company_id", "sale_id"])
 
-    # Every sales-domain table is isolated by the active transaction-local tenant.
-    # The app role is restricted to the active company for reads and writes.
+    op.execute(
+        "CREATE INDEX ix_customers_company_name ON customers (company_id, name)"
+    )
+    op.execute(
+        "CREATE INDEX ix_products_company_name ON products (company_id, name)"
+    )
+    op.execute(
+        "CREATE INDEX ix_sales_company_date ON sales (company_id, sale_date)"
+    )
+    op.execute(
+        "CREATE INDEX ix_sales_company_customer ON sales (company_id, customer_id)"
+    )
+    op.execute(
+        "CREATE INDEX ix_sales_company_salesperson "
+        "ON sales (company_id, salesperson_user_id)"
+    )
+    op.execute(
+        "CREATE INDEX ix_sale_items_company_sale ON sale_items (company_id, sale_id)"
+    )
+
+    # The active transaction-local company is required for every read and write.
     for table in ("customers", "products", "sales", "sale_items"):
         op.execute(f"GRANT SELECT, INSERT, UPDATE, DELETE ON {table} TO sales_dash_app")
         op.execute(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY")
@@ -260,13 +195,7 @@ def downgrade():
         op.execute(f"ALTER TABLE {table} DISABLE ROW LEVEL SECURITY")
         op.execute(f"REVOKE SELECT, INSERT, UPDATE, DELETE ON {table} FROM sales_dash_app")
 
-    op.drop_index("ix_sale_items_company_sale", table_name="sale_items")
-    op.drop_table("sale_items")
-    op.drop_index("ix_sales_company_salesperson", table_name="sales")
-    op.drop_index("ix_sales_company_customer", table_name="sales")
-    op.drop_index("ix_sales_company_date", table_name="sales")
-    op.drop_table("sales")
-    op.drop_index("ix_products_company_name", table_name="products")
-    op.drop_table("products")
-    op.drop_index("ix_customers_company_name", table_name="customers")
-    op.drop_table("customers")
+    op.execute("DROP TABLE sale_items")
+    op.execute("DROP TABLE sales")
+    op.execute("DROP TABLE products")
+    op.execute("DROP TABLE customers")
