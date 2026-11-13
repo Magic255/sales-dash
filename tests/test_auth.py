@@ -176,3 +176,34 @@ def test_postgres_login_and_company_selection_use_restricted_role():
             )
             db.session.execute(db.delete(User).where(User.id == user_id))
             db.session.commit()
+
+
+
+def test_csrf_token_is_required_for_login():
+    application = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "csrf-test-secret",
+            "SQLALCHEMY_DATABASE_URI": "sqlite://",
+            "WTF_CSRF_ENABLED": True,
+            "RATELIMIT_ENABLED": False,
+        }
+    )
+    with application.app_context():
+        db.create_all()
+        client = application.test_client()
+        blocked = client.post(
+            "/api/auth/login",
+            json={"email": "nobody@example.test", "password": "wrong-password"},
+        )
+        assert blocked.status_code == 400
+
+        token_response = client.get("/api/auth/csrf")
+        token = token_response.json["csrf_token"]
+        allowed_through_csrf = client.post(
+            "/api/auth/login",
+            json={"email": "nobody@example.test", "password": "wrong-password"},
+            headers={"X-CSRFToken": token},
+        )
+        assert allowed_through_csrf.status_code == 401
+        db.drop_all()
