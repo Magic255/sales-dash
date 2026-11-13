@@ -33,8 +33,8 @@ def set_tenant_context(session: Session, user_id: UUID, company_id: UUID) -> Non
                 SELECT 1
                 FROM company_memberships AS membership
                 JOIN users AS account ON account.id = membership.user_id
-                WHERE membership.user_id = :user_id
-                  AND membership.company_id = :company_id
+                WHERE membership.user_id = CAST(:user_id AS uuid)
+                  AND membership.company_id = CAST(:company_id AS uuid)
                   AND membership.status = 'active'
                   AND account.is_active = TRUE
             )
