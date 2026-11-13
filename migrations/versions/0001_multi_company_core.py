@@ -30,6 +30,10 @@ def upgrade():
             "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_users")),
+        sa.CheckConstraint(
+            "length(email) > 0 AND email = lower(trim(email))",
+            name=op.f("ck_users_email_normalized"),
+        ),
         sa.UniqueConstraint("email", name=op.f("uq_users_email")),
     )
 
@@ -47,6 +51,10 @@ def upgrade():
         ),
         sa.CheckConstraint("length(name) > 0", name=op.f("ck_companies_name_not_empty")),
         sa.CheckConstraint("length(slug) > 0", name=op.f("ck_companies_slug_not_empty")),
+        sa.CheckConstraint(
+            "slug = lower(trim(slug))",
+            name=op.f("ck_companies_slug_normalized"),
+        ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_companies")),
         sa.UniqueConstraint("slug", name=op.f("uq_companies_slug")),
     )
@@ -55,8 +63,8 @@ def upgrade():
         "company_memberships",
         sa.Column("company_id", sa.Uuid(), nullable=False),
         sa.Column("user_id", sa.Uuid(), nullable=False),
-        sa.Column("role", sa.String(length=20), nullable=False),
-        sa.Column("status", sa.String(length=20), nullable=False),
+        sa.Column("role", sa.String(length=20), server_default="viewer", nullable=False),
+        sa.Column("status", sa.String(length=20), server_default="active", nullable=False),
         sa.Column(
             "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
         ),
