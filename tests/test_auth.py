@@ -1,6 +1,5 @@
-from argon2 import PasswordHasher
-
 import pytest
+from argon2 import PasswordHasher
 
 from app import create_app
 from app.extensions import db
