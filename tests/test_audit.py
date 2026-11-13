@@ -1,6 +1,7 @@
 import os
 
 import pytest
+from sqlalchemy import select, text
 
 from app import create_app
 from app.extensions import db
@@ -17,7 +18,7 @@ def test_authenticated_security_actions_are_audited_and_company_scoped(app):
 
     with app.app_context():
         global_events = db.session.scalars(
-            db.select(AuditLog).where(AuditLog.event_type == "login_succeeded")
+            select(AuditLog).where(AuditLog.event_type == "login_succeeded")
         ).all()
         assert len(global_events) == 1
         assert global_events[0].company_id is None
@@ -42,7 +43,7 @@ def test_authenticated_security_actions_are_audited_and_company_scoped(app):
 
     with app.app_context():
         event_types = db.session.scalars(
-            db.select(AuditLog.event_type).order_by(AuditLog.occurred_at)
+            select(AuditLog.event_type).order_by(AuditLog.occurred_at)
         ).all()
         assert "password_changed" in event_types
 
@@ -76,7 +77,7 @@ def test_postgres_runtime_role_cannot_modify_or_delete_audit_logs():
     )
     with application.app_context():
         privileges = db.session.execute(
-            db.text(
+            text(
                 """
                 SELECT
                     has_table_privilege(current_user, 'audit_logs', 'SELECT'),
