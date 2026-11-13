@@ -19,13 +19,13 @@ cd sales-dash
 
 ```powershell
 py -3.11 -m venv .venv
-.\\.venv\\Scripts\\Activate.ps1
+.\.venv\Scripts\Activate.ps1
 ```
 
 If PowerShell blocks activation, you can use Command Prompt instead:
 
 ```bat
-.venv\\Scripts\\activate.bat
+.venv\Scripts\activate.bat
 ```
 
 ## 4. Install dependencies
@@ -48,7 +48,7 @@ Open `.env` and replace the placeholder `SECRET_KEY` with a long random value. K
 The existing dashboard walkthrough still works as before. You can start the web app without starting PostgreSQL:
 
 ```powershell
-python backend\\run.py
+python backend\run.py
 ```
 
 Open `http://127.0.0.1:5000` in your browser. The API health endpoint is `http://127.0.0.1:5000/api/health`.
