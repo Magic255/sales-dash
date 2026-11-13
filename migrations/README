@@ -12,11 +12,39 @@ Never edit an already-applied migration to change production schema history. Add
 
 ## Initial multi-company schema
 
-The first migration creates global users, companies, and company memberships. It is
-applied in CI against PostgreSQL 16 before the test suite runs.
+The first migration creates global users, companies, and company memberships.
 
-The migration is additive and has a downgrade that drops only these three new
-tables. Before applying future production migrations, take a database backup and
-review the generated SQL. This initial schema does not yet enable PostgreSQL row
-level security or authenticate users; those controls require the later
-company-context and authentication milestones.
+## Company access boundary
+
+The second migration creates a restricted, NOLOGIN PostgreSQL role named
+`sales_dash_app`. It receives read-only access to the identity, company, and
+membership tables. Row-level security is enabled and forced on all three tables:
+
+- Users can read only their own account row.
+- Users can read only their own membership rows.
+- A company is visible only when the current user has an active membership.
+- Missing user context returns no rows.
+- The app role has no write policies yet, so writes are denied by default.
+
+The backend helper `set_tenant_context` sets user and company identifiers with
+transaction-local PostgreSQL settings and verifies that the user is active and
+has an active membership before setting the selected company. The user ID must
+come from server-verified authentication; it must never come directly from a
+request parameter. Authentication is a later milestone, so this helper is not
+wired to public routes yet.
+
+The production connection login must be a non-superuser, must not own these
+tables, and must not have BYPASSRLS. Grant that login membership in
+`sales_dash_app`; never run the web application as the migration/database
+administrator. PostgreSQL superusers bypass row-level security.
+
+CI applies this migration to PostgreSQL 16 and runs restricted-role tests with
+two companies. It also tests the fail-closed behavior when context is missing
+and rejects selecting a company without an active membership. This verifies
+the company-access boundary before any customer, product, or sales tables are
+introduced.
+
+Before applying migrations in production, take a database backup and review
+the migration SQL and deployment role grants. Downgrade removes the policies,
+RLS flags, and membership index; it deliberately leaves the NOLOGIN role in
+place because a deployment login may already be a member of it.
