@@ -228,7 +228,7 @@ def me():
     return jsonify(
         {
             "authenticated": True,
-            "user": {"email": user.email, "display_name": user.display_name},
+            "user": {"id": str(user.id), "email": user.email, "display_name": user.display_name},
             "companies": companies,
             "selected_company": selected_company,
         }
