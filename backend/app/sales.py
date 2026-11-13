@@ -158,7 +158,9 @@ def update_customer(_user, customer_id):
     )
     if item is None:
         return jsonify({"error": "Customer not found."}), 404
-    data = request.get_json(silent=True) or {}
+    data = _json_object()
+    if data is None:
+        return jsonify({"error": "Send a JSON object."}), 400
     try:
         for field, maximum in (
             ("name", 160), ("email", 320), ("phone", 40),
@@ -205,7 +207,9 @@ def list_products(_user):
 @login_required
 @company_permission_required("manage_products")
 def create_product(user):
-    data = request.get_json(silent=True) or {}
+    data = _json_object()
+    if data is None:
+        return jsonify({"error": "Send a JSON object."}), 400
     try:
         item = Product(
             company_id=_company_id(),
@@ -242,7 +246,9 @@ def update_product(_user, product_id):
     )
     if item is None:
         return jsonify({"error": "Product not found."}), 404
-    data = request.get_json(silent=True) or {}
+    data = _json_object()
+    if data is None:
+        return jsonify({"error": "Send a JSON object."}), 400
     try:
         if "sku" in data:
             item.sku = _text(data, "sku", 64, required=True, upper=True)
@@ -299,7 +305,9 @@ def list_sales(_user):
 @login_required
 @company_permission_required("create_sales")
 def create_sale(user):
-    data = request.get_json(silent=True) or {}
+    data = _json_object()
+    if data is None:
+        return jsonify({"error": "Send a JSON object."}), 400
     company_id = _company_id()
     try:
         customer_id = UUID(str(data.get("customer_id", "")))
