@@ -49,7 +49,7 @@ def upgrade():
         sa.Column(
             "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
         ),
-        sa.CheckConstraint("length(name) > 0", name=op.f("ck_companies_name_not_empty")),
+        sa.CheckConstraint("length(trim(name)) > 0", name=op.f("ck_companies_name_not_empty")),
         sa.CheckConstraint("length(slug) > 0", name=op.f("ck_companies_slug_not_empty")),
         sa.CheckConstraint(
             "slug = lower(trim(slug))",
