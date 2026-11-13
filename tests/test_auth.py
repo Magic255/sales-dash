@@ -207,3 +207,128 @@ def test_csrf_token_is_required_for_login():
         )
         assert allowed_through_csrf.status_code == 401
         db.drop_all()
+
+
+def test_login_is_rate_limited_per_account_across_different_ips():
+    application = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "account-rate-limit-test-secret",
+            "SQLALCHEMY_DATABASE_URI": "sqlite://",
+            "WTF_CSRF_ENABLED": False,
+            "RATELIMIT_ENABLED": True,
+            "RATELIMIT_STORAGE_URI": "memory://",
+        }
+    )
+    with application.app_context():
+        db.create_all()
+        try:
+            for index in range(10):
+                response = application.test_client().post(
+                    "/api/auth/login",
+                    json={"email": "target@example.test"},
+                    environ_base={"REMOTE_ADDR": f"192.0.2.{index + 1}"},
+                )
+                assert response.status_code == 400
+
+            blocked = application.test_client().post(
+                "/api/auth/login",
+                json={"email": "target@example.test"},
+                environ_base={"REMOTE_ADDR": "198.51.100.77"},
+            )
+            assert blocked.status_code == 429
+        finally:
+            db.session.remove()
+            db.drop_all()
+
+
+def test_incrementing_auth_version_revokes_existing_sessions(app):
+    client = app.test_client()
+    login_response = client.post(
+        "/api/auth/login",
+        json={"email": "admin@example.test", "password": "a-very-strong-test-password"},
+    )
+    assert login_response.status_code == 200
+    assert client.get("/api/auth/me").json["authenticated"] is True
+
+    with app.app_context():
+        user = db.session.query(User).filter_by(email="admin@example.test").one()
+        user.auth_version += 1
+        db.session.commit()
+
+    assert client.get("/api/auth/me").json["authenticated"] is False
+
+
+def test_password_change_requires_current_password_and_revokes_sessions(app):
+    client = app.test_client()
+    original_password = "a-very-strong-test-password"
+    login_response = client.post(
+        "/api/auth/login",
+        json={"email": "admin@example.test", "password": original_password},
+    )
+    assert login_response.status_code == 200
+
+    rejected = client.post(
+        "/api/auth/password",
+        json={
+            "current_password": "incorrect-current-password",
+            "new_password": "a-different-strong-password",
+        },
+    )
+    assert rejected.status_code == 403
+
+    changed = client.post(
+        "/api/auth/password",
+        json={
+            "current_password": original_password,
+            "new_password": "a-different-strong-password",
+        },
+    )
+    assert changed.status_code == 200
+    assert changed.json["authenticated"] is False
+    assert client.get("/api/auth/me").json["authenticated"] is False
+
+    old_password_login = client.post(
+        "/api/auth/login",
+        json={"email": "admin@example.test", "password": original_password},
+    )
+    assert old_password_login.status_code == 401
+
+    new_password_login = client.post(
+        "/api/auth/login",
+        json={
+            "email": "admin@example.test",
+            "password": "a-different-strong-password",
+        },
+    )
+    assert new_password_login.status_code == 200
+
+
+def test_account_without_password_cannot_use_dummy_hash_or_change_password(app):
+    with app.app_context():
+        passwordless_user = User(
+            email="passwordless@example.test",
+            display_name="Passwordless User",
+            password_hash=None,
+        )
+        db.session.add(passwordless_user)
+        db.session.commit()
+
+    client = app.test_client()
+    login_response = client.post(
+        "/api/auth/login",
+        json={
+            "email": "passwordless@example.test",
+            "password": "not-a-real-sales-dash-password",
+        },
+    )
+    assert login_response.status_code == 401
+
+    change_response = client.post(
+        "/api/auth/password",
+        json={
+            "current_password": "not-a-real-sales-dash-password",
+            "new_password": "a-new-secure-password-value",
+        },
+    )
+    assert change_response.status_code == 401

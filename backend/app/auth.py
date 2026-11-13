@@ -1,11 +1,13 @@
 """Session-based authentication and company selection endpoints."""
 
+import hashlib
+import hmac
 from functools import wraps
 from uuid import UUID
 
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
-from flask import Blueprint, jsonify, request, session
+from flask import Blueprint, current_app, jsonify, request, session
 from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 
@@ -20,12 +22,27 @@ password_hasher = PasswordHasher()
 _DUMMY_PASSWORD_HASH = password_hasher.hash("not-a-real-sales-dash-password")
 
 
+def _login_account_rate_limit_key():
+    """Rate-limit each normalized account identifier without storing raw email in Redis."""
+    data = request.get_json(silent=True) or {}
+    email = str(data.get("email", "")).strip().lower()
+    secret = current_app.config["SECRET_KEY"]
+    if isinstance(secret, str):
+        secret = secret.encode("utf-8")
+    digest = hmac.new(secret, email.encode("utf-8"), hashlib.sha256).hexdigest()
+    return f"login-account:{digest}"
+
+
 def _current_user():
     user_id = session.get("user_id")
     if not user_id:
         return None
     try:
-        return set_user_context(db.session, UUID(user_id))
+        user = set_user_context(db.session, UUID(user_id))
+        if session.get("auth_version") != user.auth_version:
+            session.clear()
+            return None
+        return user
     except (TenantAccessDenied, ValueError, TypeError):
         session.clear()
         return None
@@ -50,6 +67,7 @@ def csrf_token():
 
 
 @auth_bp.post("/login")
+@limiter.limit("10 per hour", key_func=_login_account_rate_limit_key)
 @limiter.limit("5 per minute; 20 per hour")
 def login():
     data = request.get_json(silent=True) or {}
@@ -75,10 +93,16 @@ def login():
     except (VerifyMismatchError, VerificationError, InvalidHashError):
         password_valid = False
 
-    if not user or not user.is_active or not password_valid:
+    if (
+        not user
+        or not user.is_active
+        or not user.password_hash
+        or not password_valid
+    ):
         return jsonify({"error": "Email or password is incorrect."}), 401
 
     user_id = user.id
+    auth_version = user.auth_version
     try:
         set_user_context(db.session, user_id)
         db.session.commit()
@@ -88,8 +112,70 @@ def login():
 
     session.clear()
     session["user_id"] = str(user_id)
+    session["auth_version"] = auth_version
     session.permanent = True
     return jsonify({"authenticated": True})
+
+
+@auth_bp.post("/password")
+@login_required
+@limiter.limit("5 per hour")
+def change_password(user):
+    """Change the current password and revoke every existing account session."""
+    data = request.get_json(silent=True) or {}
+    current_password = data.get("current_password", "")
+    new_password = data.get("new_password", "")
+    if (
+        not isinstance(current_password, str)
+        or not current_password
+        or len(current_password) > 1024
+        or not isinstance(new_password, str)
+        or len(new_password) < 12
+        or len(new_password) > 1024
+    ):
+        return (
+            jsonify(
+                {
+                    "error": (
+                        "Enter your current password and a new password of at least "
+                        "12 characters."
+                    )
+                }
+            ),
+            400,
+        )
+
+    if not user.password_hash:
+        return (
+            jsonify(
+                {"error": "Complete password setup before changing your password."}
+            ),
+            403,
+        )
+
+    try:
+        password_hasher.verify(user.password_hash, current_password)
+    except (VerifyMismatchError, VerificationError, InvalidHashError):
+        return jsonify({"error": "Current password is incorrect."}), 403
+
+    if user.password_hash:
+        try:
+            password_hasher.verify(user.password_hash, new_password)
+        except VerifyMismatchError:
+            pass
+        else:
+            return (
+                jsonify(
+                    {"error": "Choose a password different from your current password."}
+                ),
+                400,
+            )
+
+    user.password_hash = password_hasher.hash(new_password)
+    user.auth_version += 1
+    db.session.commit()
+    session.clear()
+    return jsonify({"password_changed": True, "authenticated": False})
 
 
 @auth_bp.get("/me")

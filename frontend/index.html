@@ -60,6 +60,21 @@
           <p id="selected-company-role"></p>
         </div>
       </div>
+      <div class="security-settings">
+        <p class="eyebrow">ACCOUNT SECURITY</p>
+        <h2>Change your password</h2>
+        <p class="panel-copy">Changing your password signs out all active sessions on every device.</p>
+        <form id="password-form" class="auth-form">
+          <label for="current-password">Current password</label>
+          <input id="current-password" name="current-password" type="password" autocomplete="current-password" maxlength="1024" required>
+          <label for="new-password">New password</label>
+          <input id="new-password" name="new-password" type="password" autocomplete="new-password" minlength="12" maxlength="1024" required>
+          <label for="confirm-password">Confirm new password</label>
+          <input id="confirm-password" name="confirm-password" type="password" autocomplete="new-password" minlength="12" maxlength="1024" required>
+          <button type="submit" class="secondary-button">Update password</button>
+        </form>
+        <p id="password-message" class="form-message" role="status" aria-live="polite"></p>
+      </div>
     </section>
 
     <section class="feature-grid" aria-label="Platform modules">

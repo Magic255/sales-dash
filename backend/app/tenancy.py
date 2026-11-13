@@ -40,8 +40,12 @@ def set_user_context(session: Session, user_id: UUID) -> User:
             {"user_id": str(user_id)},
         )
 
+    # Refresh from the database even if this ORM session already has the user
+    # cached. Account deactivation and auth-version changes must take effect now.
     user = session.scalar(
-        select(User).where(User.id == user_id, User.is_active.is_(True))
+        select(User)
+        .where(User.id == user_id, User.is_active.is_(True))
+        .execution_options(populate_existing=True)
     )
     if user is None:
         raise TenantAccessDenied("The user account is not active.")
@@ -53,6 +57,8 @@ def set_tenant_context(
 ) -> CompanyMembership:
     """Set a selected company only after checking active user and membership."""
     set_user_context(session, user_id)
+    # Refresh membership role/status on every protected request so a role change
+    # or suspension cannot be hidden by a stale SQLAlchemy identity-map entry.
     membership = session.scalar(
         select(CompanyMembership)
         .join(Company, Company.id == CompanyMembership.company_id)
@@ -62,6 +68,7 @@ def set_tenant_context(
             CompanyMembership.status == "active",
             Company.is_active.is_(True),
         )
+        .execution_options(populate_existing=True)
     )
     if membership is None:
         raise TenantAccessDenied("No active user membership for the selected company.")

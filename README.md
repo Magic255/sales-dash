@@ -24,7 +24,8 @@ SALES DASH helps organizations manage sales activity across one or more companie
 - The web app uses a separate, restricted database login; database-admin credentials are reserved for migrations and controlled provisioning.
 - Browser authentication uses signed, HTTP-only, SameSite session cookies, CSRF protection, and server-side membership checks.
 - Passwords are hashed with Argon2id.
-- Login attempts are rate-limited; production requires shared Redis-backed rate-limit storage.
+- Login attempts are rate-limited both per source IP and per normalized account identifier (the account key is HMAC-hashed before storage); production requires shared Redis-backed rate-limit storage.
+- Sessions carry an account auth-version checked against the database on each authenticated request; incrementing it revokes all existing sessions for that account.
 - Keep secrets out of source control; use environment variables locally and a managed secret store in production.
 - Do not cache private API responses or authentication data in a service worker.
 
@@ -60,7 +61,7 @@ The secure authentication milestone now includes:
 - Login rate limiting (Redis-backed storage is required in production).
 - A narrowly scoped RLS policy that allows lookup of only the submitted normalized email during login.
 - A restricted database runtime role used by the web app; migrations and initial administrator provisioning use a separate admin connection.
-- Company selection that verifies active user status, company status, and active membership on the server.
+- Company selection that verifies active user status, company status, and active membership on the server.\n- A backend permission matrix for Admin, Manager, Salesperson, and Viewer roles; tenant API routes can enforce permissions only after revalidating the active company membership on each request.
 - An operator-only `create-admin` command; public self-registration is deliberately not enabled.
 
 The existing local setup walkthrough remains at [docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md).
