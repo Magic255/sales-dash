@@ -150,7 +150,10 @@ loginForm.addEventListener("submit", async (event) => {
 companySelect.addEventListener("change", async () => {
   workspaceReady.hidden = true;
   auditPanel.hidden = true;
-  if (!companySelect.value) return;
+  if (!companySelect.value) {
+    document.dispatchEvent(new CustomEvent("salesdash:signed-out"));
+    return;
+  }
   companyMessage.textContent = "Checking company access…";
   try {
     const data = await apiRequest("/api/auth/company", {
