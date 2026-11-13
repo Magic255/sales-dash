@@ -118,3 +118,15 @@ def test_membership_rejects_unsupported_status(app):
 
         with pytest.raises(IntegrityError):
             db.session.commit()
+
+
+def test_company_slug_is_unique(app):
+    with app.app_context():
+        db.session.add_all(
+            [
+                Company(name="First Company", slug="shared-slug"),
+                Company(name="Second Company", slug="shared-slug"),
+            ]
+        )
+        with pytest.raises(IntegrityError):
+            db.session.commit()
