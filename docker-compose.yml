@@ -1,0 +1,21 @@
+services:
+  db:
+    image: postgres:16
+    container_name: sales-dash-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: sales_dash
+      POSTGRES_USER: sales_dash
+      POSTGRES_PASSWORD: sales_dash_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - sales_dash_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sales_dash -d sales_dash"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  sales_dash_postgres_data:
