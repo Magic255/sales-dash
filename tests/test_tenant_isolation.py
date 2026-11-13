@@ -79,6 +79,7 @@ def make_identity():
 def test_company_rows_and_tenant_records_are_isolated(postgres_app):
     with postgres_app.app_context():
         user, company_a, company_b = make_identity()
+        user_id, company_a_id, company_b_id = user.id, company_a.id, company_b.id
         try:
             db.session.execute(
                 text(
@@ -91,8 +92,8 @@ def test_company_rows_and_tenant_records_are_isolated(postgres_app):
                 {
                     "id_a": str(uuid4()),
                     "id_b": str(uuid4()),
-                    "company_a": str(company_a.id),
-                    "company_b": str(company_b.id),
+                    "company_a": str(company_a_id),
+                    "company_b": str(company_b_id),
                 },
             )
             db.session.commit()
@@ -109,35 +110,46 @@ def test_company_rows_and_tenant_records_are_isolated(postgres_app):
 
             with db.session.begin():
                 db.session.execute(text("SET LOCAL ROLE sales_dash_app"))
-                set_tenant_context(db.session, user.id, company_a.id)
+                set_tenant_context(db.session, user_id, company_a_id)
                 visible_companies = set(db.session.scalars(db.select(Company.id)).all())
                 visible_records = db.session.execute(
                     text("SELECT payload FROM tenant_boundary_probe")
                 ).scalars().all()
 
-            assert visible_companies == {company_a.id}
+            assert visible_companies == {company_a_id}
             assert visible_records == ["Company A secret"]
-            assert company_b.id not in visible_companies
+            assert company_b_id not in visible_companies
             assert "Company B secret" not in visible_records
         finally:
             db.session.rollback()
-            db.session.delete(user)
-            db.session.delete(company_a)
-            db.session.delete(company_b)
+            db.session.execute(
+                text("DELETE FROM companies WHERE id IN (:company_a, :company_b)"),
+                {"company_a": str(company_a_id), "company_b": str(company_b_id)},
+            )
+            db.session.execute(
+                text("DELETE FROM users WHERE id = :user_id"),
+                {"user_id": str(user_id)},
+            )
             db.session.commit()
 
 
 def test_user_cannot_select_a_company_without_active_membership(postgres_app):
     with postgres_app.app_context():
         user, company_a, company_b = make_identity()
+        user_id, company_a_id, company_b_id = user.id, company_a.id, company_b.id
         try:
             with db.session.begin():
                 db.session.execute(text("SET LOCAL ROLE sales_dash_app"))
                 with pytest.raises(TenantAccessDenied):
-                    set_tenant_context(db.session, user.id, company_b.id)
+                    set_tenant_context(db.session, user_id, company_b_id)
         finally:
             db.session.rollback()
-            db.session.delete(user)
-            db.session.delete(company_a)
-            db.session.delete(company_b)
+            db.session.execute(
+                text("DELETE FROM companies WHERE id IN (:company_a, :company_b)"),
+                {"company_a": str(company_a_id), "company_b": str(company_b_id)},
+            )
+            db.session.execute(
+                text("DELETE FROM users WHERE id = :user_id"),
+                {"user_id": str(user_id)},
+            )
             db.session.commit()
