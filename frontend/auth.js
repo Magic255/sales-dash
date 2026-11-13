@@ -131,3 +131,42 @@ document.querySelector("#logout-button").addEventListener("click", async () => {
 });
 
 loadCurrentUser().catch((error) => showLogin(error.message));
+
+const passwordForm = document.querySelector("#password-form");
+const passwordMessage = document.querySelector("#password-message");
+
+passwordForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const currentPassword = document.querySelector("#current-password").value;
+  const newPassword = document.querySelector("#new-password").value;
+  const confirmPassword = document.querySelector("#confirm-password").value;
+  const button = passwordForm.querySelector("button");
+
+  if (newPassword !== confirmPassword) {
+    passwordMessage.textContent = "The new passwords do not match.";
+    return;
+  }
+  if (newPassword.length < 12) {
+    passwordMessage.textContent = "Your new password must contain at least 12 characters.";
+    return;
+  }
+
+  button.disabled = true;
+  passwordMessage.textContent = "Updating your password…";
+  try {
+    await apiRequest("/api/auth/password", {
+      method: "POST",
+      body: JSON.stringify({
+        current_password: currentPassword,
+        new_password: newPassword,
+      }),
+    });
+    passwordForm.reset();
+    csrfToken = "";
+    showLogin("Your password was changed. Please sign in again with your new password.");
+  } catch (error) {
+    passwordMessage.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+});
