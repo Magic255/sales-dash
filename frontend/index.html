@@ -4,21 +4,62 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#101827">
+  <meta name="description" content="Secure multi-company sales management and business intelligence.">
   <title>SALES DASH</title>
   <link rel="stylesheet" href="/static/styles.css">
+  <script src="/static/auth.js" defer></script>
 </head>
 <body>
   <main class="page">
     <header class="topbar">
       <a class="brand" href="/" aria-label="SALES DASH home">SALES<span>DASH</span></a>
-      <span class="environment">PROJECT PREVIEW</span>
+      <span class="environment">SECURE WORKSPACE</span>
     </header>
 
     <section class="welcome">
       <p class="eyebrow">SALES MANAGEMENT · BUSINESS INTELLIGENCE</p>
       <h1>Your sales,<br><span>in one clear view.</span></h1>
-      <p class="intro">The foundation for a secure workspace to manage companies, teams, customers, and sales performance.</p>
-      <div class="status"><span class="status-dot"></span> Foundation is running</div>
+      <p class="intro">One secure account for your companies, teams, customers, and sales performance.</p>
+      <div class="status"><span class="status-dot"></span> Secure workspace foundation</div>
+    </section>
+
+    <section id="login-panel" class="auth-panel" aria-labelledby="login-title">
+      <div>
+        <p class="eyebrow">WELCOME BACK</p>
+        <h2 id="login-title">Sign in to SALES DASH</h2>
+        <p class="panel-copy">Use the account details provided by your workspace administrator.</p>
+      </div>
+      <form id="login-form" class="auth-form">
+        <label for="email">Email address</label>
+        <input id="email" name="email" type="email" autocomplete="username" maxlength="320" required>
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" required>
+        <button type="submit" class="primary-button">Sign in securely</button>
+      </form>
+      <p id="login-message" class="form-message" role="status" aria-live="polite"></p>
+    </section>
+
+    <section id="company-panel" class="auth-panel" aria-labelledby="company-title" hidden>
+      <div class="panel-heading">
+        <div>
+          <p class="eyebrow">YOUR WORKSPACES</p>
+          <h2 id="company-title">Choose a company</h2>
+          <p id="account-email" class="panel-copy"></p>
+        </div>
+        <button id="logout-button" type="button" class="secondary-button">Sign out</button>
+      </div>
+      <label for="company-select">Company workspace</label>
+      <select id="company-select">
+        <option value="">Select a company</option>
+      </select>
+      <p id="company-message" class="form-message" role="status" aria-live="polite"></p>
+      <div id="workspace-ready" class="workspace-ready" hidden>
+        <span class="status-dot"></span>
+        <div>
+          <strong id="selected-company-name"></strong>
+          <p id="selected-company-role"></p>
+        </div>
+      </div>
     </section>
 
     <section class="feature-grid" aria-label="Platform modules">
@@ -28,7 +69,7 @@
       <article class="feature"><span class="number">04</span><h2>Insights</h2><p>Turn business activity into clear reports.</p></article>
     </section>
 
-    <footer>SALES DASH <span>·</span> Built in milestones, with security at the foundation.</footer>
+    <footer>SALES DASH <span>·</span> Secure by design, built in milestones.</footer>
   </main>
 </body>
 </html>
