@@ -1,3 +1,5 @@
+from datetime import date
+from decimal import Decimal
 from uuid import uuid4
 
 import pytest
@@ -6,7 +8,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app import create_app
 from app.extensions import db
-from app.models import Company, CompanyMembership, User
+from app.models import Company, CompanyMembership, Customer, Product, Sale, SaleItem, User
 
 
 @pytest.fixture()
@@ -128,5 +130,87 @@ def test_company_slug_is_unique(app):
                 Company(name="Second Company", slug="shared-slug"),
             ]
         )
+        with pytest.raises(IntegrityError):
+            db.session.commit()
+
+
+def test_sales_records_are_bound_to_their_company(app):
+    with app.app_context():
+        user = User(email="seller@example.com")
+        company_a = Company(name="Company A", slug="company-a")
+        company_b = Company(name="Company B", slug="company-b")
+        db.session.add_all([user, company_a, company_b])
+        db.session.flush()
+        db.session.add_all([
+            CompanyMembership(company=company_a, user=user, role="admin"),
+            CompanyMembership(company=company_b, user=user, role="admin"),
+        ])
+        db.session.flush()
+
+        customer_a = Customer(
+            company_id=company_a.id,
+            name="Customer A",
+            email="customer@example.com",
+            created_by_user_id=user.id,
+        )
+        product_a = Product(
+            company_id=company_a.id,
+            sku="SKU-A",
+            name="Product A",
+            unit_price=Decimal("125.00"),
+            currency="TZS",
+            created_by_user_id=user.id,
+        )
+        product_b = Product(
+            company_id=company_b.id,
+            sku="SKU-B",
+            name="Product B",
+            unit_price=Decimal("250.00"),
+            currency="TZS",
+            created_by_user_id=user.id,
+        )
+        db.session.add_all([customer_a, product_a, product_b])
+        db.session.flush()
+
+        sale = Sale(
+            company_id=company_a.id,
+            sale_number="SALE-0001",
+            customer_id=customer_a.id,
+            salesperson_user_id=user.id,
+            created_by_user_id=user.id,
+            sale_date=date(2026, 11, 13),
+            currency="TZS",
+            subtotal=Decimal("250.00"),
+            total_amount=Decimal("250.00"),
+        )
+        db.session.add(sale)
+        db.session.flush()
+
+        valid_item = SaleItem(
+            company_id=company_a.id,
+            sale_id=sale.id,
+            product_id=product_a.id,
+            product_name="Product A",
+            sku_snapshot="SKU-A",
+            quantity=Decimal("2.000"),
+            unit_price=Decimal("125.00"),
+            line_total=Decimal("250.00"),
+        )
+        db.session.add(valid_item)
+        db.session.commit()
+
+        assert valid_item.company_id == sale.company_id
+
+        invalid_item = SaleItem(
+            company_id=company_a.id,
+            sale_id=sale.id,
+            product_id=product_b.id,
+            product_name="Product B",
+            sku_snapshot="SKU-B",
+            quantity=Decimal("1.000"),
+            unit_price=Decimal("250.00"),
+            line_total=Decimal("250.00"),
+        )
+        db.session.add(invalid_item)
         with pytest.raises(IntegrityError):
             db.session.commit()
