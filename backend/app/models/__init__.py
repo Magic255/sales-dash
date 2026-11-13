@@ -194,7 +194,10 @@ class Product(db.Model):
         CheckConstraint("length(trim(name)) > 0", name="name_not_empty"),
         CheckConstraint("length(trim(sku)) > 0", name="sku_not_empty"),
         CheckConstraint("unit_price >= 0", name="unit_price_nonnegative"),
-        CheckConstraint("currency = upper(currency) AND length(currency) = 3", name="currency_iso_code"),
+        CheckConstraint(
+            "currency = upper(currency) AND length(currency) = 3",
+            name="currency_iso_code",
+        ),
         db.Index("ix_products_company_name", "company_id", "name"),
     )
 
@@ -206,7 +209,9 @@ class Product(db.Model):
     name: Mapped[str] = mapped_column(String(160), nullable=False)
     description: Mapped[str | None] = mapped_column(String(2000))
     unit_price: Mapped[Decimal] = mapped_column(db.Numeric(12, 2), nullable=False)
-    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="TZS", server_default="TZS")
+    currency: Mapped[str] = mapped_column(
+        String(3), nullable=False, default="TZS", server_default="TZS"
+    )
     is_active: Mapped[bool] = mapped_column(nullable=False, default=True, server_default="true")
     created_by_user_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
@@ -247,7 +252,10 @@ class Sale(db.Model):
             "status IN ('draft', 'completed', 'void')",
             name="status_is_supported",
         ),
-        CheckConstraint("length(currency) = 3 AND currency = upper(currency)", name="currency_iso_code"),
+        CheckConstraint(
+            "length(currency) = 3 AND currency = upper(currency)",
+            name="currency_iso_code",
+        ),
         CheckConstraint("subtotal >= 0", name="subtotal_nonnegative"),
         CheckConstraint("discount_amount >= 0", name="discount_nonnegative"),
         CheckConstraint("tax_amount >= 0", name="tax_nonnegative"),
@@ -265,13 +273,23 @@ class Sale(db.Model):
     customer_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
     salesperson_user_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
     created_by_user_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
-    status: Mapped[str] = mapped_column(String(20), nullable=False, default="draft", server_default="draft")
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="draft", server_default="draft"
+    )
     sale_date: Mapped[date] = mapped_column(db.Date, nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="TZS", server_default="TZS")
-    subtotal: Mapped[Decimal] = mapped_column(db.Numeric(14, 2), nullable=False, default=0, server_default="0")
-    discount_amount: Mapped[Decimal] = mapped_column(db.Numeric(14, 2), nullable=False, default=0, server_default="0")
-    tax_amount: Mapped[Decimal] = mapped_column(db.Numeric(14, 2), nullable=False, default=0, server_default="0")
-    total_amount: Mapped[Decimal] = mapped_column(db.Numeric(14, 2), nullable=False, default=0, server_default="0")
+    subtotal: Mapped[Decimal] = mapped_column(
+        db.Numeric(14, 2), nullable=False, default=0, server_default="0"
+    )
+    discount_amount: Mapped[Decimal] = mapped_column(
+        db.Numeric(14, 2), nullable=False, default=0, server_default="0"
+    )
+    tax_amount: Mapped[Decimal] = mapped_column(
+        db.Numeric(14, 2), nullable=False, default=0, server_default="0"
+    )
+    total_amount: Mapped[Decimal] = mapped_column(
+        db.Numeric(14, 2), nullable=False, default=0, server_default="0"
+    )
     notes: Mapped[str | None] = mapped_column(String(2000))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
