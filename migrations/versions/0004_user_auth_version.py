@@ -4,8 +4,8 @@ Revision ID: 0004_user_auth_version
 Revises: 0003_authentication_email_lookup
 """
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 
 revision = "0004_user_auth_version"
