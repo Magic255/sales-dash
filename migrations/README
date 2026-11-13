@@ -1,0 +1,11 @@
+This directory is managed by Flask-Migrate and Alembic.
+
+Create a migration after adding or changing SQLAlchemy models:
+
+    flask --app backend/run.py db migrate -m "describe the schema change"
+
+Review the generated migration carefully before applying it:
+
+    flask --app backend/run.py db upgrade
+
+Never edit an already-applied migration to change production schema history. Add a new migration instead.
