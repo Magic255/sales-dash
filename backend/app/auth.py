@@ -128,7 +128,12 @@ def change_password(user):
         or len(new_password) < 12
         or len(new_password) > 1024
     ):
-        return jsonify({"error": "Enter your current password and a new password of at least 12 characters."}), 400
+        return (
+            jsonify(
+                {"error": "Enter your current password and a new password of at least 12 characters."}
+            ),
+            400,
+        )
 
     try:
         password_hasher.verify(user.password_hash or _DUMMY_PASSWORD_HASH, current_password)
