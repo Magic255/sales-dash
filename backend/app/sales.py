@@ -626,7 +626,9 @@ def update_draft_sale(_user, sale_id):
         total = subtotal - line_discounts - order_discount + tax
         if total < 0:
             raise ValueError("The sale total cannot be negative.")
-        sale_date = _parse_report_date(data.get("sale_date") or sale.sale_date.isoformat(), "Sale date")
+        sale_date = _parse_report_date(
+            data.get("sale_date") or sale.sale_date.isoformat(), "Sale date"
+        )
         sale.customer_id = customer.id
         sale.currency = currency
         sale.sale_date = sale_date
