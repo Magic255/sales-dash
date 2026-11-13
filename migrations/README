@@ -39,10 +39,13 @@ tables, and must not have BYPASSRLS. Grant that login membership in
 administrator. PostgreSQL superusers bypass row-level security.
 
 CI applies this migration to PostgreSQL 16 and runs restricted-role tests with
-two companies. It also tests the fail-closed behavior when context is missing
-and rejects selecting a company without an active membership. This verifies
-the company-access boundary before any customer, product, or sales tables are
-introduced.
+two companies. The tests also create a temporary tenant-owned probe table with
+the same company_id RLS rule planned for future business tables. They verify
+that no rows are visible without context, only Company A rows are visible after
+selecting Company A, and selecting Company B is rejected without an active
+membership. The probe table is test-only and is dropped after the tests. This
+verifies the company-access boundary before any customer, product, or sales
+tables are introduced.
 
 Before applying migrations in production, take a database backup and review
 the migration SQL and deployment role grants. Downgrade removes the policies,
