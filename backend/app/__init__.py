@@ -3,6 +3,7 @@ import os
 from flask import Flask, jsonify, send_from_directory
 
 from .config import Config
+from .extensions import db, migrate
 
 
 def create_app(test_config=None):
@@ -20,6 +21,9 @@ def create_app(test_config=None):
 
     if test_config:
         app.config.update(test_config)
+
+    db.init_app(app)
+    migrate.init_app(app, db)
 
     @app.get("/api/health")
     def health():
