@@ -22,8 +22,12 @@ def upgrade():
         sa.Column("display_name", sa.String(length=120), nullable=True),
         sa.Column("password_hash", sa.String(length=255), nullable=True),
         sa.Column("is_active", sa.Boolean(), server_default=sa.true(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_users")),
         sa.UniqueConstraint("email", name=op.f("uq_users_email")),
     )
@@ -58,11 +62,15 @@ def upgrade():
             name=op.f("ck_company_memberships_status_is_supported"),
         ),
         sa.ForeignKeyConstraint(
-            ["company_id"], ["companies.id"], name=op.f("fk_company_memberships_company_id_companies"),
+            ["company_id"],
+            ["companies.id"],
+            name=op.f("fk_company_memberships_company_id_companies"),
             ondelete="CASCADE",
         ),
         sa.ForeignKeyConstraint(
-            ["user_id"], ["users.id"], name=op.f("fk_company_memberships_user_id_users"),
+            ["user_id"],
+            ["users.id"],
+            name=op.f("fk_company_memberships_user_id_users"),
             ondelete="CASCADE",
         ),
         sa.PrimaryKeyConstraint(
