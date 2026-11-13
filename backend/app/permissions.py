@@ -7,6 +7,7 @@ import functools
 import uuid
 
 import flask
+
 from . import extensions, tenancy
 
 
