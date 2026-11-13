@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, session
 from sqlalchemy import select
 
 from .auth import login_required
@@ -47,8 +47,6 @@ def list_audit_logs(_user):
 
     # The permission decorator establishes PostgreSQL tenant context. The
     # selected company ID is read from the authenticated session by the guard.
-    from flask import session
-
     try:
         company_id = UUID(session["company_id"])
     except (KeyError, TypeError, ValueError):
