@@ -20,9 +20,7 @@ def set_tenant_context(session: Session, user_id: UUID, company_id: UUID) -> Non
     PostgreSQL RLS policies read these settings. The settings are transaction-local,
     so they disappear automatically when the transaction commits or rolls back.
     """
-    session.execute(
-        text("SELECT set_config('app.current_company_id', '', true)")
-    )
+    session.execute(text("SELECT set_config('app.current_company_id', '', true)"))
     session.execute(
         text("SELECT set_config('app.current_user_id', :user_id, true)"),
         {"user_id": str(user_id)},
@@ -33,10 +31,12 @@ def set_tenant_context(session: Session, user_id: UUID, company_id: UUID) -> Non
             """
             SELECT EXISTS (
                 SELECT 1
-                FROM company_memberships
-                WHERE user_id = :user_id
-                  AND company_id = :company_id
-                  AND status = 'active'
+                FROM company_memberships AS membership
+                JOIN users AS account ON account.id = membership.user_id
+                WHERE membership.user_id = :user_id
+                  AND membership.company_id = :company_id
+                  AND membership.status = 'active'
+                  AND account.is_active = TRUE
             )
             """
         ),
@@ -44,7 +44,7 @@ def set_tenant_context(session: Session, user_id: UUID, company_id: UUID) -> Non
     ).scalar_one()
 
     if not is_active_member:
-        raise TenantAccessDenied("No active membership for the selected company.")
+        raise TenantAccessDenied("No active user membership for the selected company.")
 
     session.execute(
         text("SELECT set_config('app.current_company_id', :company_id, true)"),
