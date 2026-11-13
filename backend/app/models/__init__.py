@@ -53,7 +53,7 @@ class Company(db.Model):
     __tablename__ = "companies"
     __table_args__ = (
         db.UniqueConstraint("slug", name="uq_companies_slug"),
-        CheckConstraint("length(name) > 0", name="name_not_empty"),
+        CheckConstraint("length(trim(name)) > 0", name="name_not_empty"),
         CheckConstraint("length(slug) > 0", name="slug_not_empty"),
         CheckConstraint("slug = lower(trim(slug))", name="slug_normalized"),
     )
