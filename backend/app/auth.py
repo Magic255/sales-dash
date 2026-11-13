@@ -1,11 +1,13 @@
 """Session-based authentication and company selection endpoints."""
 
+import hashlib
+import hmac
 from functools import wraps
 from uuid import UUID
 
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
-from flask import Blueprint, jsonify, request, session
+from flask import Blueprint, current_app, jsonify, request, session
 from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 
@@ -18,6 +20,17 @@ auth_bp = Blueprint("auth", __name__, url_prefix="/api/auth")
 password_hasher = PasswordHasher()
 # Verify unknown email addresses against a real Argon2 hash too, reducing timing leaks.
 _DUMMY_PASSWORD_HASH = password_hasher.hash("not-a-real-sales-dash-password")
+
+
+def _login_account_rate_limit_key():
+    """Rate-limit each normalized account identifier without storing raw email in Redis."""
+    data = request.get_json(silent=True) or {}
+    email = str(data.get("email", "")).strip().lower()
+    secret = current_app.config["SECRET_KEY"]
+    if isinstance(secret, str):
+        secret = secret.encode("utf-8")
+    digest = hmac.new(secret, email.encode("utf-8"), hashlib.sha256).hexdigest()
+    return f"login-account:{digest}"
 
 
 def _current_user():
@@ -50,6 +63,7 @@ def csrf_token():
 
 
 @auth_bp.post("/login")
+@limiter.limit("10 per hour", key_func=_login_account_rate_limit_key)
 @limiter.limit("5 per minute; 20 per hour")
 def login():
     data = request.get_json(silent=True) or {}
