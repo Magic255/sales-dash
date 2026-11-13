@@ -39,15 +39,13 @@ def list_audit_logs(_user):
     """Return a bounded page of events for the currently selected company."""
     try:
         limit = int(request.args.get("limit", "50"))
-        before_id = request.args.get("before")
-        before_uuid = UUID(before_id) if before_id else None
+        
     except (TypeError, ValueError):
         return jsonify({"error": "Invalid audit log pagination."}), 400
 
     if not 1 <= limit <= 100:
         return jsonify({"error": "Limit must be between 1 and 100."}), 400
 
-    company_id = db.session.info.get("active_company_id")
     # The permission decorator establishes PostgreSQL tenant context. The
     # selected company ID is read from the authenticated session by the guard.
     from flask import session
@@ -58,12 +56,6 @@ def list_audit_logs(_user):
         return jsonify({"error": "Select a company before continuing."}), 409
 
     query = select(AuditLog).where(AuditLog.company_id == company_id)
-    if before_uuid:
-        cursor = db.session.get(AuditLog, before_uuid)
-        if cursor is None or cursor.company_id != company_id:
-            return jsonify({"error": "Invalid audit log cursor."}), 400
-        query = query.where(AuditLog.occurred_at < cursor.occurred_at)
-
     entries = db.session.scalars(
         query.order_by(AuditLog.occurred_at.desc(), AuditLog.id.desc()).limit(limit)
     ).all()
