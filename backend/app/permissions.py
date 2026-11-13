@@ -3,10 +3,9 @@
 Always use these guards on tenant API routes. The selected company ID comes from
 the signed session, but access is revalidated against the database on every request.
 """
+import flask
 import functools
 import uuid
-
-import flask
 
 from . import extensions, tenancy
 
@@ -42,7 +41,11 @@ def company_permission_required(permission):
                 return flask.jsonify({"error": "Select a company before continuing."}), 409
 
             try:
-                membership = tenancy.set_tenant_context(extensions.db.session, user.id, uuid.UUID(company_id))
+                membership = tenancy.set_tenant_context(
+                    extensions.db.session,
+                    user.id,
+                    uuid.UUID(company_id),
+                )
             except (tenancy.TenantAccessDenied, ValueError, TypeError):
                 extensions.db.session.rollback()
                 flask.session.pop("company_id", None)
