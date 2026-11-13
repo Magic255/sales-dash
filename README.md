@@ -69,4 +69,4 @@ The secure authentication milestone now includes:
 
 The existing local setup walkthrough remains at [docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md).
 
-Email verification, password reset, MFA, invitation flows, and fine-grained role authorization still need to be completed before public launch. No customer, product, or sales tables have been created yet.
+Email verification, password reset, MFA, invitation flows, and fine-grained role authorization still need to be completed before public launch. The initial tenant-isolated sales data layer now defines customers, products, sales, and sale items with PostgreSQL row-level security and same-company foreign keys. API routes, business workflows, and frontend screens are the next implementation step.
