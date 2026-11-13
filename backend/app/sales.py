@@ -22,6 +22,11 @@ def _company_id():
     return UUID(session["company_id"])
 
 
+def _json_object():
+    data = request.get_json(silent=True)
+    return data if isinstance(data, dict) else None
+
+
 def _text(data, field, maximum, *, required=False, lower=False, upper=False):
     value = data.get(field)
     if value is None:
@@ -116,7 +121,9 @@ def list_customers(_user):
 @login_required
 @company_permission_required("create_sales")
 def create_customer(user):
-    data = request.get_json(silent=True) or {}
+    data = _json_object()
+    if data is None:
+        return jsonify({"error": "Send a JSON object."}), 400
     try:
         item = Customer(
             company_id=_company_id(),
