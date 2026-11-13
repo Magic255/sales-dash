@@ -51,4 +51,6 @@ Work in small milestones. Each milestone must have a clear scope, tests, and rev
 
 ## Project status
 
-The repository is being initialized from a clean slate. No previous application source code is assumed to be available.
+The clean-slate foundation and initial multi-company database schema are in place. Global users, companies, and company memberships are modeled and migrated with PostgreSQL 16 in CI. The local setup walkthrough remains at [docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md).
+
+The next milestone is the authenticated company context and tenant-isolation boundary. Row-level security is not enabled yet; it will be introduced only alongside a verified user identity, selected-company context, and restricted application database role.
