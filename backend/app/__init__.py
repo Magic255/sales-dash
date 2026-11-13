@@ -2,19 +2,21 @@ import os
 
 from flask import Flask, jsonify, send_from_directory
 
+from .config import Config
+
 
 def create_app(test_config=None):
     """Create and configure the SALES DASH Flask application."""
-    app = Flask(
-        __name__,
-        static_folder="../../frontend",
-        static_url_path="/static",
+    frontend_dir = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "..", "frontend")
     )
 
-    app.config.from_mapping(
-        SECRET_KEY=os.environ.get("SECRET_KEY"),
-        JSON_SORT_KEYS=False,
+    app = Flask(
+        __name__,
+        static_folder=frontend_dir,
+        static_url_path="/static",
     )
+    app.config.from_object(Config)
 
     if test_config:
         app.config.update(test_config)
