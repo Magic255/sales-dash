@@ -56,8 +56,8 @@ jobs:
 
       - name: Create restricted web runtime database login
         run: |
-          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE ROLE sales_dash_runtime LOGIN PASSWORD 'ci-runtime-password'"
-          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "GRANT sales_dash_app TO sales_dash_runtime"
+          psql "postgresql://sales_dash:sales_dash_dev@127.0.0.1:5432/sales_dash" -v ON_ERROR_STOP=1 -c "CREATE ROLE sales_dash_runtime LOGIN PASSWORD 'ci-runtime-password'"
+          psql "postgresql://sales_dash:sales_dash_dev@127.0.0.1:5432/sales_dash" -v ON_ERROR_STOP=1 -c "GRANT sales_dash_app TO sales_dash_runtime"
 
       - name: Run tests
         run: pytest
