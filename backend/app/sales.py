@@ -376,8 +376,8 @@ def create_sale(user):
 
 @sales_bp.post("/sales/<uuid:sale_id>/complete")
 @login_required
-@company_permission_required("edit_sales")
-def complete_sale(_user, sale_id):
+@company_permission_required("create_sales")
+def complete_sale(user, sale_id):
     item = db.session.scalar(select(Sale).where(
         Sale.id == sale_id, Sale.company_id == _company_id()
     ))
@@ -385,6 +385,8 @@ def complete_sale(_user, sale_id):
         return jsonify({"error": "Sale not found."}), 404
     if item.status != "draft":
         return jsonify({"error": "Only draft sales can be completed."}), 409
+    if g.company_membership.role not in {"admin", "manager"} and item.created_by_user_id != user.id:
+        return jsonify({"error": "You can only complete sales you created."}), 403
     item.status = "completed"
     db.session.commit()
     return jsonify({"item": _sale_json(item)})
