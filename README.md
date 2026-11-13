@@ -12,7 +12,7 @@ SALES DASH helps organizations manage sales activity across one or more companie
 - Global user accounts with company memberships
 - Role-based access: Admin, Manager, Salesperson, Viewer
 - Sales entry and management
-- Customers, products, and sales teams
+- Customers, products, sales teams
 - Dashboards, reports, and exports
 - Responsive web interface
 - Progressive Web App support, including carefully scoped offline functionality
@@ -51,6 +51,8 @@ Work in small milestones. Each milestone must have a clear scope, tests, and rev
 
 ## Project status
 
-The clean-slate foundation and initial multi-company database schema are in place. Global users, companies, and company memberships are modeled and migrated with PostgreSQL 16 in CI. The local setup walkthrough remains at [docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md).
+The clean-slate foundation and multi-company database schema are in place. PostgreSQL 16 CI applies the schema and verifies migration rollback/re-application. The second migration now adds a restricted application role and row-level security for users, companies, and memberships. Automated PostgreSQL tests verify that company rows are hidden without context and that a user cannot select a company without an active membership.
 
-The next milestone is the authenticated company context and tenant-isolation boundary. Row-level security is not enabled yet; it will be introduced only alongside a verified user identity, selected-company context, and restricted application database role.
+No customer, product, or sales tables have been created yet. The existing local setup walkthrough remains at [docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md).
+
+The next step is to complete the authenticated company-context flow and test row-level security on the first tenant-owned business tables before building sales workflows. The app role is intentionally read-only at this stage; write policies will be added narrowly as each workflow is designed.
