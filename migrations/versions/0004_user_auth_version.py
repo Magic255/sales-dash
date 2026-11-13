@@ -4,6 +4,8 @@ Revision ID: 0004_user_auth_version
 Revises: 0003_authentication_email_lookup
 """
 
+# ruff: noqa: I001
+from alembic import op
 import sqlalchemy as sa
 
 
