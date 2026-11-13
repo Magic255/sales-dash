@@ -420,10 +420,17 @@ def dashboard_summary(_user):
     sales_count = db.session.scalar(select(func.count()).select_from(Sale).where(
         Sale.company_id == company_id, Sale.status == "completed"
     )) or 0
-    revenue = db.session.scalar(select(func.coalesce(func.sum(Sale.total_amount), 0)).where(
-        Sale.company_id == company_id, Sale.status == "completed"
-    )) or Decimal("0.00")
+    revenue_rows = db.session.execute(
+        select(Sale.currency, func.sum(Sale.total_amount))
+        .where(Sale.company_id == company_id, Sale.status == "completed")
+        .group_by(Sale.currency)
+        .order_by(Sale.currency)
+    ).all()
     return jsonify({
         "customers": customer_count, "products": product_count,
-        "completed_sales": sales_count, "revenue": str(revenue),
+        "completed_sales": sales_count,
+        "revenue_by_currency": [
+            {"currency": currency, "amount": str(amount)}
+            for currency, amount in revenue_rows
+        ],
     })
