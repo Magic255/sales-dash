@@ -315,9 +315,9 @@ class SaleItem(db.Model):
     product_name: Mapped[str] = mapped_column(String(160), nullable=False)
     sku_snapshot: Mapped[str] = mapped_column(String(64), nullable=False)
     quantity: Mapped[Decimal] = mapped_column(db.Numeric(12, 3), nullable=False)
-    unit_price: Mapped[object] = mapped_column(db.Numeric(12, 2), nullable=False)
-    discount_amount: Mapped[object] = mapped_column(db.Numeric(14, 2), nullable=False, default=0, server_default="0")
-    line_total: Mapped[object] = mapped_column(db.Numeric(14, 2), nullable=False)
+    unit_price: Mapped[Decimal] = mapped_column(db.Numeric(12, 2), nullable=False)
+    discount_amount: Mapped[Decimal] = mapped_column(db.Numeric(14, 2), nullable=False, default=0, server_default="0")
+    line_total: Mapped[Decimal] = mapped_column(db.Numeric(14, 2), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
