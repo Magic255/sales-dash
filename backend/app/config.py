@@ -8,6 +8,8 @@ APP_ENV = os.environ.get("APP_ENV", "development").lower()
 class Config:
     """Shared application configuration."""
 
+    APP_ENV = APP_ENV
+
     SECRET_KEY = os.environ.get("SECRET_KEY")
     # The web app uses a non-owner, non-superuser login. Admin URL is CLI/migration only.
     SQLALCHEMY_DATABASE_URI = os.environ.get(
