@@ -24,7 +24,7 @@ SALES DASH helps organizations manage sales activity across one or more companie
 - The web app uses a separate, restricted database login; database-admin credentials are reserved for migrations and controlled provisioning.
 - Browser authentication uses signed, HTTP-only, SameSite session cookies, CSRF protection, and server-side membership checks.
 - Passwords are hashed with Argon2id.
-- Login attempts are rate-limited; production requires shared Redis-backed rate-limit storage.
+- Login attempts are rate-limited both per source IP and per normalized account identifier (the account key is HMAC-hashed before storage); production requires shared Redis-backed rate-limit storage.
 - Keep secrets out of source control; use environment variables locally and a managed secret store in production.
 - Do not cache private API responses or authentication data in a service worker.
 
