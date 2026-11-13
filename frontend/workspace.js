@@ -96,7 +96,7 @@ function fillSaleChoices() {
 }
 
 async function loadSales(generation) {
-  const data = await workspaceRequest("/api/sales");
+  const data = await workspaceRequest("/api/reports/sales");
   if (generation !== workspaceGeneration) return;
   const body = document.querySelector("#sales-rows");
   body.replaceChildren();
@@ -131,6 +131,42 @@ async function loadSales(generation) {
         }
       });
       actions.append(complete);
+    }
+    if (sale.status === "draft" && ["admin", "manager"].includes(workspaceRole)) {
+      const edit = document.createElement("button");
+      edit.type = "button";
+      edit.className = "table-action";
+      edit.textContent = "Edit";
+      edit.addEventListener("click", async () => {
+        const first = sale.items[0];
+        if (!first) return workspaceMessage("This sale has no editable items.");
+        const quantity = window.prompt("Quantity for " + first.product_name + ":", first.quantity);
+        if (quantity === null) return;
+        const lineDiscounts = sale.items.reduce((sum, item) => sum + Number(item.discount_amount), 0);
+        const orderDiscount = Math.max(0, Number(sale.discount_amount) - lineDiscounts);
+        const payload = {
+          customer_id: sale.customer_id, currency: sale.currency, sale_date: sale.sale_date,
+          discount_amount: orderDiscount.toFixed(2), tax_amount: sale.tax_amount,
+          notes: sale.notes || "",
+          items: sale.items.map((item, index) => ({
+            product_id: item.product_id,
+            quantity: index === 0 ? quantity : item.quantity,
+            discount_amount: item.discount_amount,
+          })),
+        };
+        edit.disabled = true;
+        try {
+          await workspaceRequest("/api/sales/" + encodeURIComponent(sale.id), {
+            method: "PATCH", body: JSON.stringify(payload),
+          });
+          await loadWorkspace();
+          workspaceMessage("Draft sale updated.");
+        } catch (error) {
+          workspaceMessage(error.message);
+          edit.disabled = false;
+        }
+      });
+      actions.append(edit);
     }
     if (sale.status !== "void" && workspaceRole === "admin") {
       const voidButton = document.createElement("button");
@@ -320,3 +356,71 @@ document.querySelector("#sale-form").addEventListener("submit", async (event) =>
 
 document.querySelector("#sale-date").value = localDate();
 selectTab("overview");
+
+
+
+async function loadSalesReport() {
+  const params = new URLSearchParams();
+  const from = document.querySelector("#report-from").value;
+  const to = document.querySelector("#report-to").value;
+  const status = document.querySelector("#report-status").value;
+  if (from) params.set("from", from);
+  if (to) params.set("to", to);
+  if (status) params.set("status", status);
+  const data = await workspaceRequest("/api/reports/sales?" + params.toString());
+  const body = document.querySelector("#report-rows");
+  body.replaceChildren();
+  if (!data.items.length) return emptyRow(body, 6, "No sales match these filters.");
+  for (const sale of data.items) {
+    const row = document.createElement("tr");
+    textCell(row, sale.sale_number);
+    textCell(row, sale.sale_date);
+    textCell(row, sale.customer_name);
+    textCell(row, sale.status);
+    textCell(row, amount(sale.currency, sale.total_amount));
+    textCell(row, sale.items.map((item) => item.product_name + " × " + item.quantity).join(", "));
+    body.append(row);
+  }
+  const totals = data.completed_totals_by_currency.map((item) => amount(item.currency, item.amount)).join(" · ");
+  document.querySelector("#report-totals").textContent = "Completed revenue: " + (totals || "—");
+  document.querySelector("#report-limit").textContent = data.limited
+    ? "Showing the first 500 matching sales. Narrow the date range for a complete view."
+    : data.count + " matching sales.";
+}
+
+document.querySelector("#report-filter-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  try {
+    await loadSalesReport();
+  } catch (error) {
+    workspaceMessage(error.message);
+  }
+});
+
+document.querySelector("#report-export").addEventListener("click", async () => {
+  const params = new URLSearchParams();
+  const from = document.querySelector("#report-from").value;
+  const to = document.querySelector("#report-to").value;
+  const status = document.querySelector("#report-status").value;
+  if (from) params.set("from", from);
+  if (to) params.set("to", to);
+  if (status) params.set("status", status);
+  try {
+    const response = await fetch("/api/reports/sales.csv?" + params.toString(), {
+      credentials: "same-origin",
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.error || "Could not export this report.");
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "sales-report.csv";
+    link.click();
+    URL.revokeObjectURL(url);
+  } catch (error) {
+    workspaceMessage(error.message);
+  }
+});

@@ -104,6 +104,7 @@
           <button type="button" class="module-tab" data-workspace-tab="customers">Customers</button>
           <button type="button" class="module-tab" data-workspace-tab="products">Products</button>
           <button type="button" class="module-tab" data-workspace-tab="sales">Sales</button>
+          <button type="button" class="module-tab" data-workspace-tab="reports">Reports</button>
         </nav>
         <p id="workspace-message" class="form-message" role="status" aria-live="polite"></p>
         <section class="module-panel" data-workspace-panel="overview">
@@ -146,6 +147,21 @@
             <button class="primary-button" type="submit">Save draft sale</button>
           </form>
           <div class="table-wrap"><table class="data-table"><thead><tr><th>Sale</th><th>Date</th><th>Customer</th><th>Status</th><th>Total</th><th>Action</th></tr></thead><tbody id="sales-rows"><tr><td colspan="6">No sales loaded.</td></tr></tbody></table></div>
+        </section>
+        <section class="module-panel" data-workspace-panel="reports" hidden>
+          <h3>Sales reports</h3>
+          <p class="panel-copy">Filter company sales by date and status, then export the matching records.</p>
+          <form id="report-filter-form" class="record-form report-filter-form">
+            <label for="report-from">From</label><input id="report-from" type="date">
+            <label for="report-to">To</label><input id="report-to" type="date">
+            <label for="report-status">Status</label>
+            <select id="report-status"><option value="">All statuses</option><option value="draft">Draft</option><option value="completed">Completed</option><option value="void">Void</option></select>
+            <button class="primary-button" type="submit">Run report</button>
+            <button id="report-export" class="secondary-button" type="button">Export CSV</button>
+          </form>
+          <p id="report-totals" class="panel-copy">Completed revenue: —</p>
+          <p id="report-limit" class="panel-copy"></p>
+          <div class="table-wrap"><table class="data-table"><thead><tr><th>Sale</th><th>Date</th><th>Customer</th><th>Status</th><th>Total</th><th>Items</th></tr></thead><tbody id="report-rows"><tr><td colspan="6">Run a report to see sales.</td></tr></tbody></table></div>
         </section>
       </section>
       </section>

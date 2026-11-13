@@ -241,3 +241,90 @@ def test_invalid_customer_and_product_fields_do_not_expose_exception_details():
         with application.app_context():
             db.session.remove()
             db.drop_all()
+
+
+
+def test_admin_can_edit_draft_sale_and_report_export_is_company_scoped():
+    application, client = make_client()
+    try:
+        customer = client.post("/api/customers", json={"name": " =Unsafe Customer"}).json["item"]
+        product = client.post("/api/products", json={
+            "sku": "EDIT-1", "name": "Consulting", "unit_price": "25.00", "currency": "TZS",
+        }).json["item"]
+        created = client.post("/api/sales", json={
+            "customer_id": customer["id"], "currency": "TZS", "sale_date": "2026-11-10",
+            "items": [{"product_id": product["id"], "quantity": "2"}],
+        })
+        assert created.status_code == 201
+        sale_id = created.json["item"]["id"]
+
+        updated = client.patch(f"/api/sales/{sale_id}", json={
+            "customer_id": customer["id"], "currency": "TZS", "sale_date": "2026-11-12",
+            "discount_amount": "5.00", "tax_amount": "2.00", "notes": "Revised draft",
+            "items": [{"product_id": product["id"], "quantity": "3"}],
+        })
+        assert updated.status_code == 200
+        assert updated.json["item"]["subtotal"] == "75.00"
+        assert updated.json["item"]["total_amount"] == "72.00"
+        assert updated.json["item"]["notes"] == "Revised draft"
+
+        report = client.get("/api/reports/sales?from=2026-11-11&to=2026-11-13&status=draft")
+        assert report.status_code == 200
+        assert report.json["count"] == 1
+        assert report.json["items"][0]["id"] == sale_id
+        assert report.json["items"][0]["items"][0]["quantity"] == "3.000"
+        assert report.json["completed_totals_by_currency"] == []
+
+        exported = client.get("/api/reports/sales.csv?from=2026-11-11&to=2026-11-13")
+        assert exported.status_code == 200
+        assert exported.mimetype == "text/csv"
+        assert "'=Unsafe Customer" in exported.get_data(as_text=True)
+        assert exported.headers["Cache-Control"] == "no-store"
+    finally:
+        with application.app_context():
+            db.session.remove()
+            db.drop_all()
+
+
+def test_completed_sales_cannot_be_edited_and_viewers_cannot_edit():
+    application, client = make_client()
+    try:
+        customer = client.post("/api/customers", json={"name": "Customer"}).json["item"]
+        product = client.post("/api/products", json={
+            "sku": "LOCK-1", "name": "Product", "unit_price": "10", "currency": "TZS",
+        }).json["item"]
+        sale = client.post("/api/sales", json={
+            "customer_id": customer["id"], "currency": "TZS",
+            "items": [{"product_id": product["id"], "quantity": "1"}],
+        }).json["item"]
+        assert client.post(f"/api/sales/{sale['id']}/complete").status_code == 200
+        response = client.patch(f"/api/sales/{sale['id']}", json={
+            "customer_id": customer["id"], "currency": "TZS",
+            "items": [{"product_id": product["id"], "quantity": "2"}],
+        })
+        assert response.status_code == 409
+    finally:
+        with application.app_context():
+            db.session.remove()
+            db.drop_all()
+
+    viewer_app, viewer = make_client("viewer")
+    try:
+        response = viewer.patch("/api/sales/00000000-0000-0000-0000-000000000001", json={})
+        assert response.status_code == 403
+    finally:
+        with viewer_app.app_context():
+            db.session.remove()
+            db.drop_all()
+
+
+def test_sales_report_rejects_invalid_date_range():
+    application, client = make_client()
+    try:
+        response = client.get("/api/reports/sales?from=2026-12-01&to=2026-11-01")
+        assert response.status_code == 400
+        assert response.json["error"] == "Invalid report filters. Check the dates and selections."
+    finally:
+        with application.app_context():
+            db.session.remove()
+            db.drop_all()

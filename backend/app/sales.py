@@ -1,10 +1,12 @@
 """Company-scoped customer, product, sales, and dashboard APIs."""
 
+import csv
+import io
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from uuid import UUID, uuid4
 
-from flask import Blueprint, g, jsonify, request, session
+from flask import Blueprint, Response, g, jsonify, request, session
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
@@ -410,6 +412,264 @@ def create_sale(user):
         return jsonify({"error": "The sale could not be saved. Refresh and try again."}), 409
 
     return jsonify({"item": result}), 201
+
+
+
+
+def _sale_line_items(sale_id, company_id):
+    rows = db.session.execute(
+        select(SaleItem, Product.name, Product.sku)
+        .join(
+            Product,
+            (Product.id == SaleItem.product_id)
+            & (Product.company_id == SaleItem.company_id),
+        )
+        .where(
+            SaleItem.sale_id == sale_id,
+            SaleItem.company_id == company_id,
+        )
+        .order_by(SaleItem.created_at, SaleItem.id)
+    ).all()
+    return [
+        {
+            "id": str(line.id),
+            "product_id": str(line.product_id),
+            "product_name": line.product_name,
+            "sku": line.sku_snapshot,
+            "quantity": str(line.quantity),
+            "unit_price": str(line.unit_price),
+            "discount_amount": str(line.discount_amount),
+            "line_total": str(line.line_total),
+        }
+        for line, _name, _sku in rows
+    ]
+
+
+def _parse_report_date(value, field):
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{field} must use YYYY-MM-DD format.") from None
+
+
+def _report_sales_query(company_id):
+    query = (
+        select(Sale, Customer.name)
+        .join(
+            Customer,
+            (Customer.id == Sale.customer_id)
+            & (Customer.company_id == Sale.company_id),
+        )
+        .where(Sale.company_id == company_id)
+    )
+    try:
+        start_date = _parse_report_date(request.args.get("from"), "Start date")
+        end_date = _parse_report_date(request.args.get("to"), "End date")
+        if start_date and end_date and start_date > end_date:
+            raise ValueError("Start date must be on or before end date.")
+        if start_date:
+            query = query.where(Sale.sale_date >= start_date)
+        if end_date:
+            query = query.where(Sale.sale_date <= end_date)
+        status = request.args.get("status")
+        if status:
+            if status not in {"draft", "completed", "void"}:
+                raise ValueError("Choose a valid sale status.")
+            query = query.where(Sale.status == status)
+        salesperson = request.args.get("salesperson_user_id")
+        if salesperson:
+            try:
+                salesperson_id = UUID(salesperson)
+            except (ValueError, TypeError):
+                raise ValueError("Salesperson identifier is invalid.") from None
+            query = query.where(Sale.salesperson_user_id == salesperson_id)
+    except ValueError:
+        raise
+    return query
+
+
+@sales_bp.get("/reports/sales")
+@login_required
+@company_permission_required("view_reports")
+def sales_report(_user):
+    company_id = _company_id()
+    try:
+        query = _report_sales_query(company_id)
+    except ValueError:
+        return jsonify({"error": "Invalid report filters. Check the dates and selections."}), 400
+    rows = db.session.execute(
+        query.order_by(Sale.sale_date.desc(), Sale.created_at.desc()).limit(500)
+    ).all()
+    items = []
+    totals = {}
+    for sale, customer_name in rows:
+        items.append(_sale_json(
+            sale, customer_name,
+            _sale_line_items(sale.id, company_id),
+        ))
+        if sale.status == "completed":
+            totals[sale.currency] = totals.get(sale.currency, Decimal("0.00")) + sale.total_amount
+    return jsonify({
+        "items": items,
+        "count": len(items),
+        "limited": len(items) == 500,
+        "completed_totals_by_currency": [
+            {"currency": currency, "amount": str(amount)}
+            for currency, amount in sorted(totals.items())
+        ],
+    })
+
+
+def _csv_safe(value):
+    text = "" if value is None else str(value)
+    if text.lstrip(" \t\r\n").startswith(("=", "+", "-", "@")):
+        return "'" + text
+    return text
+
+
+@sales_bp.get("/reports/sales.csv")
+@login_required
+@company_permission_required("view_reports")
+def export_sales_report(_user):
+    company_id = _company_id()
+    try:
+        query = _report_sales_query(company_id)
+    except ValueError:
+        return jsonify({"error": "Invalid report filters. Check the dates and selections."}), 400
+    rows = db.session.execute(
+        query.order_by(Sale.sale_date.desc(), Sale.created_at.desc()).limit(5000)
+    ).all()
+    output = io.StringIO(newline="")
+    writer = csv.writer(output)
+    writer.writerow([
+        "Sale number", "Sale date", "Customer", "Status", "Currency",
+        "Subtotal", "Discount", "Tax", "Total", "Notes",
+    ])
+    for sale, customer_name in rows:
+        writer.writerow([
+            _csv_safe(sale.sale_number), sale.sale_date.isoformat(),
+            _csv_safe(customer_name), sale.status, sale.currency,
+            str(sale.subtotal), str(sale.discount_amount), str(sale.tax_amount),
+            str(sale.total_amount), _csv_safe(sale.notes),
+        ])
+    return Response(
+        output.getvalue(),
+        mimetype="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": 'attachment; filename="sales-report.csv"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+@sales_bp.patch("/sales/<uuid:sale_id>")
+@login_required
+@company_permission_required("edit_sales")
+def update_draft_sale(_user, sale_id):
+    company_id = _company_id()
+    sale = db.session.scalar(select(Sale).where(
+        Sale.id == sale_id, Sale.company_id == company_id
+    ))
+    if sale is None:
+        return jsonify({"error": "Sale not found."}), 404
+    if sale.status != "draft":
+        return jsonify({"error": "Only draft sales can be edited."}), 409
+    data = _json_object()
+    if data is None:
+        return jsonify({"error": "Send a JSON object."}), 400
+    try:
+        customer_id = UUID(str(data.get("customer_id", "")))
+        customer = db.session.scalar(select(Customer).where(
+            Customer.id == customer_id,
+            Customer.company_id == company_id,
+            Customer.is_active.is_(True),
+        ))
+        if customer is None:
+            raise ValueError("Choose an active customer.")
+        currency = _text(data, "currency", 3, required=True, upper=True)
+        if len(currency) != 3:
+            raise ValueError("Currency must be a 3-letter code.")
+        raw_items = data.get("items")
+        if not isinstance(raw_items, list) or not 1 <= len(raw_items) <= 50:
+            raise ValueError("A sale must contain between 1 and 50 items.")
+        prepared = []
+        subtotal = Decimal("0.00")
+        line_discounts = Decimal("0.00")
+        for raw in raw_items:
+            if not isinstance(raw, dict):
+                raise ValueError("Each sale item must be an object.")
+            product_id = UUID(str(raw.get("product_id", "")))
+            product = db.session.scalar(select(Product).where(
+                Product.id == product_id,
+                Product.company_id == company_id,
+                Product.is_active.is_(True),
+            ))
+            if product is None or product.currency != currency:
+                raise ValueError("Choose an available product in the sale currency.")
+            quantity = _decimal(
+                raw.get("quantity"), "quantity",
+                minimum=Decimal("0.001"), places=MILLI,
+            )
+            gross = (quantity * product.unit_price).quantize(CENT, rounding=ROUND_HALF_UP)
+            discount = _decimal(raw.get("discount_amount", "0"), "item discount")
+            if discount > gross:
+                raise ValueError("An item discount cannot exceed its line amount.")
+            subtotal += gross
+            line_discounts += discount
+            prepared.append((product, quantity, discount, gross - discount))
+        order_discount = _decimal(data.get("discount_amount", "0"), "discount_amount")
+        tax = _decimal(data.get("tax_amount", "0"), "tax_amount")
+        if order_discount > subtotal - line_discounts:
+            raise ValueError("The sale discount is greater than the remaining amount.")
+        total = subtotal - line_discounts - order_discount + tax
+        if total < 0:
+            raise ValueError("The sale total cannot be negative.")
+        sale_date = _parse_report_date(
+            data.get("sale_date") or sale.sale_date.isoformat(), "Sale date"
+        )
+        sale.customer_id = customer.id
+        sale.currency = currency
+        sale.sale_date = sale_date
+        sale.subtotal = subtotal
+        sale.discount_amount = line_discounts + order_discount
+        sale.tax_amount = tax
+        sale.total_amount = total
+        sale.notes = _text(data, "notes", 2000)
+        for old_item in db.session.scalars(select(SaleItem).where(
+            SaleItem.sale_id == sale.id,
+            SaleItem.company_id == company_id,
+        )).all():
+            db.session.delete(old_item)
+        db.session.flush()
+        for product, quantity, discount, line_total in prepared:
+            db.session.add(SaleItem(
+                company_id=company_id,
+                sale_id=sale.id,
+                product_id=product.id,
+                product_name=product.name,
+                sku_snapshot=product.sku,
+                quantity=quantity,
+                unit_price=product.unit_price,
+                discount_amount=discount,
+                line_total=line_total,
+            ))
+        db.session.flush()
+        result = _sale_json(sale, customer.name, [
+            {"product_name": p.name, "sku": p.sku, "quantity": str(q),
+             "unit_price": str(p.unit_price), "discount_amount": str(discount),
+             "line_total": str(line_total)}
+            for p, q, discount, line_total in prepared
+        ])
+        db.session.commit()
+    except (ValueError, TypeError):
+        db.session.rollback()
+        return jsonify({"error": "Invalid input. Check the submitted fields and try again."}), 400
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({"error": "The sale could not be updated. Refresh and try again."}), 409
+    return jsonify({"item": result})
 
 
 @sales_bp.post("/sales/<uuid:sale_id>/complete")
