@@ -47,7 +47,7 @@ jobs:
         run: ruff check .
 
       - name: Check frontend JavaScript syntax
-        run: node --check frontend/auth.js
+        run: node --check frontend/auth.js && node --check frontend/workspace.js
 
       - name: Apply migrations to PostgreSQL
         run: flask --app backend/run.py db upgrade
