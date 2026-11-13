@@ -146,7 +146,12 @@ def change_password(user):
         except VerifyMismatchError:
             pass
         else:
-            return jsonify({"error": "Choose a password different from your current password."}), 400
+            return (
+                jsonify(
+                    {"error": "Choose a password different from your current password."}
+                ),
+                400,
+            )
 
     user.password_hash = password_hasher.hash(new_password)
     user.auth_version += 1
