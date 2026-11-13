@@ -186,35 +186,33 @@ def test_sales_domain_rls_filters_and_rejects_cross_company_writes(postgres_app)
             created_by_user_id=user_b.id,
         )
         db.session.add_all([customer_a, customer_b])
-        db.session.commit()
-
         user_a_id = user_a.id
+        user_b_id = user_b.id
         company_a_id = company_a.id
         company_b_id = company_b.id
-        user_b_id = user_b.id
-        customer_b_id = customer_b.id
-        try:
-            with db.session.begin():
-                db.session.execute(text("SET LOCAL ROLE sales_dash_app"))
-                set_tenant_context(db.session, user_a_id, company_a_id)
-                visible = db.session.scalars(
-                    db.select(Customer.name).order_by(Customer.name)
-                ).all()
-                assert visible == ["Visible Customer"]
+        db.session.commit()
 
-            with db.session.begin():
-                db.session.execute(text("SET LOCAL ROLE sales_dash_app"))
-                set_tenant_context(db.session, user_a_id, company_a_id)
-                db.session.add(
-                    Customer(
-                        company_id=company_b_id,
-                        name="Attempted Cross-Company Insert",
-                        created_by_user_id=user_b_id,
-                    )
+        try:
+            db.session.execute(text("SET LOCAL ROLE sales_dash_app"))
+            set_tenant_context(db.session, user_a_id, company_a_id)
+            visible = db.session.scalars(
+                db.select(Customer.name).order_by(Customer.name)
+            ).all()
+            assert visible == ["Visible Customer"]
+            db.session.commit()
+
+            db.session.execute(text("SET LOCAL ROLE sales_dash_app"))
+            set_tenant_context(db.session, user_a_id, company_a_id)
+            db.session.add(
+                Customer(
+                    company_id=company_b_id,
+                    name="Attempted Cross-Company Insert",
+                    created_by_user_id=user_b_id,
                 )
-                with pytest.raises(DBAPIError):
-                    db.session.flush()
-                db.session.rollback()
+            )
+            with pytest.raises(DBAPIError):
+                db.session.flush()
+            db.session.rollback()
         finally:
             db.session.rollback()
             db.session.execute(
