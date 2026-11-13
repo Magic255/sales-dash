@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
 from sqlalchemy import CheckConstraint, DateTime, ForeignKey, String, Uuid, func
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
 from ..extensions import db
 
@@ -18,7 +18,13 @@ class User(db.Model):
     """A global account that can belong to multiple companies."""
 
     __tablename__ = "users"
-    __table_args__ = (db.UniqueConstraint("email", name="uq_users_email"),)
+    __table_args__ = (
+        db.UniqueConstraint("email", name="uq_users_email"),
+        CheckConstraint(
+            "length(email) > 0 AND email = lower(trim(email))",
+            name="email_normalized",
+        ),
+    )
 
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
     email: Mapped[str] = mapped_column(String(320), nullable=False)
@@ -31,6 +37,10 @@ class User(db.Model):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=utc_now
     )
+
+    @validates("email")
+    def normalize_email(self, _key: str, value: str) -> str:
+        return value.strip().lower()
 
     memberships: Mapped[list["CompanyMembership"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
@@ -45,6 +55,7 @@ class Company(db.Model):
         db.UniqueConstraint("slug", name="uq_companies_slug"),
         CheckConstraint("length(name) > 0", name="name_not_empty"),
         CheckConstraint("length(slug) > 0", name="slug_not_empty"),
+        CheckConstraint("slug = lower(trim(slug))", name="slug_normalized"),
     )
 
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
@@ -57,6 +68,10 @@ class Company(db.Model):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=utc_now
     )
+
+    @validates("slug")
+    def normalize_slug(self, _key: str, value: str) -> str:
+        return value.strip().lower()
 
     memberships: Mapped[list["CompanyMembership"]] = relationship(
         back_populates="company", cascade="all, delete-orphan"
@@ -84,8 +99,8 @@ class CompanyMembership(db.Model):
     user_id: Mapped[UUID] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
     )
-    role: Mapped[str] = mapped_column(String(20), nullable=False, default="viewer")
-    status: Mapped[str] = mapped_column(String(20), nullable=False, default="active")
+    role: Mapped[str] = mapped_column(String(20), nullable=False, default="viewer", server_default="viewer")
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="active", server_default="active")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
