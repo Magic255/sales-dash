@@ -97,6 +97,7 @@ def login():
         return jsonify({"error": "Email or password is incorrect."}), 401
 
     user_id = user.id
+    auth_version = user.auth_version
     try:
         set_user_context(db.session, user_id)
         db.session.commit()
@@ -106,7 +107,7 @@ def login():
 
     session.clear()
     session["user_id"] = str(user_id)
-    session["auth_version"] = user.auth_version
+    session["auth_version"] = auth_version
     session.permanent = True
     return jsonify({"authenticated": True})
 
