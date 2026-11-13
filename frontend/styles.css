@@ -113,3 +113,19 @@ footer span { color: #51d6bd; padding: 0 6px; }
 .report-filter-form label {
   align-self: end;
 }
+
+
+.pwa-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 28px;
+}
+.pwa-controls [hidden] { display: none; }
+#app-status {
+  margin: 0;
+  color: #91a4bb;
+  font-size: 12px;
+  line-height: 1.5;
+}
