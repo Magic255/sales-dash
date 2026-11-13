@@ -66,6 +66,7 @@ def test_company_permission_is_enforced_by_server():
             assert selected.status_code == 200
             assert viewer_client.get("/api/test/view-dashboard").status_code == 200
             assert viewer_client.get("/api/test/manage-team").status_code == 403
+            assert viewer_client.get("/api/audit-logs").status_code == 403
 
             admin_client = application.test_client()
             admin_client.post("/api/auth/login", json={
@@ -75,6 +76,7 @@ def test_company_permission_is_enforced_by_server():
                 "/api/auth/company", json={"company_id": company_id}
             ).status_code == 200
             assert admin_client.get("/api/test/manage-team").status_code == 200
+            assert admin_client.get("/api/audit-logs").status_code == 200
         finally:
             db.session.remove()
             db.drop_all()
