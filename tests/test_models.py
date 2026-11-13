@@ -86,3 +86,35 @@ def test_email_and_company_slug_are_unique(app):
         )
         with pytest.raises(IntegrityError):
             db.session.commit()
+
+
+def test_email_and_company_slug_are_normalized(app):
+    with app.app_context():
+        user = User(email="  PERSON@Example.COM ")
+        company = Company(name="Example Company", slug="  EXAMPLE-Co  ")
+        db.session.add_all([user, company])
+        db.session.commit()
+
+        assert user.email == "person@example.com"
+        assert company.slug == "example-co"
+
+
+def test_company_rejects_blank_name(app):
+    with app.app_context():
+        db.session.add(Company(name="   ", slug="valid-slug"))
+        with pytest.raises(IntegrityError):
+            db.session.commit()
+
+
+def test_membership_rejects_unsupported_status(app):
+    with app.app_context():
+        user = User(email="person@example.com")
+        company = Company(name="Example Company", slug="example-company")
+        db.session.add_all([user, company])
+        db.session.flush()
+        db.session.add(
+            CompanyMembership(company=company, user=user, role="viewer", status="deleted")
+        )
+
+        with pytest.raises(IntegrityError):
+            db.session.commit()
