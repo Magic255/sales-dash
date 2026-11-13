@@ -2,6 +2,7 @@ import os
 
 from flask import Flask, jsonify, send_from_directory
 
+from . import models  # noqa: F401 - register model metadata for Alembic
 from .config import Config
 from .extensions import db, migrate
 
