@@ -277,7 +277,9 @@ class Sale(db.Model):
         String(20), nullable=False, default="draft", server_default="draft"
     )
     sale_date: Mapped[date] = mapped_column(db.Date, nullable=False)
-    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="TZS", server_default="TZS")
+    currency: Mapped[str] = mapped_column(
+        String(3), nullable=False, default="TZS", server_default="TZS"
+    )
     subtotal: Mapped[Decimal] = mapped_column(
         db.Numeric(14, 2), nullable=False, default=0, server_default="0"
     )
@@ -334,7 +336,9 @@ class SaleItem(db.Model):
     sku_snapshot: Mapped[str] = mapped_column(String(64), nullable=False)
     quantity: Mapped[Decimal] = mapped_column(db.Numeric(12, 3), nullable=False)
     unit_price: Mapped[Decimal] = mapped_column(db.Numeric(12, 2), nullable=False)
-    discount_amount: Mapped[Decimal] = mapped_column(db.Numeric(14, 2), nullable=False, default=0, server_default="0")
+    discount_amount: Mapped[Decimal] = mapped_column(
+        db.Numeric(14, 2), nullable=False, default=0, server_default="0"
+    )
     line_total: Mapped[Decimal] = mapped_column(db.Numeric(14, 2), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
