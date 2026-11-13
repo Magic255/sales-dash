@@ -138,9 +138,9 @@ def create_customer(user):
         db.session.flush()
         result = _customer_json(item)
         db.session.commit()
-    except ValueError as error:
+    except ValueError:
         db.session.rollback()
-        return jsonify({"error": str(error)}), 400
+        return jsonify({"error": "Invalid input. Check the submitted fields and try again."}), 400
     except IntegrityError:
         db.session.rollback()
         return jsonify({"error": "A customer with that email already exists."}), 409
@@ -178,9 +178,9 @@ def update_customer(_user, customer_id):
         db.session.flush()
         result = _customer_json(item)
         db.session.commit()
-    except ValueError as error:
+    except ValueError:
         db.session.rollback()
-        return jsonify({"error": str(error)}), 400
+        return jsonify({"error": "Invalid input. Check the submitted fields and try again."}), 400
     except IntegrityError:
         db.session.rollback()
         return jsonify({"error": "A customer with that email already exists."}), 409
@@ -226,9 +226,9 @@ def create_product(user):
         db.session.flush()
         result = _product_json(item)
         db.session.commit()
-    except ValueError as error:
+    except ValueError:
         db.session.rollback()
-        return jsonify({"error": str(error)}), 400
+        return jsonify({"error": "Invalid input. Check the submitted fields and try again."}), 400
     except IntegrityError:
         db.session.rollback()
         return jsonify({"error": "That SKU already exists in this company."}), 409
@@ -269,9 +269,9 @@ def update_product(_user, product_id):
         db.session.flush()
         result = _product_json(item)
         db.session.commit()
-    except ValueError as error:
+    except ValueError:
         db.session.rollback()
-        return jsonify({"error": str(error)}), 400
+        return jsonify({"error": "Invalid input. Check the submitted fields and try again."}), 400
     except IntegrityError:
         db.session.rollback()
         return jsonify({"error": "That SKU already exists in this company."}), 409
@@ -310,7 +310,10 @@ def create_sale(user):
         return jsonify({"error": "Send a JSON object."}), 400
     company_id = _company_id()
     try:
-        customer_id = UUID(str(data.get("customer_id", "")))
+        try:
+            customer_id = UUID(str(data.get("customer_id", "")))
+        except (ValueError, TypeError):
+            raise ValueError("Invalid customer identifier.") from None
         customer = db.session.scalar(select(Customer).where(
             Customer.id == customer_id, Customer.company_id == company_id,
             Customer.is_active.is_(True),
@@ -399,9 +402,9 @@ def create_sale(user):
              for p, q, price, discount, line_total in prepared],
         )
         db.session.commit()
-    except ValueError as error:
+    except ValueError:
         db.session.rollback()
-        return jsonify({"error": str(error)}), 400
+        return jsonify({"error": "Invalid input. Check the submitted fields and try again."}), 400
     except IntegrityError:
         db.session.rollback()
         return jsonify({"error": "The sale could not be saved. Refresh and try again."}), 409
