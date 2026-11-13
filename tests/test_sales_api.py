@@ -1,4 +1,5 @@
 from argon2 import PasswordHasher
+from decimal import Decimal
 
 from app import create_app
 from app.extensions import db
@@ -115,7 +116,7 @@ def test_salesperson_can_create_customer_and_complete_own_sale_but_not_products(
             company = db.session.query(Company).filter_by(slug="sales-api-salesperson").one()
             product = Product(
                 company_id=company.id, created_by_user_id=user.id,
-                sku="SELLER-ITEM", name="Seller item", unit_price="20.00", currency="TZS",
+                sku="SELLER-ITEM", name="Seller item", unit_price=Decimal("20.00"), currency="TZS",
             )
             db.session.add(product)
             db.session.commit()
