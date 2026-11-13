@@ -1,11 +1,43 @@
 import os
 
 import pytest
+from argon2 import PasswordHasher
 from sqlalchemy import select, text
 
 from app import create_app
 from app.extensions import db
-from app.models import AuditLog
+from app.models import AuditLog, Company, CompanyMembership, User
+
+
+@pytest.fixture()
+def app():
+    application = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "audit-test-secret",
+            "SQLALCHEMY_DATABASE_URI": "sqlite://",
+            "WTF_CSRF_ENABLED": False,
+            "RATELIMIT_ENABLED": False,
+        }
+    )
+    with application.app_context():
+        db.create_all()
+        user = User(
+            email="admin@example.test",
+            password_hash=PasswordHasher().hash("a-very-strong-test-password"),
+        )
+        company = Company(name="Audit Test", slug="audit-test")
+        db.session.add_all([user, company])
+        db.session.flush()
+        db.session.add(
+            CompanyMembership(
+                user_id=user.id, company_id=company.id, role="admin", status="active"
+            )
+        )
+        db.session.commit()
+        yield application
+        db.session.remove()
+        db.drop_all()
 
 
 def test_authenticated_security_actions_are_audited_and_company_scoped(app):
