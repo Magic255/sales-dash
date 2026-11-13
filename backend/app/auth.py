@@ -9,6 +9,7 @@ from flask import Blueprint, jsonify, request, session
 from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 
+from . import limiter
 from .extensions import db
 from .models import CompanyMembership
 from .tenancy import TenantAccessDenied, find_login_user, set_tenant_context, set_user_context
@@ -49,6 +50,7 @@ def csrf_token():
 
 
 @auth_bp.post("/login")
+@limiter.limit("5 per minute; 20 per hour")
 def login():
     data = request.get_json(silent=True) or {}
     email = str(data.get("email", "")).strip().lower()
