@@ -91,6 +91,7 @@ class CompanyMembership(db.Model):
             "status IN ('active', 'invited', 'suspended')",
             name="status_is_supported",
         ),
+        db.Index("ix_company_memberships_user_id", "user_id"),
     )
 
     company_id: Mapped[UUID] = mapped_column(
