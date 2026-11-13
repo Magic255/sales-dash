@@ -1,7 +1,10 @@
+import os
 from logging.config import fileConfig
 
 from alembic import context
 from flask import current_app
+from sqlalchemy import create_engine
+from sqlalchemy.pool import NullPool
 
 config = context.config
 
@@ -10,9 +13,16 @@ if config.config_file_name is not None:
 
 db = current_app.extensions["migrate"].db
 target_metadata = db.metadata
+_admin_engine = None
 
 
 def get_engine():
+    """Use a dedicated admin connection for migrations, never the web runtime role."""
+    global _admin_engine
+    admin_url = os.environ.get("ADMIN_DATABASE_URL")
+    if admin_url:
+        _admin_engine = create_engine(admin_url, poolclass=NullPool, pool_pre_ping=True)
+        return _admin_engine
     return db.engine
 
 
@@ -46,3 +56,5 @@ if context.is_offline_mode():
     run_migrations_offline()
 else:
     run_migrations_online()
+    if _admin_engine is not None:
+        _admin_engine.dispose()
