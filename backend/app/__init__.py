@@ -84,4 +84,21 @@ def create_app(test_config=None):
     def index():
         return send_from_directory(app.static_folder, "index.html")
 
+    @app.get("/manifest.webmanifest")
+    def pwa_manifest():
+        response = send_from_directory(
+            app.static_folder, "manifest.webmanifest", mimetype="application/manifest+json"
+        )
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+    @app.get("/service-worker.js")
+    def service_worker():
+        response = send_from_directory(
+            app.static_folder, "service-worker.js", mimetype="application/javascript"
+        )
+        response.headers["Cache-Control"] = "no-cache"
+        response.headers["Service-Worker-Allowed"] = "/"
+        return response
+
     return app
