@@ -65,7 +65,11 @@ def login():
         return jsonify({"error": "Enter your email and password."}), 400
 
     user = find_login_user(db.session, email)
-    stored_hash = user.password_hash if user and user.is_active and user.password_hash else _DUMMY_PASSWORD_HASH
+    stored_hash = (
+        user.password_hash
+        if user and user.is_active and user.password_hash
+        else _DUMMY_PASSWORD_HASH
+    )
     try:
         password_valid = password_hasher.verify(stored_hash, password)
     except (VerifyMismatchError, VerificationError, InvalidHashError):
@@ -157,12 +161,7 @@ def select_company(user):
     }
     db.session.commit()
     session["company_id"] = selected_company["id"]
-    return jsonify(
-        {
-            "selected_company": selected_company,
-            }
-        }
-    )
+    return jsonify({"selected_company": selected_company})
 
 
 @auth_bp.post("/logout")
