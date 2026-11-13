@@ -1,6 +1,6 @@
 """Core identity and multi-company membership models."""
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone\nfrom decimal import Decimal
 from uuid import UUID, uuid4
 
 from sqlalchemy import CheckConstraint, DateTime, ForeignKey, String, Uuid, func
@@ -205,7 +205,7 @@ class Product(db.Model):
     sku: Mapped[str] = mapped_column(String(64), nullable=False)
     name: Mapped[str] = mapped_column(String(160), nullable=False)
     description: Mapped[str | None] = mapped_column(String(2000))
-    unit_price: Mapped[object] = mapped_column(db.Numeric(12, 2), nullable=False)
+    unit_price: Mapped[Decimal] = mapped_column(db.Numeric(12, 2), nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="TZS", server_default="TZS")
     is_active: Mapped[bool] = mapped_column(nullable=False, default=True, server_default="true")
     created_by_user_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
@@ -266,12 +266,12 @@ class Sale(db.Model):
     salesperson_user_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
     created_by_user_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="draft", server_default="draft")
-    sale_date: Mapped[object] = mapped_column(db.Date, nullable=False)
+    sale_date: Mapped[date] = mapped_column(db.Date, nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="TZS", server_default="TZS")
-    subtotal: Mapped[object] = mapped_column(db.Numeric(14, 2), nullable=False, default=0, server_default="0")
-    discount_amount: Mapped[object] = mapped_column(db.Numeric(14, 2), nullable=False, default=0, server_default="0")
-    tax_amount: Mapped[object] = mapped_column(db.Numeric(14, 2), nullable=False, default=0, server_default="0")
-    total_amount: Mapped[object] = mapped_column(db.Numeric(14, 2), nullable=False, default=0, server_default="0")
+    subtotal: Mapped[Decimal] = mapped_column(db.Numeric(14, 2), nullable=False, default=0, server_default="0")
+    discount_amount: Mapped[Decimal] = mapped_column(db.Numeric(14, 2), nullable=False, default=0, server_default="0")
+    tax_amount: Mapped[Decimal] = mapped_column(db.Numeric(14, 2), nullable=False, default=0, server_default="0")
+    total_amount: Mapped[Decimal] = mapped_column(db.Numeric(14, 2), nullable=False, default=0, server_default="0")
     notes: Mapped[str | None] = mapped_column(String(2000))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -314,7 +314,7 @@ class SaleItem(db.Model):
     product_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
     product_name: Mapped[str] = mapped_column(String(160), nullable=False)
     sku_snapshot: Mapped[str] = mapped_column(String(64), nullable=False)
-    quantity: Mapped[object] = mapped_column(db.Numeric(12, 3), nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(db.Numeric(12, 3), nullable=False)
     unit_price: Mapped[object] = mapped_column(db.Numeric(12, 2), nullable=False)
     discount_amount: Mapped[object] = mapped_column(db.Numeric(14, 2), nullable=False, default=0, server_default="0")
     line_total: Mapped[object] = mapped_column(db.Numeric(14, 2), nullable=False)
