@@ -135,13 +135,23 @@ def change_password(user):
     ):
         return (
             jsonify(
-                {"error": "Enter your current password and a new password of at least 12 characters."}
+                {
+                    "error": (
+                        "Enter your current password and a new password of at least "
+                        "12 characters."
+                    )
+                }
             ),
             400,
         )
 
     if not user.password_hash:
-        return jsonify({"error": "This account must complete password setup before changing its password."}), 403
+        return (
+            jsonify(
+                {"error": "Complete password setup before changing your password."}
+            ),
+            403,
+        )
 
     try:
         password_hasher.verify(user.password_hash, current_password)
