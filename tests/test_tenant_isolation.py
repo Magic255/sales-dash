@@ -1,3 +1,4 @@
+import os
 from uuid import uuid4
 
 import pytest
@@ -15,11 +16,12 @@ def postgres_app():
         {
             "TESTING": True,
             "SECRET_KEY": "test-only-secret",
-            "SQLALCHEMY_DATABASE_URI": __import__("os").environ.get("DATABASE_URL", "sqlite://"),
+            "SQLALCHEMY_DATABASE_URI": os.environ.get("DATABASE_URL", "sqlite://"),
         }
     )
-    if db.engine.dialect.name != "postgresql":
-        pytest.skip("PostgreSQL row-level security tests require PostgreSQL.")
+    with app.app_context():
+        if db.engine.dialect.name != "postgresql":
+            pytest.skip("PostgreSQL row-level security tests require PostgreSQL.")
     return app
 
 
