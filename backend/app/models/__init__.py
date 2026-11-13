@@ -148,7 +148,7 @@ class Customer(db.Model):
         db.ForeignKeyConstraint(
             ["company_id", "created_by_user_id"],
             ["company_memberships.company_id", "company_memberships.user_id"],
-            ondelete="RESTRICT",
+            ondelete="NO ACTION",
             name="fk_customers_creator_membership",
         ),
         CheckConstraint("length(trim(name)) > 0", name="name_not_empty"),
@@ -188,7 +188,7 @@ class Product(db.Model):
         db.ForeignKeyConstraint(
             ["company_id", "created_by_user_id"],
             ["company_memberships.company_id", "company_memberships.user_id"],
-            ondelete="RESTRICT",
+            ondelete="NO ACTION",
             name="fk_products_creator_membership",
         ),
         CheckConstraint("length(trim(name)) > 0", name="name_not_empty"),
@@ -227,19 +227,19 @@ class Sale(db.Model):
         db.ForeignKeyConstraint(
             ["company_id", "customer_id"],
             ["customers.company_id", "customers.id"],
-            ondelete="RESTRICT",
+            ondelete="NO ACTION",
             name="fk_sales_customer_same_company",
         ),
         db.ForeignKeyConstraint(
             ["company_id", "salesperson_user_id"],
             ["company_memberships.company_id", "company_memberships.user_id"],
-            ondelete="RESTRICT",
+            ondelete="NO ACTION",
             name="fk_sales_salesperson_membership",
         ),
         db.ForeignKeyConstraint(
             ["company_id", "created_by_user_id"],
             ["company_memberships.company_id", "company_memberships.user_id"],
-            ondelete="RESTRICT",
+            ondelete="NO ACTION",
             name="fk_sales_creator_membership",
         ),
         CheckConstraint("length(trim(sale_number)) > 0", name="sale_number_not_empty"),
@@ -295,7 +295,7 @@ class SaleItem(db.Model):
         db.ForeignKeyConstraint(
             ["company_id", "product_id"],
             ["products.company_id", "products.id"],
-            ondelete="RESTRICT",
+            ondelete="NO ACTION",
             name="fk_sale_items_product_same_company",
         ),
         CheckConstraint("length(trim(product_name)) > 0", name="product_name_not_empty"),
