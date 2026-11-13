@@ -44,9 +44,11 @@ def create_app(test_config=None):
     csrf.init_app(app)
     limiter.init_app(app)
 
+    from .audit import audit_bp
     from .auth import auth_bp
 
     app.register_blueprint(auth_bp)
+    app.register_blueprint(audit_bp)
     register_commands(app)
 
     @app.errorhandler(CSRFError)

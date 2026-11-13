@@ -105,6 +105,9 @@ def login():
     auth_version = user.auth_version
     try:
         set_user_context(db.session, user_id)
+        from .audit import record_audit_event
+
+        record_audit_event(db.session, user_id, "login_succeeded")
         db.session.commit()
     except TenantAccessDenied:
         db.session.rollback()
@@ -173,6 +176,9 @@ def change_password(user):
 
     user.password_hash = password_hasher.hash(new_password)
     user.auth_version += 1
+    from .audit import record_audit_event
+
+    record_audit_event(db.session, user.id, "password_changed")
     db.session.commit()
     session.clear()
     return jsonify({"password_changed": True, "authenticated": False})
@@ -245,6 +251,9 @@ def select_company(user):
         "name": membership.company.name,
         "role": membership.role,
     }
+    from .audit import record_audit_event
+
+    record_audit_event(db.session, user.id, "company_selected", company_id=company_id)
     db.session.commit()
     session["company_id"] = selected_company["id"]
     return jsonify({"selected_company": selected_company})
@@ -252,5 +261,11 @@ def select_company(user):
 
 @auth_bp.post("/logout")
 def logout():
+    user = _current_user()
+    if user is not None:
+        from .audit import record_audit_event
+
+        record_audit_event(db.session, user.id, "logout")
+        db.session.commit()
     session.clear()
     return jsonify({"authenticated": False})

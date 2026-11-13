@@ -113,3 +113,26 @@ class CompanyMembership(db.Model):
 
     company: Mapped[Company] = relationship(back_populates="memberships")
     user: Mapped[User] = relationship(back_populates="memberships")
+
+
+class AuditLog(db.Model):
+    """Minimal security events, scoped by company and never edited by the app."""
+
+    __tablename__ = "audit_logs"
+    __table_args__ = (
+        db.CheckConstraint(
+            "event_type IN ('login_succeeded', 'password_changed', "
+            "'company_selected', 'logout')",
+            name="event_type_is_supported",
+        ),
+        db.Index("ix_audit_logs_company_time", "company_id", "occurred_at"),
+        db.Index("ix_audit_logs_actor_time", "actor_user_id", "occurred_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    actor_user_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
+    company_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
