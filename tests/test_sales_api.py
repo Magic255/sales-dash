@@ -2,7 +2,7 @@ from argon2 import PasswordHasher
 
 from app import create_app
 from app.extensions import db
-from app.models import Company, CompanyMembership, User
+from app.models import Company, CompanyMembership, Product, User
 
 
 def make_client(role="admin"):
@@ -91,7 +91,7 @@ def test_admin_can_create_customer_product_and_complete_sale():
         assert summary.status_code == 200
         assert summary.json == {
             "customers": 1, "products": 1,
-            "completed_sales": 1, "revenue": "203.00",
+            "completed_sales": 1, "revenue_by_currency": [{"currency": "TZS", "amount": "203.00"}],
         }
         assert len(client.get("/api/sales").json["items"]) == 1
     finally:
@@ -110,6 +110,25 @@ def test_salesperson_can_create_customer_and_complete_own_sale_but_not_products(
 
         customer = client.post("/api/customers", json={"name": "Customer One"})
         assert customer.status_code == 201
+        with application.app_context():
+            user = db.session.query(User).filter_by(email="salesperson@example.test").one()
+            company = db.session.query(Company).filter_by(slug="sales-api-salesperson").one()
+            product = Product(
+                company_id=company.id, created_by_user_id=user.id,
+                sku="SELLER-ITEM", name="Seller item", unit_price="20.00", currency="TZS",
+            )
+            db.session.add(product)
+            db.session.commit()
+            product_id = str(product.id)
+        sale = client.post("/api/sales", json={
+            "customer_id": customer.json["item"]["id"],
+            "currency": "TZS",
+            "items": [{"product_id": product_id, "quantity": "1"}],
+        })
+        assert sale.status_code == 201
+        completed = client.post(f"/api/sales/{sale.json['item']['id']}/complete")
+        assert completed.status_code == 200
+        assert completed.json["item"]["status"] == "completed"
     finally:
         with application.app_context():
             db.session.remove()
