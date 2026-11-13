@@ -38,7 +38,11 @@ def _current_user():
     if not user_id:
         return None
     try:
-        return set_user_context(db.session, UUID(user_id))
+        user = set_user_context(db.session, UUID(user_id))
+        if session.get("auth_version") != user.auth_version:
+            session.clear()
+            return None
+        return user
     except (TenantAccessDenied, ValueError, TypeError):
         session.clear()
         return None
@@ -102,6 +106,7 @@ def login():
 
     session.clear()
     session["user_id"] = str(user_id)
+    session["auth_version"] = user.auth_version
     session.permanent = True
     return jsonify({"authenticated": True})
 
