@@ -1,6 +1,7 @@
 """Core identity and multi-company membership models."""
 
-from datetime import date, datetime, timezone\nfrom decimal import Decimal
+from datetime import date, datetime, timezone
+from decimal import Decimal
 from uuid import UUID, uuid4
 
 from sqlalchemy import CheckConstraint, DateTime, ForeignKey, String, Uuid, func
