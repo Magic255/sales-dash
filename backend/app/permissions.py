@@ -6,9 +6,8 @@ the signed session, but access is revalidated against the database on every requ
 import functools
 import uuid
 
-from . import extensions, tenancy
-
 import flask
+from . import extensions, tenancy
 
 
 ROLE_PERMISSIONS = {
