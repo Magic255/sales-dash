@@ -1,6 +1,7 @@
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import event
 from sqlalchemy.exc import IntegrityError
 
 from app import create_app
@@ -18,6 +19,12 @@ def app():
         }
     )
     with application.app_context():
+        @event.listens_for(db.engine, "connect")
+        def enable_sqlite_foreign_keys(connection, _record):
+            cursor = connection.cursor()
+            cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.close()
+
         db.create_all()
         yield application
         db.session.remove()
