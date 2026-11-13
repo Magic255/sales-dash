@@ -1,5 +1,6 @@
-from argon2 import PasswordHasher
 from decimal import Decimal
+
+from argon2 import PasswordHasher
 
 from app import create_app
 from app.extensions import db
