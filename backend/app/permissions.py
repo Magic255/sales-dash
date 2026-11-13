@@ -17,6 +17,7 @@ ROLE_PERMISSIONS = {
     "admin": frozenset({
         "view_dashboard", "view_reports", "create_sales", "edit_sales",
         "delete_sales", "manage_products", "manage_team", "manage_company_settings",
+        "view_audit_logs",
     }),
     "manager": frozenset({
         "view_dashboard", "view_reports", "create_sales", "edit_sales",
