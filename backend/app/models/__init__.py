@@ -99,8 +99,12 @@ class CompanyMembership(db.Model):
     user_id: Mapped[UUID] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
     )
-    role: Mapped[str] = mapped_column(String(20), nullable=False, default="viewer", server_default="viewer")
-    status: Mapped[str] = mapped_column(String(20), nullable=False, default="active", server_default="active")
+    role: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="viewer", server_default="viewer"
+    )
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="active", server_default="active"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
