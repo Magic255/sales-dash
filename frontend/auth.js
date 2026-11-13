@@ -91,6 +91,9 @@ loginForm.addEventListener("submit", async (event) => {
         password: document.querySelector("#password").value,
       }),
     });
+    // Login rotates the session; fetch a fresh CSRF token for the new session.
+    csrfToken = "";
+    await refreshCsrfToken();
     loginForm.reset();
     await loadCurrentUser();
   } catch (error) {
