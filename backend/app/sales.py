@@ -135,6 +135,8 @@ def create_customer(user):
             notes=_text(data, "notes", 2000),
         )
         db.session.add(item)
+        db.session.flush()
+        result = _customer_json(item)
         db.session.commit()
     except ValueError as error:
         db.session.rollback()
@@ -142,7 +144,7 @@ def create_customer(user):
     except IntegrityError:
         db.session.rollback()
         return jsonify({"error": "A customer with that email already exists."}), 409
-    return jsonify({"item": _customer_json(item)}), 201
+    return jsonify({"item": result}), 201
 
 
 @sales_bp.patch("/customers/<uuid:customer_id>")
@@ -171,6 +173,8 @@ def update_customer(_user, customer_id):
             if not isinstance(data["is_active"], bool):
                 raise ValueError("is_active must be true or false.")
             item.is_active = data["is_active"]
+        db.session.flush()
+        result = _customer_json(item)
         db.session.commit()
     except ValueError as error:
         db.session.rollback()
@@ -178,7 +182,7 @@ def update_customer(_user, customer_id):
     except IntegrityError:
         db.session.rollback()
         return jsonify({"error": "A customer with that email already exists."}), 409
-    return jsonify({"item": _customer_json(item)})
+    return jsonify({"item": result})
 
 
 @sales_bp.get("/products")
@@ -215,6 +219,8 @@ def create_product(user):
         if len(item.currency) != 3:
             raise ValueError("Currency must be a 3-letter code, such as TZS.")
         db.session.add(item)
+        db.session.flush()
+        result = _product_json(item)
         db.session.commit()
     except ValueError as error:
         db.session.rollback()
@@ -222,7 +228,7 @@ def create_product(user):
     except IntegrityError:
         db.session.rollback()
         return jsonify({"error": "That SKU already exists in this company."}), 409
-    return jsonify({"item": _product_json(item)}), 201
+    return jsonify({"item": result}), 201
 
 
 @sales_bp.patch("/products/<uuid:product_id>")
@@ -254,6 +260,8 @@ def update_product(_user, product_id):
             if not isinstance(data["is_active"], bool):
                 raise ValueError("is_active must be true or false.")
             item.is_active = data["is_active"]
+        db.session.flush()
+        result = _product_json(item)
         db.session.commit()
     except ValueError as error:
         db.session.rollback()
@@ -261,7 +269,7 @@ def update_product(_user, product_id):
     except IntegrityError:
         db.session.rollback()
         return jsonify({"error": "That SKU already exists in this company."}), 409
-    return jsonify({"item": _product_json(item)})
+    return jsonify({"item": result})
 
 
 @sales_bp.get("/sales")
@@ -374,6 +382,14 @@ def create_sale(user):
                 quantity=quantity, unit_price=unit_price,
                 discount_amount=discount, line_total=line_total,
             ))
+        db.session.flush()
+        result = _sale_json(
+            sale, customer.name,
+            [{"product_name": p.name, "sku": p.sku, "quantity": str(q),
+              "unit_price": str(price), "discount_amount": str(discount),
+              "line_total": str(line_total)}
+             for p, q, price, discount, line_total in prepared],
+        )
         db.session.commit()
     except ValueError as error:
         db.session.rollback()
@@ -382,13 +398,7 @@ def create_sale(user):
         db.session.rollback()
         return jsonify({"error": "The sale could not be saved. Refresh and try again."}), 409
 
-    return jsonify({"item": _sale_json(
-        sale, customer.name,
-        [{"product_name": p.name, "sku": p.sku, "quantity": str(q),
-          "unit_price": str(price), "discount_amount": str(discount),
-          "line_total": str(line_total)}
-         for p, q, price, discount, line_total in prepared],
-    )}), 201
+    return jsonify({"item": result}), 201
 
 
 @sales_bp.post("/sales/<uuid:sale_id>/complete")
@@ -405,8 +415,10 @@ def complete_sale(user, sale_id):
     if g.company_membership.role not in {"admin", "manager"} and item.created_by_user_id != user.id:
         return jsonify({"error": "You can only complete sales you created."}), 403
     item.status = "completed"
+    db.session.flush()
+    result = _sale_json(item)
     db.session.commit()
-    return jsonify({"item": _sale_json(item)})
+    return jsonify({"item": result})
 
 
 @sales_bp.post("/sales/<uuid:sale_id>/void")
@@ -421,8 +433,10 @@ def void_sale(_user, sale_id):
     if item.status == "void":
         return jsonify({"error": "This sale is already void."}), 409
     item.status = "void"
+    db.session.flush()
+    result = _sale_json(item)
     db.session.commit()
-    return jsonify({"item": _sale_json(item)})
+    return jsonify({"item": result})
 
 
 @sales_bp.get("/dashboard/summary")
