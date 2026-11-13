@@ -180,9 +180,11 @@ async function loadWorkspace() {
     renderProducts();
     fillSaleChoices();
     await loadSales(generation);
-    workspaceMessage("Company data is up to date.");
+    if (generation === workspaceGeneration) {
+      workspaceMessage("Company data is up to date.");
+    }
   } catch (error) {
-    workspaceMessage(error.message);
+    if (generation === workspaceGeneration) workspaceMessage(error.message);
   }
 }
 
@@ -195,6 +197,16 @@ document.addEventListener("salesdash:company-selected", (event) => {
   workspaceGeneration += 1;
   workspaceRole = event.detail.role;
   workspaceUserId = event.detail.userId;
+  customers = [];
+  products = [];
+  renderCustomers();
+  renderProducts();
+  fillSaleChoices();
+  emptyRow(document.querySelector("#sales-rows"), 6, "Loading sales…");
+  document.querySelector("#metric-customers").textContent = "—";
+  document.querySelector("#metric-products").textContent = "—";
+  document.querySelector("#metric-sales").textContent = "—";
+  document.querySelector("#metric-revenue").textContent = "—";
   workspace.hidden = false;
   document.querySelector("#customer-form").hidden = workspaceRole === "viewer";
   document.querySelector("#product-form").hidden = !["admin", "manager"].includes(workspaceRole);
@@ -204,6 +216,8 @@ document.addEventListener("salesdash:company-selected", (event) => {
 
 document.addEventListener("salesdash:signed-out", () => {
   workspaceGeneration += 1;
+  customers = [];
+  products = [];
   workspace.hidden = true;
 });
 
