@@ -1,52 +1,74 @@
-"""Helpers for establishing a verified company context inside a transaction.
-
-The user_id passed here must come from a future server-verified login session,
-never directly from an untrusted request parameter.
-"""
+"""Fail-closed helpers for database-backed user and tenant context."""
 
 from uuid import UUID
 
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
+
+from .models import Company, CompanyMembership, User
 
 
 class TenantAccessDenied(PermissionError):
     """Raised when a user does not have an active membership in a company."""
 
 
-def set_tenant_context(session: Session, user_id: UUID, company_id: UUID) -> None:
-    """Set transaction-local identity and company context after membership verification.
+def activate_app_role(session: Session) -> None:
+    """Switch the current PostgreSQL transaction to the restricted application role."""
+    if session.get_bind().dialect.name == "postgresql":
+        session.execute(text("SET LOCAL ROLE sales_dash_app"))
 
-    PostgreSQL RLS policies read these settings. The settings are transaction-local,
-    so they disappear automatically when the transaction commits or rolls back.
-    """
-    session.execute(text("SELECT set_config('app.current_company_id', '', true)"))
-    session.execute(
-        text("SELECT set_config('app.current_user_id', :user_id, true)"),
-        {"user_id": str(user_id)},
+
+def find_login_user(session: Session, email: str) -> User | None:
+    """Look up exactly one normalized email using the dedicated RLS login policy."""
+    activate_app_role(session)
+    if session.get_bind().dialect.name == "postgresql":
+        session.execute(
+            text("SELECT set_config('app.login_email', :email, true)"),
+            {"email": email.strip().lower()},
+        )
+    return session.scalar(select(User).where(User.email == email.strip().lower()))
+
+
+def set_user_context(session: Session, user_id: UUID) -> User:
+    """Set a verified global user identity for this transaction."""
+    activate_app_role(session)
+    if session.get_bind().dialect.name == "postgresql":
+        session.execute(text("SELECT set_config('app.current_company_id', '', true)"))
+        session.execute(text("SELECT set_config('app.login_email', '', true)"))
+        session.execute(
+            text("SELECT set_config('app.current_user_id', :user_id, true)"),
+            {"user_id": str(user_id)},
+        )
+
+    user = session.scalar(
+        select(User).where(User.id == user_id, User.is_active.is_(True))
     )
+    if user is None:
+        raise TenantAccessDenied("The user account is not active.")
+    return user
 
-    is_active_member = session.execute(
-        text(
-            """
-            SELECT EXISTS (
-                SELECT 1
-                FROM company_memberships AS membership
-                JOIN users AS account ON account.id = membership.user_id
-                WHERE membership.user_id = CAST(:user_id AS uuid)
-                  AND membership.company_id = CAST(:company_id AS uuid)
-                  AND membership.status = 'active'
-                  AND account.is_active = TRUE
-            )
-            """
-        ),
-        {"user_id": str(user_id), "company_id": str(company_id)},
-    ).scalar_one()
 
-    if not is_active_member:
+def set_tenant_context(
+    session: Session, user_id: UUID, company_id: UUID
+) -> CompanyMembership:
+    """Set a selected company only after checking active user and membership."""
+    set_user_context(session, user_id)
+    membership = session.scalar(
+        select(CompanyMembership)
+        .join(Company, Company.id == CompanyMembership.company_id)
+        .where(
+            CompanyMembership.user_id == user_id,
+            CompanyMembership.company_id == company_id,
+            CompanyMembership.status == "active",
+            Company.is_active.is_(True),
+        )
+    )
+    if membership is None:
         raise TenantAccessDenied("No active user membership for the selected company.")
 
-    session.execute(
-        text("SELECT set_config('app.current_company_id', :company_id, true)"),
-        {"company_id": str(company_id)},
-    )
+    if session.get_bind().dialect.name == "postgresql":
+        session.execute(
+            text("SELECT set_config('app.current_company_id', :company_id, true)"),
+            {"company_id": str(company_id)},
+        )
+    return membership
