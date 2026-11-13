@@ -2,11 +2,11 @@ import os
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import text\nfrom sqlalchemy.exc import DBAPIError
 
 from app import create_app
 from app.extensions import db
-from app.models import Company, CompanyMembership, User
+from app.models import Company, CompanyMembership, Customer, User
 from app.tenancy import TenantAccessDenied, set_tenant_context
 
 
@@ -155,5 +155,87 @@ def test_user_cannot_select_a_company_without_active_membership(postgres_app):
             db.session.execute(
                 text("DELETE FROM users WHERE id = :user_id"),
                 {"user_id": str(user_id)},
+            )
+            db.session.commit()
+
+
+def test_sales_domain_rls_filters_and_rejects_cross_company_writes(postgres_app):
+    with postgres_app.app_context():
+        user_a, company_a, company_b = make_identity()
+        user_b = User(email=f"{uuid4()}@example.test")
+        db.session.add(user_b)
+        db.session.flush()
+        db.session.add(
+            CompanyMembership(
+                company_id=company_b.id,
+                user_id=user_b.id,
+                role="admin",
+                status="active",
+            )
+        )
+        db.session.flush()
+
+        customer_a = Customer(
+            company_id=company_a.id,
+            name="Visible Customer",
+            created_by_user_id=user_a.id,
+        )
+        customer_b = Customer(
+            company_id=company_b.id,
+            name="Hidden Customer",
+            created_by_user_id=user_b.id,
+        )
+        db.session.add_all([customer_a, customer_b])
+        db.session.commit()
+
+        user_a_id = user_a.id
+        company_a_id = company_a.id
+        company_b_id = company_b.id
+        user_b_id = user_b.id
+        customer_b_id = customer_b.id
+        try:
+            with db.session.begin():
+                db.session.execute(text("SET LOCAL ROLE sales_dash_app"))
+                set_tenant_context(db.session, user_a_id, company_a_id)
+                visible = db.session.scalars(
+                    db.select(Customer.name).order_by(Customer.name)
+                ).all()
+                assert visible == ["Visible Customer"]
+
+            with db.session.begin():
+                db.session.execute(text("SET LOCAL ROLE sales_dash_app"))
+                set_tenant_context(db.session, user_a_id, company_a_id)
+                db.session.add(
+                    Customer(
+                        company_id=company_b_id,
+                        name="Attempted Cross-Company Insert",
+                        created_by_user_id=user_b_id,
+                    )
+                )
+                with pytest.raises(DBAPIError):
+                    db.session.flush()
+                db.session.rollback()
+        finally:
+            db.session.rollback()
+            db.session.execute(
+                text(
+                    "DELETE FROM customers WHERE company_id IN "
+                    "(CAST(:company_a AS uuid), CAST(:company_b AS uuid))"
+                ),
+                {"company_a": str(company_a_id), "company_b": str(company_b_id)},
+            )
+            db.session.execute(
+                text(
+                    "DELETE FROM companies WHERE id IN "
+                    "(CAST(:company_a AS uuid), CAST(:company_b AS uuid))"
+                ),
+                {"company_a": str(company_a_id), "company_b": str(company_b_id)},
+            )
+            db.session.execute(
+                text(
+                    "DELETE FROM users WHERE id IN "
+                    "(CAST(:user_a AS uuid), CAST(:user_b AS uuid))"
+                ),
+                {"user_a": str(user_a_id), "user_b": str(user_b_id)},
             )
             db.session.commit()
