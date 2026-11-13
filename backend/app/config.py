@@ -17,10 +17,7 @@ class Config:
     # The web app uses a non-owner, non-superuser login. Admin URL is CLI/migration only.
     SQLALCHEMY_DATABASE_URI = os.environ.get(
         "APP_DATABASE_URL",
-        os.environ.get(
-            "DATABASE_URL",
-            "postgresql+psycopg://sales_dash_runtime:change-me@127.0.0.1:5432/sales_dash",
-        ),
+        "postgresql+psycopg://sales_dash_runtime:change-me@127.0.0.1:5432/sales_dash",
     )
     ADMIN_DATABASE_URL = os.environ.get("ADMIN_DATABASE_URL", os.environ.get("DATABASE_URL"))
     SQLALCHEMY_TRACK_MODIFICATIONS = False
