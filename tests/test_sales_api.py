@@ -247,7 +247,7 @@ def test_invalid_customer_and_product_fields_do_not_expose_exception_details():
 def test_admin_can_edit_draft_sale_and_report_export_is_company_scoped():
     application, client = make_client()
     try:
-        customer = client.post("/api/customers", json={"name": "=Unsafe Customer"}).json["item"]
+        customer = client.post("/api/customers", json={"name": " =Unsafe Customer"}).json["item"]
         product = client.post("/api/products", json={
             "sku": "EDIT-1", "name": "Consulting", "unit_price": "25.00", "currency": "TZS",
         }).json["item"]
@@ -278,7 +278,7 @@ def test_admin_can_edit_draft_sale_and_report_export_is_company_scoped():
         exported = client.get("/api/reports/sales.csv?from=2026-11-11&to=2026-11-13")
         assert exported.status_code == 200
         assert exported.mimetype == "text/csv"
-        assert "'=Unsafe Customer" in exported.get_data(as_text=True)
+        assert "' =Unsafe Customer" in exported.get_data(as_text=True)
         assert exported.headers["Cache-Control"] == "no-store"
     finally:
         with application.app_context():
