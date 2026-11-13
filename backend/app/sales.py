@@ -1,7 +1,7 @@
 """Company-scoped customer, product, sales, and dashboard APIs."""
 
 from datetime import date
-from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from uuid import UUID, uuid4
 
 from flask import Blueprint, g, jsonify, request, session
@@ -264,7 +264,11 @@ def list_sales(_user):
     company_id = _company_id()
     query = (
         select(Sale, Customer.name)
-        .join(Customer, (Customer.id == Sale.customer_id) & (Customer.company_id == Sale.company_id))
+        .join(
+            Customer,
+            (Customer.id == Sale.customer_id)
+            & (Customer.company_id == Sale.company_id),
+        )
         .where(Sale.company_id == company_id)
     )
     status = request.args.get("status")
@@ -322,7 +326,10 @@ def create_sale(user):
                 raise ValueError("A selected product is unavailable in this company.")
             if product.currency != currency:
                 raise ValueError("All products in a sale must use the sale currency.")
-            quantity = _decimal(raw.get("quantity"), "quantity", minimum=Decimal("0.001"), places=MILLI)
+            quantity = _decimal(
+                raw.get("quantity"), "quantity",
+                minimum=Decimal("0.001"), places=MILLI,
+            )
             unit_price = product.unit_price
             gross = (quantity * unit_price).quantize(CENT, rounding=ROUND_HALF_UP)
             discount = _decimal(raw.get("discount_amount", "0"), "item discount")
