@@ -182,3 +182,15 @@ def test_sales_api_requires_login_and_selected_company():
         finally:
             db.session.remove()
             db.drop_all()
+
+
+def test_record_endpoints_reject_non_object_json_payloads():
+    application, client = make_client()
+    try:
+        assert client.post("/api/customers", json=["not", "an", "object"]).status_code == 400
+        assert client.post("/api/products", json=["not", "an", "object"]).status_code == 400
+        assert client.post("/api/sales", json=["not", "an", "object"]).status_code == 400
+    finally:
+        with application.app_context():
+            db.session.remove()
+            db.drop_all()
