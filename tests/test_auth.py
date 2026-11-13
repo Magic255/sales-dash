@@ -240,3 +240,20 @@ def test_login_is_rate_limited_per_account_across_different_ips():
         finally:
             db.session.remove()
             db.drop_all()
+
+
+def test_incrementing_auth_version_revokes_existing_sessions(app):
+    client = app.test_client()
+    login_response = client.post(
+        "/api/auth/login",
+        json={"email": "admin@example.test", "password": "a-very-strong-test-password"},
+    )
+    assert login_response.status_code == 200
+    assert client.get("/api/auth/me").json["authenticated"] is True
+
+    with app.app_context():
+        user = db.session.query(User).filter_by(email="admin@example.test").one()
+        user.auth_version += 1
+        db.session.commit()
+
+    assert client.get("/api/auth/me").json["authenticated"] is False
