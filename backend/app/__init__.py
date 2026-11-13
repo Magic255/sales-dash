@@ -1,6 +1,6 @@
 import os
 
-from flask import Flask, jsonify, send_from_directory
+from flask import Flask, jsonify, request, send_from_directory
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_wtf.csrf import CSRFError, CSRFProtect
@@ -61,6 +61,8 @@ def create_app(test_config=None):
             "img-src 'self' data:; connect-src 'self'; object-src 'none'; "
             "base-uri 'self'; frame-ancestors 'none'; form-action 'self'",
         )
+        if request.path.startswith("/api/"):
+            response.headers["Cache-Control"] = "no-store"
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
         response.headers.setdefault("X-Frame-Options", "DENY")
