@@ -194,3 +194,50 @@ def test_record_endpoints_reject_non_object_json_payloads():
         with application.app_context():
             db.session.remove()
             db.drop_all()
+
+
+
+def test_invalid_customer_identifier_returns_safe_validation_message():
+    application, client = make_client()
+    try:
+        response = client.post("/api/sales", json={
+            "customer_id": "NOT-A-VALID-UUID-sensitive-input",
+            "currency": "TZS",
+            "items": [{"product_id": "also-invalid", "quantity": "1"}],
+        })
+        assert response.status_code == 400
+        assert response.json == {
+            "error": "Invalid input. Check the submitted fields and try again."
+        }
+        assert "NOT-A-VALID-UUID" not in response.get_data(as_text=True)
+        assert "Traceback" not in response.get_data(as_text=True)
+    finally:
+        with application.app_context():
+            db.session.remove()
+            db.drop_all()
+
+
+def test_invalid_customer_and_product_fields_do_not_expose_exception_details():
+    application, client = make_client()
+    try:
+        customer_response = client.post("/api/customers", json={
+            "name": ["unexpected", "value"]
+        })
+        assert customer_response.status_code == 400
+        assert customer_response.json == {
+            "error": "Invalid input. Check the submitted fields and try again."
+        }
+
+        product_response = client.post("/api/products", json={
+            "sku": "SKU-1", "name": "Product",
+            "unit_price": "not-a-number-sensitive-value", "currency": "TZS",
+        })
+        assert product_response.status_code == 400
+        assert product_response.json == {
+            "error": "Invalid input. Check the submitted fields and try again."
+        }
+        assert "sensitive-value" not in product_response.get_data(as_text=True)
+    finally:
+        with application.app_context():
+            db.session.remove()
+            db.drop_all()
