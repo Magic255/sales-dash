@@ -85,8 +85,8 @@ def test_company_rows_and_tenant_records_are_isolated(postgres_app):
                 text(
                     """
                     INSERT INTO tenant_boundary_probe (id, company_id, payload)
-                    VALUES (:id_a, :company_a, 'Company A secret'),
-                           (:id_b, :company_b, 'Company B secret')
+                    VALUES (CAST(:id_a AS uuid), CAST(:company_a AS uuid), 'Company A secret'),
+                           (CAST(:id_b AS uuid), CAST(:company_b AS uuid), 'Company B secret')
                     """
                 ),
                 {
@@ -123,11 +123,11 @@ def test_company_rows_and_tenant_records_are_isolated(postgres_app):
         finally:
             db.session.rollback()
             db.session.execute(
-                text("DELETE FROM companies WHERE id IN (:company_a, :company_b)"),
+                text("DELETE FROM companies WHERE id IN (CAST(:company_a AS uuid), CAST(:company_b AS uuid))"),
                 {"company_a": str(company_a_id), "company_b": str(company_b_id)},
             )
             db.session.execute(
-                text("DELETE FROM users WHERE id = :user_id"),
+                text("DELETE FROM users WHERE id = CAST(:user_id AS uuid)"),
                 {"user_id": str(user_id)},
             )
             db.session.commit()
