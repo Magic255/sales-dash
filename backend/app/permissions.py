@@ -46,10 +46,10 @@ def company_permission_required(permission):
             except (tenancy.TenantAccessDenied, ValueError, TypeError):
                 extensions.db.session.rollback()
                 flask.session.pop("company_id", None)
-                return jsonify({"error": "You do not have access to that company."}), 403
+                return flask.jsonify({"error": "You do not have access to that company."}), 403
 
             if permission not in ROLE_PERMISSIONS.get(membership.role, frozenset()):
-                return jsonify({"error": "You are not allowed to perform this action."}), 403
+                return flask.jsonify({"error": "You are not allowed to perform this action."}), 403
 
             flask.g.company_membership = membership
             return view(user, *args, **kwargs)
