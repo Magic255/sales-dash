@@ -17,16 +17,16 @@ SALES DASH helps organizations manage sales activity across one or more companie
 - Responsive web interface
 - Progressive Web App support, including carefully scoped offline functionality
 
-## Architecture principles
+## Security and architecture principles
 
-- Keep the first implementation simple and maintainable.
-- Use a modular Python/Flask backend and a browser-based frontend.
-- Use PostgreSQL as the production relational database, with SQLAlchemy and Alembic for models and migrations.
-- Enforce tenant isolation in the application and database; never rely on frontend filtering for security.
-- Use secure, HTTP-only session cookies and CSRF protection for browser authentication.
+- PostgreSQL is the production relational database, with SQLAlchemy and Alembic migrations.
+- Company data isolation is enforced in PostgreSQL with row-level security, not frontend filtering.
+- The web app uses a separate, restricted database login; database-admin credentials are reserved for migrations and controlled provisioning.
+- Browser authentication uses signed, HTTP-only, SameSite session cookies, CSRF protection, and server-side membership checks.
+- Passwords are hashed with Argon2id.
+- Login attempts are rate-limited; production requires shared Redis-backed rate-limit storage.
 - Keep secrets out of source control; use environment variables locally and a managed secret store in production.
-- Do not cache private API responses or authentication data in the service worker.
-- Add automated tests for permissions, tenant isolation, and critical business rules.
+- Do not cache private API responses or authentication data in a service worker.
 
 ## Delivery approach
 
@@ -51,8 +51,18 @@ Work in small milestones. Each milestone must have a clear scope, tests, and rev
 
 ## Project status
 
-The clean-slate foundation and multi-company database schema are in place. PostgreSQL 16 CI applies the schema and verifies migration rollback/re-application. The second migration now adds a restricted application role and row-level security for users, companies, and memberships. Automated PostgreSQL tests verify that company rows are hidden without context and that a user cannot select a company without an active membership.
+The multi-company foundation and PostgreSQL row-level security boundary are in place. GitHub Actions tests fail-closed access and cross-company isolation using PostgreSQL 16.
 
-No customer, product, or sales tables have been created yet. The existing local setup walkthrough remains at [docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md).
+The secure authentication milestone now includes:
+- Argon2 password verification and generic sign-in errors.
+- HTTP-only, SameSite session cookies with an eight-hour lifetime.
+- CSRF protection for state-changing requests.
+- Login rate limiting (Redis-backed storage is required in production).
+- A narrowly scoped RLS policy that allows lookup of only the submitted normalized email during login.
+- A restricted database runtime role used by the web app; migrations and initial administrator provisioning use a separate admin connection.
+- Company selection that verifies active user status, company status, and active membership on the server.
+- An operator-only `create-admin` command; public self-registration is deliberately not enabled.
 
-The next step is to complete the authenticated company-context flow and test row-level security on the first tenant-owned business tables before building sales workflows. The app role is intentionally read-only at this stage; write policies will be added narrowly as each workflow is designed.
+The existing local setup walkthrough remains at [docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md).
+
+Email verification, password reset, MFA, invitation flows, and fine-grained role authorization still need to be completed before public launch. No customer, product, or sales tables have been created yet.
