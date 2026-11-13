@@ -27,12 +27,35 @@ def upgrade():
         sa.Column("notes", sa.String(length=2000), nullable=True),
         sa.Column("is_active", sa.Boolean(), server_default=sa.true(), nullable=False),
         sa.Column("created_by_user_id", sa.Uuid(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False
+        s),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False
+        s),
         sa.CheckConstraint("length(trim(name)) > 0", name="ck_customers_name_not_empty"),
-        sa.CheckConstraint("email IS NULL OR email = lower(trim(email))", name="ck_customers_email_normalized"),
-        sa.ForeignKeyConstraint(["company_id"], ["companies.id"], ondelete="CASCADE", name="fk_customers_company_id_companies"),
-        sa.ForeignKeyConstraint(["company_id", "created_by_user_id"], ["company_memberships.company_id", "company_memberships.user_id"], ondelete="NO ACTION", name="fk_customers_creator_membership"),
+        sa.CheckConstraint(
+            "email IS NULL OR email = lower(trim(email))",
+            name="ck_customers_email_normalized"
+        sa.CheckCo),
+        sa.ForeignKeyConstraint(
+            ["company_id"],
+            ["companies.id"],
+            ondelete="CASCADE",
+            name="fk_customers_company_id_companies"
+        sa.ForeignKeyCo),
+        sa.ForeignKeyConstraint(
+            ["company_id", "created_by_user_id"],
+            ["company_memberships.company_id", "company_memberships.user_id"],
+            ondelete="NO ACTION",
+            name="fk_customers_creator_membership"
+        sa.ForeignKeyCo),
         sa.PrimaryKeyConstraint("id", name="pk_customers"),
         sa.UniqueConstraint("company_id", "id", name="uq_customers_company_id_id"),
         sa.UniqueConstraint("company_id", "email", name="uq_customers_company_email"),
@@ -50,14 +73,37 @@ def upgrade():
         sa.Column("currency", sa.String(length=3), server_default="TZS", nullable=False),
         sa.Column("is_active", sa.Boolean(), server_default=sa.true(), nullable=False),
         sa.Column("created_by_user_id", sa.Uuid(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False
+        s),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False
+        s),
         sa.CheckConstraint("length(trim(sku)) > 0", name="ck_products_sku_not_empty"),
         sa.CheckConstraint("length(trim(name)) > 0", name="ck_products_name_not_empty"),
         sa.CheckConstraint("unit_price >= 0", name="ck_products_unit_price_nonnegative"),
-        sa.CheckConstraint("currency = upper(currency) AND length(currency) = 3", name="ck_products_currency_iso_code"),
-        sa.ForeignKeyConstraint(["company_id"], ["companies.id"], ondelete="CASCADE", name="fk_products_company_id_companies"),
-        sa.ForeignKeyConstraint(["company_id", "created_by_user_id"], ["company_memberships.company_id", "company_memberships.user_id"], ondelete="NO ACTION", name="fk_products_creator_membership"),
+        sa.CheckConstraint(
+            "currency = upper(currency) AND length(currency) = 3",
+            name="ck_products_currency_iso_code"
+        sa.CheckCo),
+        sa.ForeignKeyConstraint(
+            ["company_id"],
+            ["companies.id"],
+            ondelete="CASCADE",
+            name="fk_products_company_id_companies"
+        sa.ForeignKeyCo),
+        sa.ForeignKeyConstraint(
+            ["company_id", "created_by_user_id"],
+            ["company_memberships.company_id", "company_memberships.user_id"],
+            ondelete="NO ACTION",
+            name="fk_products_creator_membership"
+        sa.ForeignKeyCo),
         sa.PrimaryKeyConstraint("id", name="pk_products"),
         sa.UniqueConstraint("company_id", "id", name="uq_products_company_id_id"),
         sa.UniqueConstraint("company_id", "sku", name="uq_products_company_sku"),
@@ -80,19 +126,55 @@ def upgrade():
         sa.Column("tax_amount", sa.Numeric(14, 2), server_default="0", nullable=False),
         sa.Column("total_amount", sa.Numeric(14, 2), server_default="0", nullable=False),
         sa.Column("notes", sa.String(length=2000), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False
+        s),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False
+        s),
         sa.CheckConstraint("length(trim(sale_number)) > 0", name="ck_sales_sale_number_not_empty"),
-        sa.CheckConstraint("status IN ('draft', 'completed', 'void')", name="ck_sales_status_is_supported"),
-        sa.CheckConstraint("length(currency) = 3 AND currency = upper(currency)", name="ck_sales_currency_iso_code"),
+        sa.CheckConstraint(
+            "status IN ('draft', 'completed', 'void')",
+            name="ck_sales_status_is_supported"
+        sa.CheckCo),
+        sa.CheckConstraint(
+            "length(currency) = 3 AND currency = upper(currency)",
+            name="ck_sales_currency_iso_code"
+        sa.CheckCo),
         sa.CheckConstraint("subtotal >= 0", name="ck_sales_subtotal_nonnegative"),
         sa.CheckConstraint("discount_amount >= 0", name="ck_sales_discount_nonnegative"),
         sa.CheckConstraint("tax_amount >= 0", name="ck_sales_tax_nonnegative"),
         sa.CheckConstraint("total_amount >= 0", name="ck_sales_total_nonnegative"),
-        sa.ForeignKeyConstraint(["company_id"], ["companies.id"], ondelete="CASCADE", name="fk_sales_company_id_companies"),
-        sa.ForeignKeyConstraint(["company_id", "customer_id"], ["customers.company_id", "customers.id"], ondelete="NO ACTION", name="fk_sales_customer_same_company"),
-        sa.ForeignKeyConstraint(["company_id", "salesperson_user_id"], ["company_memberships.company_id", "company_memberships.user_id"], ondelete="NO ACTION", name="fk_sales_salesperson_membership"),
-        sa.ForeignKeyConstraint(["company_id", "created_by_user_id"], ["company_memberships.company_id", "company_memberships.user_id"], ondelete="NO ACTION", name="fk_sales_creator_membership"),
+        sa.ForeignKeyConstraint(
+            ["company_id"],
+            ["companies.id"],
+            ondelete="CASCADE",
+            name="fk_sales_company_id_companies"
+        sa.ForeignKeyCo),
+        sa.ForeignKeyConstraint(
+            ["company_id", "customer_id"],
+            ["customers.company_id", "customers.id"],
+            ondelete="NO ACTION",
+            name="fk_sales_customer_same_company"
+        sa.ForeignKeyCo),
+        sa.ForeignKeyConstraint(
+            ["company_id", "salesperson_user_id"],
+            ["company_memberships.company_id", "company_memberships.user_id"],
+            ondelete="NO ACTION",
+            name="fk_sales_salesperson_membership"
+        sa.ForeignKeyCo),
+        sa.ForeignKeyConstraint(
+            ["company_id", "created_by_user_id"],
+            ["company_memberships.company_id", "company_memberships.user_id"],
+            ondelete="NO ACTION",
+            name="fk_sales_creator_membership"
+        sa.ForeignKeyCo),
         sa.PrimaryKeyConstraint("id", name="pk_sales"),
         sa.UniqueConstraint("company_id", "id", name="uq_sales_company_id_id"),
         sa.UniqueConstraint("company_id", "sale_number", name="uq_sales_company_sale_number"),
@@ -113,15 +195,38 @@ def upgrade():
         sa.Column("unit_price", sa.Numeric(12, 2), nullable=False),
         sa.Column("discount_amount", sa.Numeric(14, 2), server_default="0", nullable=False),
         sa.Column("line_total", sa.Numeric(14, 2), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.CheckConstraint("length(trim(product_name)) > 0", name="ck_sale_items_product_name_not_empty"),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False
+        s),
+        sa.CheckConstraint(
+            "length(trim(product_name)) > 0",
+            name="ck_sale_items_product_name_not_empty"
+        sa.CheckCo),
         sa.CheckConstraint("quantity > 0", name="ck_sale_items_quantity_positive"),
         sa.CheckConstraint("unit_price >= 0", name="ck_sale_items_unit_price_nonnegative"),
         sa.CheckConstraint("discount_amount >= 0", name="ck_sale_items_discount_nonnegative"),
         sa.CheckConstraint("line_total >= 0", name="ck_sale_items_line_total_nonnegative"),
-        sa.ForeignKeyConstraint(["company_id"], ["companies.id"], ondelete="CASCADE", name="fk_sale_items_company_id_companies"),
-        sa.ForeignKeyConstraint(["company_id", "sale_id"], ["sales.company_id", "sales.id"], ondelete="CASCADE", name="fk_sale_items_sale_same_company"),
-        sa.ForeignKeyConstraint(["company_id", "product_id"], ["products.company_id", "products.id"], ondelete="NO ACTION", name="fk_sale_items_product_same_company"),
+        sa.ForeignKeyConstraint(
+            ["company_id"],
+            ["companies.id"],
+            ondelete="CASCADE",
+            name="fk_sale_items_company_id_companies"
+        sa.ForeignKeyCo),
+        sa.ForeignKeyConstraint(
+            ["company_id", "sale_id"],
+            ["sales.company_id", "sales.id"],
+            ondelete="CASCADE",
+            name="fk_sale_items_sale_same_company"
+        sa.ForeignKeyCo),
+        sa.ForeignKeyConstraint(
+            ["company_id", "product_id"],
+            ["products.company_id", "products.id"],
+            ondelete="NO ACTION",
+            name="fk_sale_items_product_same_company"
+        sa.ForeignKeyCo),
         sa.PrimaryKeyConstraint("id", name="pk_sale_items"),
     )
     op.create_index("ix_sale_items_company_sale", "sale_items", ["company_id", "sale_id"])
