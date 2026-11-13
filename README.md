@@ -12,10 +12,10 @@ SALES DASH helps organizations manage sales activity across one or more companie
 - Global user accounts with company memberships
 - Role-based access: Admin, Manager, Salesperson, Viewer
 - Sales entry and management
-- Customers, products, sales teams
-- Dashboards, reports, and exports
+- Customers and products
+- Dashboard, reports, and CSV exports
 - Responsive web interface
-- Progressive Web App support, including carefully scoped offline functionality
+- Progressive Web App installation and a carefully scoped offline app shell
 
 ## Security and architecture principles
 
@@ -29,7 +29,7 @@ SALES DASH helps organizations manage sales activity across one or more companie
 - Security audit events record successful sign-in, password changes, company selection, and sign-out. They exclude passwords, tokens, raw email addresses, IP addresses, and session identifiers.
 - Audit records are append-only for the restricted runtime role, protected by PostgreSQL row-level security, and visible only to an administrator in the active company.
 - Keep secrets out of source control; use environment variables locally and a managed secret store in production.
-- Do not cache private API responses or authentication data in a service worker.
+- The service worker caches only the public app shell. It does not cache authentication or private API responses.
 
 ## Delivery approach
 
@@ -41,7 +41,7 @@ Work in small milestones. Each milestone must have a clear scope, tests, and rev
 4. **Authentication and permissions:** secure login, company switching, and role-based access.
 5. **Sales domain:** customers, products, sales, line items, and business rules.
 6. **Dashboard and workflows:** frontend integration, reporting, exports, and responsive UX.
-7. **Offline/PWA:** safe offline support and synchronization.
+7. **Offline/PWA:** safe offline app shell; private data remains online-only.
 8. **Release readiness:** security review, tests, deployment documentation, and backups.
 
 ## Working rules
@@ -52,21 +52,28 @@ Work in small milestones. Each milestone must have a clear scope, tests, and rev
 - Verify changes with tests before considering a milestone complete.
 - Prefer explicit, auditable changes over large rewrites.
 
-## Project status
+## Current implementation status
 
-The multi-company foundation and PostgreSQL row-level security boundary are in place. GitHub Actions tests fail-closed access and cross-company isolation using PostgreSQL 16.
+Implemented and merged:
+- Multi-company accounts, memberships, company switching, and PostgreSQL row-level security.
+- Secure session authentication, CSRF protection, Argon2id password hashing, login throttling, and account session revocation.
+- Admin, Manager, Salesperson, and Viewer permission checks.
+- Append-only, company-scoped security audit logs.
+- Tenant-scoped customer and product APIs, sales workflows, dashboard summaries, sales reports, CSV exports, and draft sale editing.
+- PWA installation support and a public offline app shell. Sign-in and private company data require an internet connection.
 
-The secure authentication milestone now includes:
-- Argon2 password verification and generic sign-in errors.
-- HTTP-only, SameSite session cookies with an eight-hour lifetime.
-- CSRF protection for state-changing requests.
-- Login rate limiting (Redis-backed storage is required in production).
-- A narrowly scoped RLS policy that allows lookup of only the submitted normalized email during login.
-- A restricted database runtime role used by the web app; migrations and initial administrator provisioning use a separate admin connection.
-- Company selection that verifies active user status, company status, and active membership on the server.\n- A backend permission matrix for Admin, Manager, Salesperson, and Viewer roles; tenant API routes can enforce permissions only after revalidating the active company membership on each request.
-- A company-scoped audit log API for administrators, backed by append-only database permissions and row-level security.
-- An operator-only `create-admin` command; public self-registration is deliberately not enabled.
+Still required before public launch:
+- Email verification, password reset, MFA, and controlled invitation workflows.
+- Completion and review of all planned team-management and company-settings workflows.
+- A selected hosting provider and a tested production deployment.
+- Verified monitoring, backup retention, restore rehearsals, and incident-response procedures.
+- Final security review and role/tenant-isolation smoke tests in the production-like environment.
 
-The existing local setup walkthrough remains at [docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md).
+Public self-registration is intentionally disabled. Do not use real customer data or describe the project as production-ready until the remaining release blockers have been completed and verified.
 
-Email verification, password reset, MFA, invitation flows, and fine-grained role authorization still need to be completed before public launch. The initial tenant-isolated sales data layer now defines customers, products, sales, and sale items with PostgreSQL row-level security and same-company foreign keys. API routes, business workflows, and frontend screens are the next implementation step.
+## Documentation
+
+- [Local development setup](docs/LOCAL_SETUP.md)
+- [Production deployment checklist](docs/PRODUCTION_DEPLOYMENT.md)
+- [Database backup and restore runbook](docs/DATABASE_BACKUP_RESTORE.md)
+- [Security monitoring](docs/SECURITY_MONITORING.md)
