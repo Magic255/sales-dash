@@ -63,9 +63,13 @@ def test_login_and_company_selection(app):
     assert selected.status_code == 200
     assert selected.json["selected_company"]["role"] == "admin"
 
+    with app.app_context():
+        denied_company_id = str(
+            db.session.query(Company).filter_by(slug="other-company").one().id
+        )
     denied = client.post(
         "/api/auth/company",
-        json={"company_id": str(db.session.query(Company).filter_by(slug="other-company").one().id)},
+        json={"company_id": denied_company_id},
     )
     assert denied.status_code == 403
 
@@ -99,3 +103,77 @@ def test_logout_clears_authenticated_session(app):
     logout = client.post("/api/auth/logout")
     assert logout.status_code == 200
     assert client.get("/api/auth/me").json["authenticated"] is False
+
+
+
+def test_postgres_login_and_company_selection_use_restricted_role():
+    import os
+    from uuid import uuid4
+
+    from argon2 import PasswordHasher
+
+    if not os.environ.get("APP_DATABASE_URL") or not os.environ.get("DATABASE_URL"):
+        pytest.skip("CI PostgreSQL runtime-role credentials are not configured.")
+
+    email = f"{uuid4()}@example.test"
+    admin_app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "admin-test-secret",
+            "SQLALCHEMY_DATABASE_URI": os.environ["DATABASE_URL"],
+            "WTF_CSRF_ENABLED": False,
+        }
+    )
+    runtime_app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "runtime-test-secret",
+            "SQLALCHEMY_DATABASE_URI": os.environ["APP_DATABASE_URL"],
+            "WTF_CSRF_ENABLED": False,
+            "RATELIMIT_ENABLED": False,
+        }
+    )
+
+    with admin_app.app_context():
+        user = User(
+            email=email,
+            password_hash=PasswordHasher().hash("a-very-strong-test-password"),
+        )
+        company = Company(name="Restricted Runtime Test", slug=f"runtime-{uuid4().hex}")
+        db.session.add_all([user, company])
+        db.session.flush()
+        user_id, company_id = user.id, company.id
+        db.session.add(
+            CompanyMembership(
+                user_id=user_id, company_id=company_id, role="admin", status="active"
+            )
+        )
+        db.session.commit()
+
+    try:
+        client = runtime_app.test_client()
+        login_response = client.post(
+            "/api/auth/login",
+            json={"email": email, "password": "a-very-strong-test-password"},
+        )
+        assert login_response.status_code == 200
+
+        me_response = client.get("/api/auth/me")
+        assert me_response.status_code == 200
+        assert me_response.json["authenticated"] is True
+        assert [company["id"] for company in me_response.json["companies"]] == [
+            str(company_id)
+        ]
+
+        select_response = client.post(
+            "/api/auth/company", json={"company_id": str(company_id)}
+        )
+        assert select_response.status_code == 200
+        assert select_response.json["selected_company"]["role"] == "admin"
+    finally:
+        with admin_app.app_context():
+            db.session.execute(
+                db.delete(Company).where(Company.id == company_id)
+            )
+            db.session.execute(db.delete(User).where(User.id == user_id))
+            db.session.commit()
