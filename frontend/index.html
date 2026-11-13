@@ -75,6 +75,19 @@
         </form>
         <p id="password-message" class="form-message" role="status" aria-live="polite"></p>
       </div>
+      <section id="audit-panel" class="audit-panel" aria-labelledby="audit-title" hidden>
+        <p class="eyebrow">ADMINISTRATION</p>
+        <h2 id="audit-title">Security activity</h2>
+        <p class="panel-copy">Recent security events for this company, plus your own account-level events.</p>
+        <button id="audit-refresh" type="button" class="secondary-button">Refresh activity</button>
+        <p id="audit-message" class="form-message" role="status" aria-live="polite"></p>
+        <div class="audit-table-wrap">
+          <table class="audit-table">
+            <thead><tr><th scope="col">When</th><th scope="col">Event</th><th scope="col">Actor</th></tr></thead>
+            <tbody id="audit-rows"><tr><td colspan="3">Select a company to view activity.</td></tr></tbody>
+          </table>
+        </div>
+      </section>
     </section>
 
     <section class="feature-grid" aria-label="Platform modules">

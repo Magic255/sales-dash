@@ -54,6 +54,19 @@ def test_authenticated_security_actions_are_audited_and_company_scoped(app):
         ).all()
         assert len(global_events) == 1
         assert global_events[0].company_id is None
+        actor_id = global_events[0].actor_user_id
+
+        other_user = User(email="other@example.test")
+        db.session.add(other_user)
+        db.session.flush()
+        db.session.add(
+            AuditLog(
+                actor_user_id=other_user.id,
+                company_id=None,
+                event_type="login_succeeded",
+            )
+        )
+        db.session.commit()
 
     company_id = client.get("/api/auth/me").json["companies"][0]["id"]
     selected = client.post("/api/auth/company", json={"company_id": company_id})
@@ -61,8 +74,13 @@ def test_authenticated_security_actions_are_audited_and_company_scoped(app):
 
     logs = client.get("/api/audit-logs")
     assert logs.status_code == 200
-    assert [item["event_type"] for item in logs.json["items"]] == ["company_selected"]
-    assert logs.json["items"][0]["company_id"] == company_id
+    event_types = [item["event_type"] for item in logs.json["items"]]
+    assert "company_selected" in event_types
+    assert "login_succeeded" in event_types
+    assert len(logs.json["items"]) == 2
+    own_login = next(item for item in logs.json["items"] if item["event_type"] == "login_succeeded")
+    assert own_login["actor_user_id"] == str(actor_id)
+    assert own_login["company_id"] is None
 
     changed = client.post(
         "/api/auth/password",
