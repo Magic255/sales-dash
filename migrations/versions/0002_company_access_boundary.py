@@ -4,7 +4,7 @@ Revision ID: 0002_company_access_boundary
 Revises: 0001_multi_company_core
 """
 
-from alembic import op
+from alembic import op  # noqa: I001
 
 
 revision = "0002_company_access_boundary"
