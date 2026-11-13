@@ -46,6 +46,9 @@ jobs:
       - name: Run lint checks
         run: ruff check .
 
+      - name: Check frontend JavaScript syntax
+        run: node --check frontend/auth.js
+
       - name: Apply migrations to PostgreSQL
         run: flask --app backend/run.py db upgrade
 
