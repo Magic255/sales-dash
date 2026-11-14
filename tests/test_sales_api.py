@@ -167,6 +167,7 @@ def test_sales_api_requires_login_and_selected_company():
             user = User(
                 email="unselected@example.test",
                 password_hash=PasswordHasher().hash("a-very-strong-test-password"),
+                email_verified=True,
             )
             company = Company(name="Unselected", slug="unselected-company")
             db.session.add_all([user, company])
