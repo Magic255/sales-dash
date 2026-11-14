@@ -188,8 +188,9 @@ def test_totp_time_step_cannot_be_reused_for_two_logins(mfa_app):
 
     client = _client(mfa_app)
     secret, _recovery_codes = _enable_mfa(client)
+    next_step = int(datetime.now(timezone.utc).timestamp() // 30) + 1
     future_code = pyotp.TOTP(secret).at(
-        datetime.now(timezone.utc) + timedelta(seconds=30)
+        datetime.fromtimestamp(next_step * 30, timezone.utc)
     )
     client.post("/api/auth/logout")
 
