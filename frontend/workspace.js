@@ -492,7 +492,88 @@ document.querySelector("#invitation-form").addEventListener("submit", async (eve
   }
 });
 
-document.querySelector("#team-tab").addEventListener("click", loadCompanyInvitations);
+async function loadTeamMembers() {
+  const body = document.querySelector("#team-member-rows");
+  if (!body || workspaceRole !== "admin") return;
+  try {
+    const data = await workspaceRequest("/api/team/members");
+    body.replaceChildren();
+    if (!data.items.length) return emptyRow(body, 5, "No company members found.");
+    for (const item of data.items) {
+      const row = document.createElement("tr");
+      textCell(row, item.display_name || item.email);
+      textCell(row, item.email);
+
+      const roleCell = document.createElement("td");
+      const actions = document.createElement("td");
+      if (item.role === "admin") {
+        roleCell.textContent = "Admin";
+      } else {
+        const roleSelect = document.createElement("select");
+        roleSelect.setAttribute("aria-label", "Role for " + item.email);
+        for (const [value, label] of [
+          ["manager", "Manager"], ["salesperson", "Salesperson"], ["viewer", "Viewer"],
+        ]) {
+          roleSelect.add(new Option(label, value));
+        }
+        roleSelect.value = item.role;
+        roleCell.append(roleSelect);
+
+        const saveRole = document.createElement("button");
+        saveRole.type = "button";
+        saveRole.className = "table-action";
+        saveRole.textContent = "Save role";
+        saveRole.addEventListener("click", async () => {
+          saveRole.disabled = true;
+          try {
+            await workspaceRequest("/api/team/members/" + encodeURIComponent(item.user_id), {
+              method: "PATCH", body: JSON.stringify({role: roleSelect.value}),
+            });
+            workspaceMessage("Team role updated.");
+            await loadTeamMembers();
+          } catch (error) {
+            workspaceMessage(error.message);
+            saveRole.disabled = false;
+          }
+        });
+        actions.append(saveRole);
+      }
+      textCell(row, item.status === "suspended" ? "Suspended" : "Active");
+      if (item.role !== "admin" && item.user_id !== workspaceUserId) {
+        const toggle = document.createElement("button");
+        toggle.type = "button";
+        toggle.className = item.status === "suspended"
+          ? "table-action" : "table-action table-action-danger";
+        toggle.textContent = item.status === "suspended" ? "Reactivate" : "Suspend";
+        toggle.addEventListener("click", async () => {
+          toggle.disabled = true;
+          try {
+            const status = item.status === "suspended" ? "active" : "suspended";
+            await workspaceRequest("/api/team/members/" + encodeURIComponent(item.user_id), {
+              method: "PATCH", body: JSON.stringify({status}),
+            });
+            workspaceMessage(status === "active" ? "Member access restored." : "Member suspended.");
+            await loadTeamMembers();
+          } catch (error) {
+            workspaceMessage(error.message);
+            toggle.disabled = false;
+          }
+        });
+        actions.append(toggle);
+      }
+      if (!actions.childElementCount) actions.textContent = "—";
+      row.append(roleCell, actions);
+      body.append(row);
+    }
+  } catch (error) {
+    workspaceMessage(error.message);
+  }
+}
+
+document.querySelector("#team-tab").addEventListener("click", () => {
+  loadTeamMembers();
+  loadCompanyInvitations();
+});
 
 async function loadCompanySettings() {
   if (workspaceRole !== "admin") return;
