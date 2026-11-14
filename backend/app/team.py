@@ -14,7 +14,7 @@ from .audit import record_audit_event
 from .auth import login_required
 from .company_invitation import CompanyInvitation
 from .extensions import db
-from .models import Company, CompanyMembership
+from .models import Company, CompanyMembership, User
 from .permissions import company_permission_required
 from .tenancy import activate_app_role, find_login_user, set_tenant_context, set_user_context
 
@@ -269,3 +269,87 @@ def accept_company_invitation(user):
             "message": "Invitation accepted. You can now select the company workspace.",
         }
     )
+
+
+
+@team_bp.get("/members")
+@login_required
+@company_permission_required("manage_team")
+def list_company_members(_user):
+    """List the selected company's members without exposing other tenants."""
+    company_id = UUID(session["company_id"])
+    rows = db.session.execute(
+        select(CompanyMembership, User.email, User.display_name)
+        .join(User, User.id == CompanyMembership.user_id)
+        .where(CompanyMembership.company_id == company_id)
+        .order_by(User.email.asc())
+        .limit(200)
+    ).all()
+    return jsonify(
+        {
+            "items": [
+                {
+                    "user_id": str(membership.user_id),
+                    "email": email,
+                    "display_name": display_name,
+                    "role": membership.role,
+                    "status": membership.status,
+                }
+                for membership, email, display_name in rows
+            ]
+        }
+    )
+
+
+@team_bp.patch("/members/<uuid:member_user_id>")
+@login_required
+@company_permission_required("manage_team")
+def update_company_member(user, member_user_id):
+    """Change a non-admin member's role or suspend/reactivate their access."""
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or len(data) != 1:
+        return jsonify({"error": "Provide one valid role or membership status."}), 400
+
+    company_id = UUID(session["company_id"])
+    member = db.session.scalar(
+        select(CompanyMembership).where(
+            CompanyMembership.company_id == company_id,
+            CompanyMembership.user_id == member_user_id,
+        )
+    )
+    if member is None:
+        return jsonify({"error": "Company member not found."}), 404
+    if member.user_id == user.id or member.role == "admin":
+        return jsonify({"error": "Your own access and administrator memberships cannot be changed here."}), 409
+
+    event_type = None
+    if set(data) == {"role"}:
+        role = data["role"]
+        if not isinstance(role, str) or role not in _INVITABLE_ROLES:
+            return jsonify({"error": "Choose Manager, Salesperson, or Viewer."}), 400
+        if member.role != role:
+            member.role = role
+            event_type = "team_member_role_changed"
+    elif set(data) == {"status"}:
+        status = data["status"]
+        if status not in {"active", "suspended"}:
+            return jsonify({"error": "Choose Active or Suspended."}), 400
+        if member.status != status:
+            member.status = status
+            event_type = (
+                "team_member_suspended" if status == "suspended"
+                else "team_member_reactivated"
+            )
+    else:
+        return jsonify({"error": "Provide either a role or a membership status."}), 400
+
+    item = {
+        "user_id": str(member.user_id),
+        "role": member.role,
+        "status": member.status,
+    }
+    if event_type:
+        record_audit_event(db.session, user.id, event_type, company_id)
+        db.session.flush()
+        db.session.commit()
+    return jsonify({"item": item})
