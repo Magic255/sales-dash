@@ -178,6 +178,7 @@ def confirm_email_verification():
             db.session.rollback()
             return jsonify({"error": "This verification link is invalid or has expired."}), 400
 
+        user_id = UUID(str(user_id))
         set_user_context(db.session, user_id)
         db.session.execute(
             text("UPDATE users SET email_verified = TRUE WHERE id = :user_id"),
