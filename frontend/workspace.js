@@ -538,7 +538,8 @@ async function loadTeamMembers() {
         });
         actions.append(saveRole);
       }
-      textCell(row, item.status === "suspended" ? "Suspended" : "Active");
+      const statusCell = document.createElement("td");
+      statusCell.textContent = item.status === "suspended" ? "Suspended" : "Active";
       if (item.role !== "admin" && item.user_id !== workspaceUserId) {
         const toggle = document.createElement("button");
         toggle.type = "button";
@@ -562,7 +563,7 @@ async function loadTeamMembers() {
         actions.append(toggle);
       }
       if (!actions.childElementCount) actions.textContent = "—";
-      row.append(roleCell, actions);
+      row.append(roleCell, statusCell, actions);
       body.append(row);
     }
   } catch (error) {
