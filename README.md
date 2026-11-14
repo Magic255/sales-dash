@@ -9,7 +9,7 @@ SALES DASH helps organizations manage sales activity across one or more companie
 ## Core capabilities
 
 - Multi-company workspaces and company switching
-- Global user accounts with company memberships
+- Global user accounts with company memberships and controlled operator provisioning
 - Role-based access: Admin, Manager, Salesperson, Viewer
 - Sales entry and management
 - Customers and products
@@ -55,7 +55,7 @@ Work in small milestones. Each milestone must have a clear scope, tests, and rev
 ## Current implementation status
 
 Implemented and merged:
-- Multi-company accounts, memberships, company switching, and PostgreSQL row-level security.
+- Multi-company accounts, memberships, company switching, controlled operator account/company provisioning, and PostgreSQL row-level security.
 - Secure session authentication, CSRF protection, Argon2id password hashing, login throttling, account session revocation, one-time email verification, one-time password reset, and optional authenticator-app MFA with single-use recovery codes.
 - Admin, Manager, Salesperson, and Viewer permission checks; admins can invite existing verified accounts, review members, change non-admin roles, and suspend or restore company access.
 - Administrator-only company display-name settings and team-member management, protected by PostgreSQL row-level security and append-only audit events.
@@ -80,6 +80,7 @@ Public self-registration is intentionally disabled. Do not use real customer dat
 - [Database backup and restore runbook](docs/DATABASE_BACKUP_RESTORE.md)
 - [Security monitoring](docs/SECURITY_MONITORING.md)
 - [Email delivery configuration](docs/EMAIL_CONFIGURATION.md)
+- [Controlled account provisioning](docs/ACCOUNT_PROVISIONING.md)
 - [Controlled company invitations](docs/COMPANY_INVITATIONS.md)
 - [Company settings](docs/COMPANY_SETTINGS.md)
 - [Team management](docs/TEAM_MANAGEMENT.md)
