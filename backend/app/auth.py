@@ -92,7 +92,8 @@ def _verification_rate_limit_key():
 
 def _verification_link(token: str) -> str:
     base_url = (current_app.config.get("PUBLIC_BASE_URL") or "").strip().rstrip("/")
-    if not base_url or "\r" in base_url or "\n" in base_url:
+    if not base_url or "\r" in base_url or "
+" in base_url:
         raise RuntimeError("Public application URL is not configured.")
     if current_app.config.get("APP_ENV") == "production" and not base_url.startswith("https://"):
         raise RuntimeError("Production email links must use HTTPS.")
@@ -145,8 +146,12 @@ def resend_verification():
                     recipient,
                     "Verify your SALES DASH email",
                     "Use this link to verify your SALES DASH email address. "
-                    "It expires in 24 hours and can be used once:\n\n"
-                    f"{link}\n\n"
+                    "It expires in 24 hours and can be used once:
+
+"
+                    f"{link}
+
+"
                     "If you did not request this, you can ignore this message.",
                 )
             except Exception:
@@ -236,7 +241,8 @@ def _password_reset_rate_limit_key():
 
 def _password_reset_link(token: str) -> str:
     base_url = (current_app.config.get("PUBLIC_BASE_URL") or "").strip().rstrip("/")
-    if not base_url or "\r" in base_url or "\n" in base_url:
+    if not base_url or "\r" in base_url or "
+" in base_url:
         raise RuntimeError("Public application URL is not configured.")
     if current_app.config.get("APP_ENV") == "production" and not base_url.startswith("https://"):
         raise RuntimeError("Production email links must use HTTPS.")
@@ -281,8 +287,12 @@ def request_password_reset():
                 recipient,
                 "Reset your SALES DASH password",
                 "A password reset was requested for your SALES DASH account. "
-                "Use this link within 30 minutes. It can be used once:\n\n"
-                f"{link}\n\n"
+                "Use this link within 30 minutes. It can be used once:
+
+"
+                f"{link}
+
+"
                 "If you did not request this, you can ignore this message.",
             )
         except Exception:
@@ -317,7 +327,12 @@ def confirm_password_reset():
         or not isinstance(new_password, str)
         or not 12 <= len(new_password) <= 1024
     ):
-        return (\n            jsonify(\n                {"error": "The reset link is invalid or expired, or the password is too short."}\n            ),\n            400,\n        )
+        return (
+            jsonify(
+                {"error": "The reset link is invalid or expired, or the password is too short."}
+            ),
+            400,
+        )
 
     token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
     now = datetime.now(timezone.utc)
@@ -353,7 +368,10 @@ def confirm_password_reset():
             pass
         else:
             db.session.rollback()
-            return (\n                jsonify({"error": "Choose a password different from your current password."}),\n                400,\n            )
+            return (
+                jsonify({"error": "Choose a password different from your current password."}),
+                400,
+            )
 
         user.password_hash = password_hasher.hash(new_password)
         user.auth_version += 1
@@ -367,7 +385,12 @@ def confirm_password_reset():
         return jsonify({"error": "The reset link is invalid or has expired."}), 400
 
     session.clear()
-    return jsonify(\n        {\n            "password_reset": True,\n            "message": "Your password has been reset. Sign in with your new password.",\n        }\n    )
+    return jsonify(
+        {
+            "password_reset": True,
+            "message": "Your password has been reset. Sign in with your new password.",
+        }
+    )
 
 
 
