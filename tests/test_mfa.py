@@ -185,7 +185,7 @@ def test_disabling_mfa_requires_password_and_second_factor_and_revokes_session(m
 
 
 def test_totp_time_step_cannot_be_reused_for_two_logins(mfa_app):
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timezone
 
     client = _client(mfa_app)
     secret, _recovery_codes = _enable_mfa(client)
