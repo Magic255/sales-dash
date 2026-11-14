@@ -8,6 +8,7 @@ from argon2 import PasswordHasher
 from sqlalchemy import create_engine, select, text
 from sqlalchemy.orm import Session
 
+from .config import normalize_database_url
 from .models import Company, CompanyMembership, User
 
 
@@ -31,7 +32,7 @@ def register_commands(app):
         if len(password) < 12 or password != confirmation:
             raise click.ClickException("Passwords must match and contain at least 12 characters.")
 
-        engine = create_engine(admin_url, pool_pre_ping=True)
+        engine = create_engine(normalize_database_url(admin_url), pool_pre_ping=True)
         try:
             with Session(engine) as admin_session, admin_session.begin():
                 if admin_session.scalar(select(User.id).where(User.email == email)):

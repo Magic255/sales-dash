@@ -8,6 +8,16 @@ load_dotenv()
 APP_ENV = os.environ.get("APP_ENV", "development").lower()
 
 
+def normalize_database_url(url):
+    """Select the installed psycopg 3 driver for standard Render/Postgres URLs."""
+    if not url:
+        return url
+    for prefix in ("postgres://", "postgresql://"):
+        if url.startswith(prefix):
+            return "postgresql+psycopg://" + url[len(prefix):]
+    return url
+
+
 class Config:
     """Shared application configuration."""
 
@@ -15,11 +25,14 @@ class Config:
 
     SECRET_KEY = os.environ.get("SECRET_KEY")
     # The web app uses a non-owner, non-superuser login. Admin URL is CLI/migration only.
-    SQLALCHEMY_DATABASE_URI = os.environ.get(
-        "APP_DATABASE_URL",
-        "postgresql+psycopg://sales_dash_runtime:change-me@127.0.0.1:5432/sales_dash",
+    SQLALCHEMY_DATABASE_URI = normalize_database_url(
+        os.environ.get(
+            "APP_DATABASE_URL",
+            "postgresql+psycopg://sales_dash_runtime:change-me@127.0.0.1:5432/sales_dash",
+        )
     )
-    ADMIN_DATABASE_URL = os.environ.get("ADMIN_DATABASE_URL", os.environ.get("DATABASE_URL"))
+    # Do not fall back to DATABASE_URL: hosting platforms may expose the database-owner URL there.
+    ADMIN_DATABASE_URL = normalize_database_url(os.environ.get("ADMIN_DATABASE_URL"))
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_ENGINE_OPTIONS = {"pool_pre_ping": True}
     JSON_SORT_KEYS = False
