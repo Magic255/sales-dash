@@ -298,7 +298,7 @@ mfaConfirmForm.addEventListener("submit", async (event) => {
       method: "POST",
       body: JSON.stringify({ code: document.querySelector("#mfa-confirm-code").value.trim() }),
     });
-    document.querySelector("#mfa-recovery-codes").textContent = data.recovery_codes.join("\\n");
+    document.querySelector("#mfa-recovery-codes").textContent = data.recovery_codes.join("\n");
     mfaRecoveryPanel.hidden = false;
     mfaConfirmForm.hidden = true;
     mfaSetupForm.hidden = true;
