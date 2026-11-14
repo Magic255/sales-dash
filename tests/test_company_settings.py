@@ -1,3 +1,6 @@
+from uuid import uuid4
+
+import pytest
 from argon2 import PasswordHasher
 
 from app import create_app
@@ -108,7 +111,6 @@ def test_postgres_restricted_runtime_role_can_update_company_name():
     import os
 
     if not os.environ.get("APP_DATABASE_URL") or not os.environ.get("DATABASE_URL"):
-        import pytest
         pytest.skip("CI PostgreSQL runtime-role credentials are not configured.")
 
     company_name = "Restricted Settings Company"
@@ -125,14 +127,14 @@ def test_postgres_restricted_runtime_role_can_update_company_name():
         "WTF_CSRF_ENABLED": False,
         "RATELIMIT_ENABLED": False,
     })
-    email = f"{company_name.lower().replace(' ', '-')}-{__import__('uuid').uuid4()}@example.test"
+    email = f"{company_name.lower().replace(' ', '-')}-{uuid4()}@example.test"
     with admin_app.app_context():
         user = User(
             email=email,
             password_hash=PasswordHasher().hash("a-very-strong-test-password"),
             email_verified=True,
         )
-        company = Company(name=company_name, slug=f"settings-{__import__('uuid').uuid4().hex}")
+        company = Company(name=company_name, slug=f"settings-{uuid4().hex}")
         db.session.add_all([user, company])
         db.session.flush()
         db.session.add(CompanyMembership(
