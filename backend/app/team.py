@@ -71,8 +71,11 @@ def create_company_invitation(user):
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return jsonify({"error": "Enter an email address and role."}), 400
-    email = str(data.get("email", "")).strip().lower()
+    raw_email = data.get("email", "")
     role = data.get("role")
+    if not isinstance(raw_email, str) or not isinstance(role, str):
+        return jsonify({"error": "Enter a valid email address and an allowed role."}), 400
+    email = raw_email.strip().lower()
     if not email or len(email) > 320 or "@" not in email or role not in _INVITABLE_ROLES:
         return jsonify({"error": "Enter a valid email address and an allowed role."}), 400
     if email == user.email:
