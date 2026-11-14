@@ -77,3 +77,4 @@ Public self-registration is intentionally disabled. Do not use real customer dat
 - [Production deployment checklist](docs/PRODUCTION_DEPLOYMENT.md)
 - [Database backup and restore runbook](docs/DATABASE_BACKUP_RESTORE.md)
 - [Security monitoring](docs/SECURITY_MONITORING.md)
+- [Email delivery configuration](docs/EMAIL_CONFIGURATION.md)
