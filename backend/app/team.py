@@ -320,7 +320,9 @@ def update_company_member(user, member_user_id):
     if member is None:
         return jsonify({"error": "Company member not found."}), 404
     if member.user_id == user.id or member.role == "admin":
-        return jsonify({"error": "Your own access and administrator memberships cannot be changed here."}), 409
+        return jsonify(
+            {"error": "Your own access and administrator memberships cannot be changed here."}
+        ), 409
 
     event_type = None
     if set(data) == {"role"}:
