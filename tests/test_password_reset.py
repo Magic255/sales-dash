@@ -231,3 +231,17 @@ def test_postgres_restricted_runtime_role_can_reset_password():
         with admin_app.app_context():
             db.session.execute(db.delete(User).where(User.id == user_id))
             db.session.commit()
+
+
+def test_failed_email_delivery_does_not_leave_a_valid_reset_token(reset_app):
+    client = reset_app.test_client()
+    with patch("app.email.send_email", side_effect=RuntimeError("SMTP unavailable")):
+        response = client.post(
+            "/api/auth/password/reset/request", json={"email": "reset@example.test"}
+        )
+    assert response.status_code == 200
+    assert response.json == {
+        "message": "If the account is eligible, a password reset email will be sent."
+    }
+    with reset_app.app_context():
+        assert db.session.scalar(select(PasswordResetToken)) is None
