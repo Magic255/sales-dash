@@ -134,7 +134,7 @@ def create_company_invitation(user):
         set_tenant_context(db.session, user.id, company_id)
         record_audit_event(db.session, user.id, "company_invitation_created", company_id)
         db.session.commit()
-    except Exception:
+    except Exception as error:
         db.session.rollback()
         try:
             set_tenant_context(db.session, user.id, company_id)
@@ -146,7 +146,9 @@ def create_company_invitation(user):
             db.session.commit()
         except Exception:
             db.session.rollback()
-        current_app.logger.warning("Company invitation delivery failed.")
+        current_app.logger.warning(
+            "Company invitation delivery failed (%s).", type(error).__name__
+        )
         return jsonify({"error": "The invitation email could not be sent. Try again later."}), 503
 
     return jsonify({"message": "Invitation email sent. The link expires in 7 days."}), 201
