@@ -73,7 +73,9 @@ def csrf_token():
 
 def _verification_rate_limit_key():
     """Rate-limit verification requests by a keyed digest, never raw email."""
-    data = request.get_json(silent=True) or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        data = {}
     email = str(data.get("email", "")).strip().lower()
     secret = current_app.config["SECRET_KEY"]
     if isinstance(secret, str):
