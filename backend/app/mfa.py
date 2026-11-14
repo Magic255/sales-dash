@@ -1,6 +1,7 @@
 """Optional authenticator-app MFA with encrypted TOTP secrets and recovery codes."""
 
 import hashlib
+import hmac
 import secrets
 from datetime import datetime, timezone
 from uuid import UUID
@@ -63,7 +64,7 @@ def _matching_totp_step(secret: str, code: str):
 def _verify_code(user_id: UUID, credential: MfaCredential, code: str):
     """Verify a TOTP once per time step or atomically consume a recovery code."""
 
-    if not isinstance(code, str) or not 6 <= len(code) <= 32:
+    if not isinstance(code, str) or not 6 <= len(code) <= 40:
         return False, False
     if code.isdigit() and len(code) == 6:
         try:
@@ -88,7 +89,7 @@ def _verify_code(user_id: UUID, credential: MfaCredential, code: str):
         return accepted is not None, False
 
     normalized = _normalized_recovery_code(code)
-    if len(normalized) != 10 or not normalized.isalnum():
+    if len(normalized) != 32 or not normalized.isalnum():
         return False, False
     digest = hashlib.sha256(normalized.encode("ascii")).hexdigest()
     consumed_id = db.session.execute(
@@ -191,7 +192,7 @@ def confirm_mfa_setup(user):
         return jsonify({"error": "That authenticator code is not valid. Try again."}), 400
 
     credential.last_used_step = matched_step
-    recovery_codes = [secrets.token_hex(5).upper() for _ in range(10)]
+    recovery_codes = [secrets.token_hex(16).upper() for _ in range(10)]
     credential.enabled_at = datetime.now(timezone.utc)
     db.session.execute(
         delete(MfaRecoveryCode).where(MfaRecoveryCode.user_id == user.id)
@@ -216,7 +217,8 @@ def confirm_mfa_setup(user):
         {
             "enabled": True,
             "recovery_codes": [
-                f"{value[:5]}-{value[5:]}" for value in recovery_codes
+                "-".join(value[index:index + 8] for index in range(0, 32, 8))
+                for value in recovery_codes
             ],
             "message": (
                 "MFA is enabled. Save these recovery codes now; "
@@ -281,9 +283,19 @@ def disable_mfa(user):
     )
 
 
+def _mfa_challenge_rate_limit_key():
+    """Rate-limit MFA challenges by a keyed account identifier across IPs."""
+    pending_user_id = str(session.get("mfa_pending_user_id", ""))
+    secret = current_app.config["SECRET_KEY"]
+    if isinstance(secret, str):
+        secret = secret.encode("utf-8")
+    digest = hmac.new(secret, pending_user_id.encode("utf-8"), hashlib.sha256).hexdigest()
+    return f"mfa-challenge:{digest}"
+
+
 @mfa_bp.post("/challenge")
-@limiter.limit("5 per minute")
-@limiter.limit("10 per hour")
+@limiter.limit("5 per minute", key_func=_mfa_challenge_rate_limit_key)
+@limiter.limit("10 per hour", key_func=_mfa_challenge_rate_limit_key)
 def complete_mfa_login():
     user_id = session.get("mfa_pending_user_id")
     auth_version = session.get("mfa_pending_auth_version")
