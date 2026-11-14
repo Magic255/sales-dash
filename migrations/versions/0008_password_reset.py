@@ -149,7 +149,7 @@ def downgrade():
         "REVOKE SELECT, INSERT, UPDATE, DELETE ON password_reset_tokens FROM sales_dash_app"
     )
     op.execute("DROP POLICY IF EXISTS users_update_own_password ON users")
-    op.execute("REVOKE UPDATE (password_hash, auth_version, updated_at) ON users FROM sales_dash_app")
+    op.execute(\n        "REVOKE UPDATE (password_hash, auth_version, updated_at) ON users FROM sales_dash_app"\n    )
     op.drop_index(
         "ix_password_reset_tokens_user_created",
         table_name="password_reset_tokens",
