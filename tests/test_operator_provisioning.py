@@ -1,5 +1,7 @@
 from uuid import uuid4
 
+from sqlalchemy import select
+
 from app import create_app
 from app.extensions import db
 from app.models import Company, CompanyMembership, User
@@ -32,7 +34,7 @@ def test_create_user_provisions_unverified_account_without_company_access(tmp_pa
         assert "no company access yet" in result.output.lower()
         with application.app_context():
             user = db.session.scalar(
-                db.select(User).where(User.email == "new-user@example.test")
+                select(User).where(User.email == "new-user@example.test")
             )
             assert user is not None
             assert user.email_verified is False
@@ -90,7 +92,7 @@ def test_create_company_grants_admin_membership_to_verified_user(tmp_path):
         assert "Company New Company created" in result.output
         with application.app_context():
             company = db.session.scalar(
-                db.select(Company).where(Company.name == "New Company")
+                select(Company).where(Company.name == "New Company")
             )
             assert company is not None
             membership = db.session.get(
