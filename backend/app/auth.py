@@ -184,9 +184,9 @@ def confirm_email_verification():
         if user_id is None:
             db.session.rollback()
             return (
-            jsonify({"error": "This verification link is invalid or has expired."}),
-            400,
-        )
+                jsonify({"error": "This verification link is invalid or has expired."}),
+                400,
+            )
 
         user_id = UUID(str(user_id))
         set_user_context(db.session, user_id)
@@ -219,7 +219,9 @@ def confirm_email_verification():
 @limiter.limit("10 per hour", key_func=_login_account_rate_limit_key)
 @limiter.limit("5 per minute; 20 per hour")
 def login():
-    data = request.get_json(silent=True) or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        data = {}
     email = str(data.get("email", "")).strip().lower()
     password = data.get("password", "")
     if (
@@ -246,8 +248,7 @@ def login():
     if user and user.is_active:
         email_verified = bool(
             db.session.scalar(
-                text("SELECT email_verified FROM users WHERE id = :user_id"),
-                {"user_id": str(user.id)},
+                select(User.email_verified).where(User.id == user.id),
             )
         )
 
