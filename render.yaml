@@ -1,0 +1,66 @@
+# SALES DASH Render infrastructure.
+# This Blueprint describes resources only. Applying it in Render requires a separate approval.
+# Keep all resources in Singapore for private-network connectivity and regional proximity.
+
+previews:
+  generation: off
+
+services:
+  - type: web
+    name: sales-dash-web
+    runtime: python
+    region: singapore
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn --chdir backend --bind 0.0.0.0:$PORT --workers 2 --threads 4 --timeout 60 run:app
+    healthCheckPath: /api/health
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: FLASK_ENV
+        value: production
+      - key: SECRET_KEY
+        generateValue: true
+      # Supply the restricted, non-owner runtime login URL after database provisioning.
+      # Never use the Render Postgres owner connection string here.
+      - key: APP_DATABASE_URL
+        sync: false
+      - key: RATELIMIT_STORAGE_URI
+        fromService:
+          name: sales-dash-rate-limit
+          type: keyvalue
+          property: connectionString
+      # Generate locally with Fernet and enter directly in Render's protected settings.
+      - key: MFA_ENCRYPTION_KEY
+        sync: false
+      - key: PUBLIC_BASE_URL
+        sync: false
+      - key: MAIL_SERVER
+        value: smtp.gmail.com
+      - key: MAIL_PORT
+        value: "587"
+      - key: MAIL_USE_TLS
+        value: "true"
+      - key: MAIL_TIMEOUT
+        value: "10"
+      - key: MAIL_USERNAME
+        sync: false
+      - key: MAIL_PASSWORD
+        sync: false
+      - key: MAIL_DEFAULT_SENDER
+        sync: false
+
+  - type: keyvalue
+    name: sales-dash-rate-limit
+    region: singapore
+    ipAllowList: []
+    maxmemoryPolicy: allkeys-lru
+    persistenceMode: journal-snapshot
+
+databases:
+  - name: sales-dash-db
+    databaseName: sales_dash
+    region: singapore
+    plan: basic-256mb
+    ipAllowList: []
