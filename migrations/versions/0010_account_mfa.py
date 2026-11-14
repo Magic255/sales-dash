@@ -125,7 +125,8 @@ def downgrade():
         "audit_logs",
         "event_type IN ('login_succeeded', 'password_changed', 'company_selected', "
         "'logout', 'email_verified', 'password_reset', 'company_invitation_created', "
-        "'company_invitation_accepted', 'company_invitation_revoked')",
+        "'company_invitation_accepted', 'company_invitation_revoked', 'mfa_enabled', "
+        "'mfa_disabled', 'mfa_recovery_code_used')",
     )
     for policy in (
         "mfa_recovery_codes_delete",
