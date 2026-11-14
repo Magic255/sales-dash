@@ -315,7 +315,7 @@ def complete_mfa_login():
     if not isinstance(data, dict):
         data = {}
     code = data.get("code", "")
-    if not isinstance(code, str) or not 6 <= len(code) <= 32:
+    if not isinstance(code, str) or not 6 <= len(code) <= 40:
         return jsonify({"error": "Enter your authenticator or recovery code."}), 400
     try:
         user = set_user_context(db.session, UUID(user_id))
