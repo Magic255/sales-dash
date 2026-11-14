@@ -355,19 +355,24 @@ def test_manager_can_edit_archive_and_restore_catalog_records():
         assert archived_customer.status_code == archived_product.status_code == 200
         assert client.get("/api/customers").json["items"] == []
         assert client.get("/api/products").json["items"] == []
-        assert client.get("/api/customers?include_inactive=true").json["items"][0]["is_active"] is False
-        assert client.get("/api/products?include_inactive=true").json["items"][0]["is_active"] is False
+        inactive_customers = client.get("/api/customers?include_inactive=true").json["items"]
+        assert inactive_customers[0]["is_active"] is False
+        inactive_products = client.get("/api/products?include_inactive=true").json["items"]
+        assert inactive_products[0]["is_active"] is False
 
         restored_customer = client.patch(
-            f"/api/customers/{customer['id']}", json={"name": "Updated Customer", "is_active": True}
+            f"/api/customers/{customer['id']}",
+            json={"name": "Updated Customer", "is_active": True},
         )
         restored_product = client.patch(
             f"/api/products/{product['id']}",
             json={"name": "Updated Product", "is_active": True},
         )
         assert restored_customer.status_code == restored_product.status_code == 200
-        assert client.get("/api/customers").json["items"][0]["name"] == "Updated Customer"
-        assert client.get("/api/products").json["items"][0]["name"] == "Updated Product"
+        active_customers = client.get("/api/customers").json["items"]
+        assert active_customers[0]["name"] == "Updated Customer"
+        active_products = client.get("/api/products").json["items"]
+        assert active_products[0]["name"] == "Updated Product"
     finally:
         with application.app_context():
             db.session.remove()
