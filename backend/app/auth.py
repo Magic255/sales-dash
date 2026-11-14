@@ -4,9 +4,8 @@ import hashlib
 import hmac
 import secrets
 from datetime import datetime, timedelta, timezone
-from uuid import uuid4
 from functools import wraps
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
