@@ -196,12 +196,13 @@ def accept_company_invitation(user):
     try:
         set_user_context(db.session, user.id)
         activate_app_role(db.session)
-        db.session.execute(
-            text(
-                "SELECT set_config('app.company_invitation_token_hash', :token_hash, true)"
-            ),
-            {"token_hash": token_hash},
-        )
+        if db.session.get_bind().dialect.name == "postgresql":
+            db.session.execute(
+                text(
+                    "SELECT set_config('app.company_invitation_token_hash', :token_hash, true)"
+                ),
+                {"token_hash": token_hash},
+            )
         invitation = db.session.execute(
             update(CompanyInvitation)
             .where(
@@ -219,14 +220,15 @@ def accept_company_invitation(user):
             return jsonify({"error": "This invitation is invalid or has expired."}), 400
 
         company_id, role = invitation
-        db.session.execute(
-            text("SELECT set_config('app.invitation_company_id', :company_id, true)"),
-            {"company_id": str(company_id)},
-        )
-        db.session.execute(
-            text("SELECT set_config('app.current_company_id', :company_id, true)"),
-            {"company_id": str(company_id)},
-        )
+        if db.session.get_bind().dialect.name == "postgresql":
+            db.session.execute(
+                text("SELECT set_config('app.invitation_company_id', :company_id, true)"),
+                {"company_id": str(company_id)},
+            )
+            db.session.execute(
+                text("SELECT set_config('app.current_company_id', :company_id, true)"),
+                {"company_id": str(company_id)},
+            )
         db.session.add(
             CompanyMembership(
                 company_id=company_id,
