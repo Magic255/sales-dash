@@ -181,7 +181,7 @@ document.querySelector("#logout-button").addEventListener("click", async () => {
 });
 
 document.querySelector("#audit-refresh").addEventListener("click", loadAuditLogs);
-const pendingVerificationToken = new URLSearchParams(window.location.search).get("verify_email");
+const pendingVerificationToken = new URLSearchParams(window.location.hash.slice(1)).get("verify_email");
 if (pendingVerificationToken) {
   loginPanel.hidden = true;
   companyPanel.hidden = true;
