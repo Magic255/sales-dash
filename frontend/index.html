@@ -174,6 +174,7 @@
           <button type="button" class="module-tab" data-workspace-tab="sales">Sales</button>
           <button type="button" class="module-tab" data-workspace-tab="reports">Reports</button>
           <button id="team-tab" type="button" class="module-tab" data-workspace-tab="team" hidden>Team</button>
+          <button id="company-settings-tab" type="button" class="module-tab" data-workspace-tab="company-settings" hidden>Company settings</button>
         </nav>
         <p id="workspace-message" class="form-message" role="status" aria-live="polite"></p>
         <section class="module-panel" data-workspace-panel="overview">
@@ -231,6 +232,16 @@
           <p id="report-totals" class="panel-copy">Completed revenue: —</p>
           <p id="report-limit" class="panel-copy"></p>
           <div class="table-wrap"><table class="data-table"><thead><tr><th>Sale</th><th>Date</th><th>Customer</th><th>Status</th><th>Total</th><th>Items</th></tr></thead><tbody id="report-rows"><tr><td colspan="6">Run a report to see sales.</td></tr></tbody></table></div>
+        </section>
+        <section class="module-panel" data-workspace-panel="company-settings" hidden>
+          <h3>Company settings</h3>
+          <p class="panel-copy">Update the display name shown across this company workspace. The internal company identifier stays unchanged.</p>
+          <form id="company-settings-form" class="record-form">
+            <label for="company-settings-name">Company name</label>
+            <input id="company-settings-name" maxlength="160" required>
+            <button type="submit" class="primary-button">Save company name</button>
+          </form>
+          <p id="company-settings-message" class="form-message" role="status" aria-live="polite"></p>
         </section>
         <section class="module-panel" data-workspace-panel="team" hidden>
           <h3>Team access</h3>
