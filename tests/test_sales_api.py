@@ -1,4 +1,5 @@
 from decimal import Decimal
+from uuid import UUID
 
 from argon2 import PasswordHasher
 
@@ -393,7 +394,7 @@ def test_salesperson_cannot_list_archived_customers_or_products():
             company = db.session.query(Company).filter_by(
                 slug="sales-api-salesperson"
             ).one()
-            customer_row = db.session.get(Customer, customer["id"])
+            customer_row = db.session.get(Customer, UUID(customer["id"]))
             customer_row.is_active = False
             product = Product(
                 company_id=company.id,
