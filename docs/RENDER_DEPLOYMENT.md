@@ -51,7 +51,9 @@ Add these in the Render service's **Environment** settings. Use Render's generat
 | `MAIL_DEFAULT_SENDER` | Same Gmail address |
 | `MAIL_TIMEOUT` | `10` |
 
-Do **not** add `ADMIN_DATABASE_URL` or `DATABASE_URL` to the web service. The current configuration falls back from `ADMIN_DATABASE_URL` to `DATABASE_URL`; exposing Render's owner connection under that name could accidentally give the web process migration/admin access. Bind the restricted runtime connection explicitly as `APP_DATABASE_URL` only.
+Render supplies PostgreSQL URLs in the standard `postgres://` format. The app converts `postgres://` and `postgresql://` URLs to `postgresql+psycopg://` because this project installs Psycopg 3, not psycopg2. This conversion is applied to both the runtime URL and the operator-only admin URL; do not manually edit or expose the credentials.
+
+Do **not** add `ADMIN_DATABASE_URL` or `DATABASE_URL` to the web service. The app intentionally reads only `ADMIN_DATABASE_URL` for operator commands and does not fall back to a generic `DATABASE_URL`, which could contain Render's database-owner credentials. Bind the restricted runtime connection explicitly as `APP_DATABASE_URL` only.
 
 Generate the MFA key in a trusted local operator environment:
 
