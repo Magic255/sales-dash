@@ -1,6 +1,7 @@
 """Operator commands for controlled initial account provisioning."""
 
 import re
+import secrets
 from uuid import uuid4
 
 import click
@@ -90,12 +91,9 @@ def register_commands(app):
         if not display_name or len(display_name) > 120:
             raise click.ClickException("Display name must contain 1 to 120 characters.")
 
-        password = click.prompt("Initial password (minimum 12 characters)", hide_input=True)
-        confirmation = click.prompt("Confirm password", hide_input=True)
-        if len(password) < 12 or password != confirmation:
-            raise click.ClickException(
-                "Passwords must match and contain at least 12 characters."
-            )
+        # The operator never handles or distributes a temporary password.
+        # The user verifies their email, then sets a private password via reset.
+        unusable_password = secrets.token_urlsafe(48)
 
         engine = create_engine(normalize_database_url(admin_url), pool_pre_ping=True)
         try:
@@ -105,7 +103,7 @@ def register_commands(app):
                 user = User(
                     email=email,
                     display_name=display_name,
-                    password_hash=PasswordHasher().hash(password),
+                    password_hash=PasswordHasher().hash(unusable_password),
                     email_verified=False,
                 )
                 admin_session.add(user)
