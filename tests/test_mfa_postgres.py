@@ -1,5 +1,8 @@
-import pytest
+import os
+from uuid import uuid4
+
 import pyotp
+import pytest
 from argon2 import PasswordHasher
 from cryptography.fernet import Fernet
 
@@ -9,9 +12,6 @@ from app.models import User
 
 
 def test_postgres_restricted_runtime_role_can_enroll_and_use_mfa():
-    import os
-    from uuid import uuid4
-
     if not os.environ.get("APP_DATABASE_URL") or not os.environ.get("DATABASE_URL"):
         pytest.skip("CI PostgreSQL runtime-role credentials are not configured.")
 
