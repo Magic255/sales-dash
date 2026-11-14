@@ -44,6 +44,7 @@ class Config:
     MAIL_DEFAULT_SENDER = os.environ.get("MAIL_DEFAULT_SENDER", MAIL_USERNAME)
     MAIL_TIMEOUT = int(os.environ.get("MAIL_TIMEOUT", "10"))
     PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL")
+    MFA_ENCRYPTION_KEY = os.environ.get("MFA_ENCRYPTION_KEY")
 
 
 class TestingConfig(Config):

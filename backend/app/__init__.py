@@ -46,10 +46,12 @@ def create_app(test_config=None):
 
     from .audit import audit_bp
     from .auth import auth_bp
+    from .mfa import mfa_bp
     from .sales import sales_bp
     from .team import team_bp
 
     app.register_blueprint(auth_bp)
+    app.register_blueprint(mfa_bp)
     app.register_blueprint(audit_bp)
     app.register_blueprint(sales_bp)
     app.register_blueprint(team_bp)

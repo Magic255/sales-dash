@@ -38,7 +38,7 @@ Work in small milestones. Each milestone must have a clear scope, tests, and rev
 1. **Foundation:** repository structure, configuration, development setup, and quality checks.
 2. **Data layer:** PostgreSQL, SQLAlchemy models, and Alembic migrations.
 3. **Multi-company core:** companies, memberships, tenant context, and isolation.
-4. **Authentication and permissions:** secure login, company switching, and role-based access.
+4. **Authentication and permissions:** secure login, company switching, role-based access, and optional authenticator MFA.
 5. **Sales domain:** customers, products, sales, line items, and business rules.
 6. **Dashboard and workflows:** frontend integration, reporting, exports, and responsive UX.
 7. **Offline/PWA:** safe offline app shell; private data remains online-only.
@@ -56,14 +56,14 @@ Work in small milestones. Each milestone must have a clear scope, tests, and rev
 
 Implemented and merged:
 - Multi-company accounts, memberships, company switching, and PostgreSQL row-level security.
-- Secure session authentication, CSRF protection, Argon2id password hashing, login throttling, account session revocation, one-time email verification, and one-time password reset.
+- Secure session authentication, CSRF protection, Argon2id password hashing, login throttling, account session revocation, one-time email verification, and one-time password reset, and optional authenticator-app MFA with single-use recovery codes.
 - Admin, Manager, Salesperson, and Viewer permission checks; admins can invite existing verified accounts to a company using expiring, one-time links.
 - Append-only, company-scoped security audit logs.
 - Tenant-scoped customer and product APIs, sales workflows, dashboard summaries, sales reports, CSV exports, and draft sale editing.
 - PWA installation support and a public offline app shell. Sign-in and private company data require an internet connection.
 
 Still required before public launch:
-- MFA.
+- Final MFA review and secure configuration of the MFA encryption key in the deployment secret store.
 - Completion and review of all planned team-management and company-settings workflows.
 - A selected hosting provider and a tested production deployment.
 - Verified monitoring, backup retention, restore rehearsals, and incident-response procedures.
@@ -79,3 +79,4 @@ Public self-registration is intentionally disabled. Do not use real customer dat
 - [Security monitoring](docs/SECURITY_MONITORING.md)
 - [Email delivery configuration](docs/EMAIL_CONFIGURATION.md)
 - [Controlled company invitations](docs/COMPANY_INVITATIONS.md)
+- [Multi-factor authentication](docs/MFA.md)

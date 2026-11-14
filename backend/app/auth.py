@@ -432,7 +432,16 @@ def login():
 
     user_id = user.id
     auth_version = user.auth_version
+    from .mfa import is_mfa_enabled
+
     try:
+        if is_mfa_enabled(user_id):
+            session.clear()
+            session["mfa_pending_user_id"] = str(user_id)
+            session["mfa_pending_auth_version"] = auth_version
+            session["mfa_pending_at"] = int(datetime.now(timezone.utc).timestamp())
+            session.permanent = True
+            return jsonify({"mfa_required": True})
         set_user_context(db.session, user_id)
         from .audit import record_audit_event
 
