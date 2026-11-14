@@ -23,6 +23,7 @@ def app():
             email="admin@example.test",
             display_name="Test Admin",
             password_hash=PasswordHasher().hash("a-very-strong-test-password"),
+            email_verified=True,
         )
         allowed = Company(name="Allowed Company", slug="allowed-company")
         denied = Company(name="Other Company", slug="other-company")
@@ -137,6 +138,7 @@ def test_postgres_login_and_company_selection_use_restricted_role():
         user = User(
             email=email,
             password_hash=PasswordHasher().hash("a-very-strong-test-password"),
+            email_verified=True,
         )
         company = Company(name="Restricted Runtime Test", slug=f"runtime-{uuid4().hex}")
         db.session.add_all([user, company])
