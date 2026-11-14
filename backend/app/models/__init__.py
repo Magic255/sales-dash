@@ -11,6 +11,7 @@ from ..company_invitation import CompanyInvitation  # noqa: F401
 from ..email_verification import EmailVerificationToken  # noqa: F401
 from ..extensions import db
 from ..password_reset import PasswordResetToken  # noqa: F401
+from ..mfa_models import MfaCredential, MfaRecoveryCode  # noqa: F401
 
 
 def utc_now() -> datetime:
