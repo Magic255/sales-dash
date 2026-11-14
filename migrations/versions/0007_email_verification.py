@@ -4,6 +4,8 @@ Revision ID: 0007_email_verification
 Revises: 0006_sales_domain
 """
 
+
+# ruff: noqa: I001
 from alembic import op
 import sqlalchemy as sa
 
