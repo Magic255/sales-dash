@@ -10,6 +10,7 @@ import pyotp
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
 from cryptography.fernet import Fernet, InvalidToken
 from flask import Blueprint, current_app, jsonify, request, session
+from flask_limiter.util import get_remote_address
 from sqlalchemy import delete, or_, select, update
 
 from . import limiter
@@ -286,6 +287,8 @@ def disable_mfa(user):
 def _mfa_challenge_rate_limit_key():
     """Rate-limit MFA challenges by a keyed account identifier across IPs."""
     pending_user_id = str(session.get("mfa_pending_user_id", ""))
+    if not pending_user_id:
+        return get_remote_address()
     secret = current_app.config["SECRET_KEY"]
     if isinstance(secret, str):
         secret = secret.encode("utf-8")
