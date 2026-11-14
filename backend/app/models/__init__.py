@@ -345,3 +345,7 @@ class SaleItem(db.Model):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+
+
+# Keep the global verification-token table in Alembic's shared metadata.
+from ..email_verification import EmailVerificationToken  # noqa: F401,E402
