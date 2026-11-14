@@ -8,8 +8,8 @@ from argon2 import PasswordHasher
 from sqlalchemy import select
 
 from app import create_app
-from app.extensions import db
 from app.email_verification import EmailVerificationToken
+from app.extensions import db
 from app.models import User
 
 
