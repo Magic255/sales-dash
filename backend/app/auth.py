@@ -10,7 +10,7 @@ from uuid import UUID
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
 from flask import Blueprint, current_app, jsonify, request, session
-from sqlalchemy import delete, select, text, update
+from sqlalchemy import bindparam, delete, select, text, update
 from sqlalchemy.orm import joinedload
 
 from . import limiter
@@ -197,11 +197,10 @@ def confirm_email_verification():
 
         user_id = UUID(str(user_id))
         set_user_context(db.session, user_id)
-        db.session.execute(
-            update(User)
-            .where(User.id == user_id)
-            .values(email_verified=True)
-        )
+        verification_update = text(
+            "UPDATE users SET email_verified = TRUE WHERE id = :user_id"
+        ).bindparams(bindparam("user_id", type_=User.id.type))
+        db.session.execute(verification_update, {"user_id": user_id})
         from .audit import record_audit_event
 
         record_audit_event(db.session, user_id, "email_verified")
