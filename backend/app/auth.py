@@ -26,7 +26,9 @@ _DUMMY_PASSWORD_HASH = password_hasher.hash("not-a-real-sales-dash-password")
 
 def _login_account_rate_limit_key():
     """Rate-limit each normalized account identifier without storing raw email in Redis."""
-    data = request.get_json(silent=True) or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        data = {}
     email = str(data.get("email", "")).strip().lower()
     secret = current_app.config["SECRET_KEY"]
     if isinstance(secret, str):
@@ -86,7 +88,7 @@ def _verification_link(token: str) -> str:
         raise RuntimeError("Public application URL is not configured.")
     if current_app.config.get("APP_ENV") == "production" and not base_url.startswith("https://"):
         raise RuntimeError("Production email links must use HTTPS.")
-    return f"{base_url}/?verify_email={token}"
+    return f"{base_url}/#verify_email={token}"
 
 
 @auth_bp.post("/verification/resend")
@@ -94,7 +96,9 @@ def _verification_link(token: str) -> str:
 @limiter.limit("10 per hour")
 def resend_verification():
     """Send a new verification link without revealing whether an account exists."""
-    data = request.get_json(silent=True) or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        data = {}
     email = str(data.get("email", "")).strip().lower()
     if not email or len(email) > 320 or "@" not in email:
         return jsonify({"message": "If the account needs verification, an email will be sent."})
@@ -153,7 +157,9 @@ def resend_verification():
 @limiter.limit("10 per hour")
 def confirm_email_verification():
     """Consume a valid token once, then mark only its owning account verified."""
-    data = request.get_json(silent=True) or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        data = {}
     raw_token = data.get("token", "")
     if not isinstance(raw_token, str) or not 32 <= len(raw_token) <= 128:
         return (
