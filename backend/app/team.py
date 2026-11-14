@@ -332,7 +332,7 @@ def update_company_member(user, member_user_id):
             event_type = "team_member_role_changed"
     elif set(data) == {"status"}:
         status = data["status"]
-        if status not in {"active", "suspended"}:
+        if not isinstance(status, str) or status not in {"active", "suspended"}:
             return jsonify({"error": "Choose Active or Suspended."}), 400
         if member.status != status:
             member.status = status
