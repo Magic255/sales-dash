@@ -14,9 +14,9 @@ from sqlalchemy import select, text
 from sqlalchemy.orm import joinedload
 
 from . import limiter
+from .email_verification import EmailVerificationToken  # noqa: F401 - register token metadata
 from .extensions import db
 from .models import CompanyMembership
-from .email_verification import EmailVerificationToken  # noqa: F401 - register token metadata
 from .tenancy import TenantAccessDenied, find_login_user, set_tenant_context, set_user_context
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/api/auth")
