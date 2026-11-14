@@ -3,7 +3,7 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, ForeignKey, String, Uuid, func
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, String, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .extensions import db
@@ -15,6 +15,11 @@ class CompanyInvitation(db.Model):
     __tablename__ = "company_invitations"
     __table_args__ = (
         db.UniqueConstraint("token_hash", name="uq_company_invitations_token_hash"),
+        CheckConstraint("role IN ('manager', 'salesperson', 'viewer')", name="role_is_invitable"),
+        CheckConstraint(
+            "invited_email = lower(trim(invited_email)) AND length(invited_email) > 0",
+            name="email_normalized",
+        ),
         db.Index("ix_company_invitations_company_email", "company_id", "invited_email"),
     )
 
