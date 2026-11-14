@@ -48,7 +48,8 @@ def update_company_settings(user):
     company = db.session.get(Company, company_id)
     if company is None:
         return jsonify({"error": "The selected company is unavailable."}), 404
-    if company.name != name:
+    changed = company.name != name
+    if changed:
         company.name = name
         record_audit_event(db.session, user.id, "company_settings_updated", company_id)
         db.session.flush()
@@ -56,6 +57,6 @@ def update_company_settings(user):
     # Serialize while transaction-local tenant context is still active.
     # PostgreSQL resets that context after commit, and RLS then hides the row.
     item = {"id": str(company.id), "name": company.name, "slug": company.slug}
-    if db.session.is_modified(company):
+    if changed:
         db.session.commit()
     return jsonify({"item": item})
