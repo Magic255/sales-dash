@@ -21,6 +21,7 @@ def upgrade():
         sa.Column("user_id", sa.Uuid(), nullable=False),
         sa.Column("secret_ciphertext", sa.String(length=255), nullable=False),
         sa.Column("enabled_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("last_used_step", sa.Integer(), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("user_id"),
