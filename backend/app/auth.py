@@ -179,7 +179,10 @@ def confirm_email_verification():
         ).scalar_one_or_none()
         if user_id is None:
             db.session.rollback()
-            return jsonify({"error": "This verification link is invalid or has expired."}), 400
+            return (
+            jsonify({"error": "This verification link is invalid or has expired."}),
+            400,
+        )
 
         user_id = UUID(str(user_id))
         set_user_context(db.session, user_id)
@@ -194,7 +197,10 @@ def confirm_email_verification():
     except Exception:
         db.session.rollback()
         current_app.logger.warning("Email verification could not be completed.")
-        return jsonify({"error": "This verification link is invalid or has expired."}), 400
+        return (
+            jsonify({"error": "This verification link is invalid or has expired."}),
+            400,
+        )
 
     return jsonify({"email_verified": True, "message": "Your email is verified. You can now sign in."})
 
