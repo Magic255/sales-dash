@@ -1,4 +1,4 @@
-from backend.app.config import normalize_database_url
+from app.config import normalize_database_url
 
 
 def test_render_postgres_url_uses_installed_psycopg_driver():
