@@ -21,6 +21,7 @@ def record_audit_event(session, actor_user_id: UUID, event_type: str, company_id
         "company_selected",
         "logout",
         "email_verified",
+        "password_reset",
     }
     if event_type not in allowed_events:
         raise ValueError("Unsupported audit event.")

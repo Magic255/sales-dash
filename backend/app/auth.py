@@ -15,7 +15,7 @@ from sqlalchemy.orm import joinedload
 
 from . import limiter
 from .extensions import db
-from .models import CompanyMembership, EmailVerificationToken, User
+from .models import CompanyMembership, EmailVerificationToken, PasswordResetToken, User
 from .tenancy import (
     TenantAccessDenied,
     activate_app_role,
@@ -219,6 +219,169 @@ def confirm_email_verification():
             "message": "Your email is verified. You can now sign in.",
         }
     )
+
+
+def _password_reset_rate_limit_key():
+    """Rate-limit reset requests by a keyed account digest, never raw email."""
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        data = {}
+    email = str(data.get("email", "")).strip().lower()
+    secret = current_app.config["SECRET_KEY"]
+    if isinstance(secret, str):
+        secret = secret.encode("utf-8")
+    digest = hmac.new(secret, email.encode("utf-8"), hashlib.sha256).hexdigest()
+    return f"password-reset:{digest}"
+
+
+def _password_reset_link(token: str) -> str:
+    base_url = (current_app.config.get("PUBLIC_BASE_URL") or "").strip().rstrip("/")
+    if not base_url or "\r" in base_url or "\n" in base_url:
+        raise RuntimeError("Public application URL is not configured.")
+    if current_app.config.get("APP_ENV") == "production" and not base_url.startswith("https://"):
+        raise RuntimeError("Production email links must use HTTPS.")
+    return f"{base_url}/#reset_password={token}"
+
+
+@auth_bp.post("/password/reset/request")
+@limiter.limit("3 per hour", key_func=_password_reset_rate_limit_key)
+@limiter.limit("10 per hour")
+def request_password_reset():
+    """Send a reset link without revealing whether an account exists."""
+    generic = {"message": "If the account is eligible, a password reset email will be sent."}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        data = {}
+    email = str(data.get("email", "")).strip().lower()
+    if not email or len(email) > 320 or "@" not in email:
+        return jsonify(generic)
+
+    user = find_login_user(db.session, email)
+    if user and user.is_active and user.email_verified and user.password_hash:
+        raw_token = secrets.token_urlsafe(32)
+        token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+        now = datetime.now(timezone.utc)
+        recipient = user.email
+        try:
+            db.session.execute(
+                delete(PasswordResetToken).where(PasswordResetToken.user_id == user.id)
+            )
+            db.session.add(
+                PasswordResetToken(
+                    user_id=user.id,
+                    token_hash=token_hash,
+                    expires_at=now + timedelta(minutes=30),
+                )
+            )
+            db.session.commit()
+            from .email import send_email
+
+            link = _password_reset_link(raw_token)
+            send_email(
+                recipient,
+                "Reset your SALES DASH password",
+                "A password reset was requested for your SALES DASH account. "
+                "Use this link within 30 minutes. It can be used once:\n\n"
+                f"{link}\n\n"
+                "If you did not request this, you can ignore this message.",
+            )
+        except Exception:
+            db.session.rollback()
+            # If delivery failed, invalidate the token so no unusable reset remains.
+            try:
+                find_login_user(db.session, email)
+                db.session.execute(
+                    delete(PasswordResetToken).where(
+                        PasswordResetToken.token_hash == token_hash
+                    )
+                )
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+            current_app.logger.warning("Password reset email delivery failed.")
+    return jsonify(generic)
+
+
+@auth_bp.post("/password/reset/confirm")
+@limiter.limit("10 per hour")
+def confirm_password_reset():
+    """Consume one valid reset token and revoke every active account session."""
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        data = {}
+    raw_token = data.get("token", "")
+    new_password = data.get("new_password", "")
+    if (
+        not isinstance(raw_token, str)
+        or not 32 <= len(raw_token) <= 128
+        or not isinstance(new_password, str)
+        or not 12 <= len(new_password) <= 1024
+    ):
+        return (
+            jsonify(
+                {"error": "The reset link is invalid or expired, or the password is too short."}
+            ),
+            400,
+        )
+
+    token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+    now = datetime.now(timezone.utc)
+    try:
+        if db.session.get_bind().dialect.name == "postgresql":
+            activate_app_role(db.session)
+            db.session.execute(
+                text("SELECT set_config('app.password_reset_token_hash', :token_hash, true)"),
+                {"token_hash": token_hash},
+            )
+        user_id = db.session.execute(
+            update(PasswordResetToken)
+            .where(
+                PasswordResetToken.token_hash == token_hash,
+                PasswordResetToken.consumed_at.is_(None),
+                PasswordResetToken.expires_at > now,
+            )
+            .values(consumed_at=now)
+            .returning(PasswordResetToken.user_id)
+        ).scalar_one_or_none()
+        if user_id is None:
+            db.session.rollback()
+            return jsonify({"error": "The reset link is invalid or has expired."}), 400
+
+        user_id = UUID(str(user_id))
+        user = set_user_context(db.session, user_id)
+        if not user.is_active or not user.email_verified or not user.password_hash:
+            db.session.rollback()
+            return jsonify({"error": "The reset link is invalid or has expired."}), 400
+        try:
+            password_hasher.verify(user.password_hash, new_password)
+        except VerifyMismatchError:
+            pass
+        else:
+            db.session.rollback()
+            return (
+                jsonify({"error": "Choose a password different from your current password."}),
+                400,
+            )
+
+        user.password_hash = password_hasher.hash(new_password)
+        user.auth_version += 1
+        from .audit import record_audit_event
+
+        record_audit_event(db.session, user.id, "password_reset")
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        current_app.logger.warning("Password reset could not be completed.")
+        return jsonify({"error": "The reset link is invalid or has expired."}), 400
+
+    session.clear()
+    return jsonify(
+        {
+            "password_reset": True,
+            "message": "Your password has been reset. Sign in with your new password.",
+        }
+    )
+
 
 
 @auth_bp.post("/login")

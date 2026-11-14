@@ -41,6 +41,7 @@
         <button type="submit" class="primary-button">Sign in securely</button>
       </form>
       <button id="resend-verification-button" type="button" class="secondary-button">Resend verification email</button>
+      <button id="forgot-password-button" type="button" class="secondary-button">Forgot password?</button>
       <p id="login-message" class="form-message" role="status" aria-live="polite"></p>
     </section>
 
@@ -50,6 +51,21 @@
       <p class="panel-copy">Select the button below to complete verification. Opening this page alone does not use the link.</p>
       <button id="confirm-verification-button" type="button" class="primary-button">Verify email address</button>
       <p id="verification-message" class="form-message" role="status" aria-live="polite"></p>
+    </section>
+
+
+    <section id="password-reset-panel" class="auth-panel" aria-labelledby="password-reset-title" hidden>
+      <p class="eyebrow">ACCOUNT RECOVERY</p>
+      <h2 id="password-reset-title">Choose a new password</h2>
+      <p class="panel-copy">This secure reset link can be used once and expires after 30 minutes.</p>
+      <form id="password-reset-form" class="auth-form">
+        <label for="reset-new-password">New password</label>
+        <input id="reset-new-password" type="password" autocomplete="new-password" minlength="12" maxlength="1024" required>
+        <label for="reset-confirm-password">Confirm new password</label>
+        <input id="reset-confirm-password" type="password" autocomplete="new-password" minlength="12" maxlength="1024" required>
+        <button type="submit" class="primary-button">Reset password</button>
+      </form>
+      <p id="password-reset-message" class="form-message" role="status" aria-live="polite"></p>
     </section>
 
     <section id="company-panel" class="auth-panel" aria-labelledby="company-title" hidden>
