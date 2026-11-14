@@ -244,6 +244,8 @@ async function loadMfaStatus() {
   }
 }
 
+document.querySelector("#mfa-back-to-login").addEventListener("click", () => showLogin());
+
 mfaLoginForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const button = mfaLoginForm.querySelector("button");
