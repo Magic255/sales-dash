@@ -92,8 +92,7 @@ def _verification_rate_limit_key():
 
 def _verification_link(token: str) -> str:
     base_url = (current_app.config.get("PUBLIC_BASE_URL") or "").strip().rstrip("/")
-    if not base_url or "\r" in base_url or "
-" in base_url:
+    if not base_url or "\r" in base_url or "\n" in base_url:
         raise RuntimeError("Public application URL is not configured.")
     if current_app.config.get("APP_ENV") == "production" and not base_url.startswith("https://"):
         raise RuntimeError("Production email links must use HTTPS.")
@@ -146,12 +145,8 @@ def resend_verification():
                     recipient,
                     "Verify your SALES DASH email",
                     "Use this link to verify your SALES DASH email address. "
-                    "It expires in 24 hours and can be used once:
-
-"
-                    f"{link}
-
-"
+                    "It expires in 24 hours and can be used once:\n\n"
+                    f"{link}\n\n"
                     "If you did not request this, you can ignore this message.",
                 )
             except Exception:
