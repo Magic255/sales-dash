@@ -97,6 +97,7 @@ def test_mfa_setup_encrypts_secret_and_shows_recovery_codes_once(mfa_app):
     assert confirmed.status_code == 200
     codes = confirmed.json["recovery_codes"]
     assert len(codes) == 10
+    assert all(len(code.replace("-", "")) == 32 for code in codes)
     assert client.get("/api/auth/mfa/status").json["enabled"] is True
 
     with mfa_app.app_context():
