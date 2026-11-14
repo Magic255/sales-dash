@@ -15,7 +15,6 @@ from . import limiter
 from .auth import login_required, password_hasher
 from .extensions import db
 from .mfa_models import MfaCredential, MfaRecoveryCode
-from .models import User
 from .tenancy import TenantAccessDenied, set_user_context
 
 mfa_bp = Blueprint("mfa", __name__, url_prefix="/api/auth/mfa")
