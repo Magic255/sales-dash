@@ -26,7 +26,7 @@ SALES DASH helps organizations manage sales activity across one or more companie
 - Passwords are hashed with Argon2id.
 - Login attempts are rate-limited both per source IP and per normalized account identifier (the account key is HMAC-hashed before storage); production requires shared Redis-backed rate-limit storage.
 - Sessions carry an account auth-version checked against the database on each authenticated request; incrementing it revokes all existing sessions for that account.
-- Security audit events record successful sign-in, password changes, company selection, sign-out, email verification, password reset, company invitation, and MFA activity. They exclude passwords, tokens, raw email addresses, IP addresses, and session identifiers.
+- Security audit events record successful sign-in, password changes, company selection, sign-out, email verification, password reset, company invitation, team membership changes, company settings, and MFA activity. They exclude passwords, tokens, raw email addresses, IP addresses, and session identifiers.
 - Audit records are append-only for the restricted runtime role, protected by PostgreSQL row-level security, and visible only to an administrator in the active company.
 - Keep secrets out of source control; use environment variables locally and a managed secret store in production.
 - The service worker caches only the public app shell. It does not cache authentication or private API responses.
@@ -65,7 +65,7 @@ Implemented and merged:
 
 Still required before public launch:
 - Secure configuration and protected backup of the MFA encryption key in Render's secret environment settings.
-- Completion and review of all planned team-management and company-settings workflows.
+- Production-like verification of company settings and team-member administration.
 - Render resources configured and a tested production deployment.
 - Verified monitoring, backup retention, restore rehearsals, and incident-response procedures.
 - Final security review and role/tenant-isolation smoke tests in the production-like environment.
