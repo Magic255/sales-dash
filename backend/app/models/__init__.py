@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import CheckConstraint, DateTime, ForeignKey, String, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
+from ..email_verification import EmailVerificationToken  # noqa: F401
 from ..extensions import db
 
 
@@ -32,6 +33,9 @@ class User(db.Model):
     display_name: Mapped[str | None] = mapped_column(String(120))
     password_hash: Mapped[str | None] = mapped_column(String(255))
     is_active: Mapped[bool] = mapped_column(nullable=False, default=True, server_default="true")
+    email_verified: Mapped[bool] = mapped_column(
+        nullable=False, default=False, server_default="false"
+    )
     auth_version: Mapped[int] = mapped_column(nullable=False, default=1, server_default="1")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -123,7 +127,7 @@ class AuditLog(db.Model):
     __table_args__ = (
         db.CheckConstraint(
             "event_type IN ('login_succeeded', 'password_changed', "
-            "'company_selected', 'logout')",
+            "'company_selected', 'logout', 'email_verified')",
             name="event_type_is_supported",
         ),
         db.Index("ix_audit_logs_company_time", "company_id", "occurred_at"),
@@ -344,3 +348,4 @@ class SaleItem(db.Model):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+

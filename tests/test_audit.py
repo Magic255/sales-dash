@@ -25,6 +25,7 @@ def app():
         user = User(
             email="admin@example.test",
             password_hash=PasswordHasher().hash("a-very-strong-test-password"),
+            email_verified=True,
         )
         company = Company(name="Audit Test", slug="audit-test")
         db.session.add_all([user, company])

@@ -30,8 +30,15 @@ MAIL_USERNAME=your-address@gmail.com
 MAIL_PASSWORD=your-google-app-password
 MAIL_DEFAULT_SENDER=your-address@gmail.com
 MAIL_TIMEOUT=10
+PUBLIC_BASE_URL=https://your-app.example.com
 ```
 
 The application reads credentials from environment variables only. Missing credentials cause email delivery to fail closed; they do not prevent the app from starting. Delivery errors should be handled by the calling workflow and must never be returned with SMTP credentials or provider response details to a user.
 
-This adapter is the transport foundation only. Email verification, password reset, and invitation flows require separate token, expiry, one-time-use, rate-limit, and database-isolation work before public onboarding is enabled.
+## Email verification
+
+The verification workflow sends a link from the configured Gmail account. Set `PUBLIC_BASE_URL` to the exact public HTTPS origin of the deployed app; production refuses to generate verification links from a non-HTTPS URL. A verification link expires after 24 hours, contains a random token whose SHA-256 hash alone is stored in PostgreSQL, and can be used once. Requesting a new link invalidates the previous link. The resend endpoint uses generic responses and account/IP rate limits so it does not reveal whether an email address has an account.
+
+Opening a verification link does not consume it. The user must press **Verify email address** on the SALES DASH page; this avoids email-security scanners accidentally consuming links. Unverified accounts cannot sign in. Existing accounts are preserved as verified during migration, and the operator-created initial administrator is marked verified. Future invitation flows must explicitly create new accounts as unverified.
+
+Email verification is now implemented, but password reset, MFA, and controlled company invitations remain separate work. Public self-registration remains disabled.

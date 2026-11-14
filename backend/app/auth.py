@@ -2,19 +2,27 @@
 
 import hashlib
 import hmac
+import secrets
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 from uuid import UUID
 
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
 from flask import Blueprint, current_app, jsonify, request, session
-from sqlalchemy import select
+from sqlalchemy import bindparam, delete, select, text, update
 from sqlalchemy.orm import joinedload
 
 from . import limiter
 from .extensions import db
-from .models import CompanyMembership
-from .tenancy import TenantAccessDenied, find_login_user, set_tenant_context, set_user_context
+from .models import CompanyMembership, EmailVerificationToken, User
+from .tenancy import (
+    TenantAccessDenied,
+    activate_app_role,
+    find_login_user,
+    set_tenant_context,
+    set_user_context,
+)
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/api/auth")
 password_hasher = PasswordHasher()
@@ -24,7 +32,9 @@ _DUMMY_PASSWORD_HASH = password_hasher.hash("not-a-real-sales-dash-password")
 
 def _login_account_rate_limit_key():
     """Rate-limit each normalized account identifier without storing raw email in Redis."""
-    data = request.get_json(silent=True) or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        data = {}
     email = str(data.get("email", "")).strip().lower()
     secret = current_app.config["SECRET_KEY"]
     if isinstance(secret, str):
@@ -66,11 +76,158 @@ def csrf_token():
     return jsonify({"csrf_token": generate_csrf()})
 
 
+
+def _verification_rate_limit_key():
+    """Rate-limit verification requests by a keyed digest, never raw email."""
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        data = {}
+    email = str(data.get("email", "")).strip().lower()
+    secret = current_app.config["SECRET_KEY"]
+    if isinstance(secret, str):
+        secret = secret.encode("utf-8")
+    digest = hmac.new(secret, email.encode("utf-8"), hashlib.sha256).hexdigest()
+    return f"email-verification:{digest}"
+
+
+def _verification_link(token: str) -> str:
+    base_url = (current_app.config.get("PUBLIC_BASE_URL") or "").strip().rstrip("/")
+    if not base_url or "\r" in base_url or "\n" in base_url:
+        raise RuntimeError("Public application URL is not configured.")
+    if current_app.config.get("APP_ENV") == "production" and not base_url.startswith("https://"):
+        raise RuntimeError("Production email links must use HTTPS.")
+    return f"{base_url}/#verify_email={token}"
+
+
+@auth_bp.post("/verification/resend")
+@limiter.limit("3 per hour", key_func=_verification_rate_limit_key)
+@limiter.limit("10 per hour")
+def resend_verification():
+    """Send a new verification link without revealing whether an account exists."""
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        data = {}
+    email = str(data.get("email", "")).strip().lower()
+    if not email or len(email) > 320 or "@" not in email:
+        return jsonify({"message": "If the account needs verification, an email will be sent."})
+
+    user = find_login_user(db.session, email)
+    if user and user.is_active:
+        verified = bool(
+            db.session.scalar(
+                select(User.email_verified).where(User.id == user.id)
+            )
+        )
+        if not verified:
+            raw_token = secrets.token_urlsafe(32)
+            token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+            now = datetime.now(timezone.utc)
+            try:
+                # A resend invalidates every earlier outstanding link for this account.
+                db.session.execute(
+                    delete(EmailVerificationToken).where(
+                        EmailVerificationToken.user_id == user.id
+                    )
+                )
+                db.session.add(
+                    EmailVerificationToken(
+                        user_id=user.id,
+                        token_hash=token_hash,
+                        expires_at=now + timedelta(hours=24),
+                    )
+                )
+                recipient = user.email
+                db.session.commit()
+                from .email import send_email
+
+                link = _verification_link(raw_token)
+                send_email(
+                    recipient,
+                    "Verify your SALES DASH email",
+                    "Use this link to verify your SALES DASH email address. "
+                    "It expires in 24 hours and can be used once:\n\n"
+                    f"{link}\n\n"
+                    "If you did not request this, you can ignore this message.",
+                )
+            except Exception:
+                db.session.rollback()
+                current_app.logger.warning("Email verification delivery failed.")
+    return jsonify({"message": "If the account needs verification, an email will be sent."})
+
+
+@auth_bp.post("/verification/confirm")
+@limiter.limit("10 per hour")
+def confirm_email_verification():
+    """Consume a valid token once, then mark only its owning account verified."""
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        data = {}
+    raw_token = data.get("token", "")
+    if not isinstance(raw_token, str) or not 32 <= len(raw_token) <= 128:
+        return (
+            jsonify({"error": "This verification link is invalid or has expired."}),
+            400,
+        )
+
+    token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+    now = datetime.now(timezone.utc)
+    try:
+        if db.session.get_bind().dialect.name == "postgresql":
+            activate_app_role(db.session)
+            db.session.execute(
+                text("SELECT set_config('app.email_verification_token_hash', :token_hash, true)"),
+                {"token_hash": token_hash},
+            )
+        user_id = db.session.execute(
+            update(EmailVerificationToken)
+            .where(
+                EmailVerificationToken.token_hash == token_hash,
+                EmailVerificationToken.consumed_at.is_(None),
+                EmailVerificationToken.expires_at > now,
+            )
+            .values(consumed_at=now)
+            .returning(EmailVerificationToken.user_id)
+        ).scalar_one_or_none()
+        if user_id is None:
+            db.session.rollback()
+            return (
+                jsonify({"error": "This verification link is invalid or has expired."}),
+                400,
+            )
+
+        user_id = UUID(str(user_id))
+        set_user_context(db.session, user_id)
+        verification_update = text(
+            "UPDATE users SET email_verified = TRUE WHERE id = :user_id"
+        ).bindparams(bindparam("user_id", type_=User.id.type))
+        db.session.execute(verification_update, {"user_id": user_id})
+        from .audit import record_audit_event
+
+        record_audit_event(db.session, user_id, "email_verified")
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        current_app.logger.warning("Email verification could not be completed.")
+        return (
+            jsonify({"error": "This verification link is invalid or has expired."}),
+            400,
+        )
+
+    return jsonify(
+        {
+            "email_verified": True,
+            "message": "Your email is verified. You can now sign in.",
+        }
+    )
+
+
 @auth_bp.post("/login")
 @limiter.limit("10 per hour", key_func=_login_account_rate_limit_key)
 @limiter.limit("5 per minute; 20 per hour")
 def login():
-    data = request.get_json(silent=True) or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        data = {}
     email = str(data.get("email", "")).strip().lower()
     password = data.get("password", "")
     if (
@@ -93,11 +250,20 @@ def login():
     except (VerifyMismatchError, VerificationError, InvalidHashError):
         password_valid = False
 
+    email_verified = False
+    if user and user.is_active:
+        email_verified = bool(
+            db.session.scalar(
+                select(User.email_verified).where(User.id == user.id),
+            )
+        )
+
     if (
         not user
         or not user.is_active
         or not user.password_hash
         or not password_valid
+        or not email_verified
     ):
         return jsonify({"error": "Email or password is incorrect."}), 401
 

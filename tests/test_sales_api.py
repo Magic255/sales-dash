@@ -20,6 +20,7 @@ def make_client(role="admin"):
         user = User(
             email=f"{role}@example.test",
             password_hash=PasswordHasher().hash("a-very-strong-test-password"),
+            email_verified=True,
         )
         company = Company(name="Sales API Company", slug=f"sales-api-{role}")
         db.session.add_all([user, company])
@@ -166,6 +167,7 @@ def test_sales_api_requires_login_and_selected_company():
             user = User(
                 email="unselected@example.test",
                 password_hash=PasswordHasher().hash("a-very-strong-test-password"),
+                email_verified=True,
             )
             company = Company(name="Unselected", slug="unselected-company")
             db.session.add_all([user, company])

@@ -2,6 +2,8 @@ const loginPanel = document.querySelector("#login-panel");
 const companyPanel = document.querySelector("#company-panel");
 const loginForm = document.querySelector("#login-form");
 const loginMessage = document.querySelector("#login-message");
+const verificationPanel = document.querySelector("#verification-panel");
+const verificationMessage = document.querySelector("#verification-message");
 const companyMessage = document.querySelector("#company-message");
 const companySelect = document.querySelector("#company-select");
 const workspaceReady = document.querySelector("#workspace-ready");
@@ -179,7 +181,14 @@ document.querySelector("#logout-button").addEventListener("click", async () => {
 });
 
 document.querySelector("#audit-refresh").addEventListener("click", loadAuditLogs);
-loadCurrentUser().catch((error) => showLogin(error.message));
+const pendingVerificationToken = new URLSearchParams(window.location.hash.slice(1)).get("verify_email");
+if (pendingVerificationToken) {
+  loginPanel.hidden = true;
+  companyPanel.hidden = true;
+  verificationPanel.hidden = false;
+} else {
+  loadCurrentUser().catch((error) => showLogin(error.message));
+}
 
 const passwordForm = document.querySelector("#password-form");
 const passwordMessage = document.querySelector("#password-message");
@@ -215,6 +224,53 @@ passwordForm.addEventListener("submit", async (event) => {
     showLogin("Your password was changed. Please sign in again with your new password.");
   } catch (error) {
     passwordMessage.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+});
+
+
+document.querySelector("#resend-verification-button").addEventListener("click", async () => {
+  const email = document.querySelector("#email").value.trim();
+  if (!email) {
+    loginMessage.textContent = "Enter your email address first.";
+    return;
+  }
+  const button = document.querySelector("#resend-verification-button");
+  button.disabled = true;
+  loginMessage.textContent = "Requesting a verification email…";
+  try {
+    const data = await apiRequest("/api/auth/verification/resend", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    });
+    loginMessage.textContent = data.message;
+  } catch (error) {
+    loginMessage.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+});
+
+document.querySelector("#confirm-verification-button").addEventListener("click", async () => {
+  const button = document.querySelector("#confirm-verification-button");
+  const token = pendingVerificationToken;
+  if (!token) {
+    verificationMessage.textContent = "This verification link is invalid or has expired.";
+    return;
+  }
+  button.disabled = true;
+  verificationMessage.textContent = "Verifying your email…";
+  try {
+    const data = await apiRequest("/api/auth/verification/confirm", {
+      method: "POST",
+      body: JSON.stringify({ token }),
+    });
+    window.history.replaceState({}, document.title, window.location.pathname);
+    verificationPanel.hidden = true;
+    showLogin(data.message);
+  } catch (error) {
+    verificationMessage.textContent = error.message;
   } finally {
     button.disabled = false;
   }

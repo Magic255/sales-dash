@@ -40,7 +40,16 @@
         <input id="password" name="password" type="password" autocomplete="current-password" required>
         <button type="submit" class="primary-button">Sign in securely</button>
       </form>
+      <button id="resend-verification-button" type="button" class="secondary-button">Resend verification email</button>
       <p id="login-message" class="form-message" role="status" aria-live="polite"></p>
+    </section>
+
+    <section id="verification-panel" class="auth-panel" aria-labelledby="verification-title" hidden>
+      <p class="eyebrow">EMAIL VERIFICATION</p>
+      <h2 id="verification-title">Confirm your email address</h2>
+      <p class="panel-copy">Select the button below to complete verification. Opening this page alone does not use the link.</p>
+      <button id="confirm-verification-button" type="button" class="primary-button">Verify email address</button>
+      <p id="verification-message" class="form-message" role="status" aria-live="polite"></p>
     </section>
 
     <section id="company-panel" class="auth-panel" aria-labelledby="company-title" hidden>

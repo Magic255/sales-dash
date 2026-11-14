@@ -5,7 +5,7 @@ from uuid import uuid4
 
 import click
 from argon2 import PasswordHasher
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, select, text
 from sqlalchemy.orm import Session
 
 from .models import Company, CompanyMembership, User
@@ -48,6 +48,10 @@ def register_commands(app):
                 company = Company(name=company_name, slug=slug)
                 admin_session.add_all([user, company])
                 admin_session.flush()
+                admin_session.execute(
+                    text("UPDATE users SET email_verified = TRUE WHERE id = :user_id"),
+                    {"user_id": str(user.id)},
+                )
                 admin_session.add(
                     CompanyMembership(
                         user_id=user.id,
