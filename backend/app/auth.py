@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import secrets
 from datetime import datetime, timedelta, timezone
+from uuid import uuid4
 from functools import wraps
 from uuid import UUID
 
@@ -125,7 +126,7 @@ def resend_verification():
                         "VALUES (:id, :user_id, :token_hash, :expires_at)"
                     ),
                     {
-                        "id": str(secrets.token_hex(16)),
+                        "id": str(uuid4()),
                         "user_id": str(user.id),
                         "token_hash": token_hash,
                         "expires_at": now + timedelta(hours=24),
