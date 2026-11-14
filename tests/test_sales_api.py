@@ -330,3 +330,45 @@ def test_sales_report_rejects_invalid_date_range():
         with application.app_context():
             db.session.remove()
             db.drop_all()
+
+def test_manager_can_edit_archive_and_restore_catalog_records():
+    application, client = make_client("manager")
+    try:
+        customer = client.post(
+            "/api/customers",
+            json={"name": "Archive Customer", "email": "archive@example.test"},
+        ).json["item"]
+        product = client.post(
+            "/api/products",
+            json={
+                "sku": "ARCHIVE-1", "name": "Archive Product",
+                "unit_price": "25.00", "currency": "TZS",
+            },
+        ).json["item"]
+
+        archived_customer = client.patch(
+            f"/api/customers/{customer['id']}", json={"is_active": False}
+        )
+        archived_product = client.patch(
+            f"/api/products/{product['id']}", json={"is_active": False}
+        )
+        assert archived_customer.status_code == archived_product.status_code == 200
+        assert client.get("/api/customers").json["items"] == []
+        assert client.get("/api/products").json["items"] == []
+        assert client.get("/api/customers?include_inactive=true").json["items"][0]["is_active"] is False
+        assert client.get("/api/products?include_inactive=true").json["items"][0]["is_active"] is False
+
+        restored_customer = client.patch(
+            f"/api/customers/{customer['id']}", json={"name": "Updated Customer"}
+        )
+        restored_product = client.patch(
+            f"/api/products/{product['id']}",
+            json={"name": "Updated Product", "is_active": True},
+        )
+        assert restored_customer.status_code == restored_product.status_code == 200
+        assert client.get("/api/customers").json["items"][0]["name"] == "Updated Customer"
+        assert client.get("/api/products").json["items"][0]["name"] == "Updated Product"
+    finally:
+        with application.app_context():
+            db.session.remove()
+            db.drop_all()
