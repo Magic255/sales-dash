@@ -1,4 +1,4 @@
-const CACHE_NAME = "sales-dash-shell-v1";
+const CACHE_NAME = "sales-dash-shell-v2";
 const SHELL_ASSETS = [
   "/",
   "/manifest.webmanifest",
