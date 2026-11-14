@@ -2,11 +2,10 @@ import os
 from logging.config import fileConfig
 
 from alembic import context
+from backend.app.config import normalize_database_url
 from flask import current_app
 from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
-
-from backend.app.config import normalize_database_url
 
 config = context.config
 
