@@ -41,6 +41,19 @@ def upgrade():
     op.execute(
         "GRANT SELECT, INSERT, UPDATE, DELETE ON password_reset_tokens TO sales_dash_app"
     )
+    op.execute("GRANT UPDATE (password_hash, auth_version) ON users TO sales_dash_app")
+    op.execute(
+        """
+        CREATE POLICY users_update_own_password ON users
+        FOR UPDATE TO sales_dash_app
+        USING (
+            id = NULLIF(current_setting('app.current_user_id', true), '')::uuid
+        )
+        WITH CHECK (
+            id = NULLIF(current_setting('app.current_user_id', true), '')::uuid
+        )
+        """
+    )
     op.execute("ALTER TABLE password_reset_tokens ENABLE ROW LEVEL SECURITY")
     op.execute("ALTER TABLE password_reset_tokens FORCE ROW LEVEL SECURITY")
     op.execute(
@@ -135,6 +148,8 @@ def downgrade():
     op.execute(
         "REVOKE SELECT, INSERT, UPDATE, DELETE ON password_reset_tokens FROM sales_dash_app"
     )
+    op.execute("DROP POLICY IF EXISTS users_update_own_password ON users")
+    op.execute("REVOKE UPDATE (password_hash, auth_version) ON users FROM sales_dash_app")
     op.drop_index(
         "ix_password_reset_tokens_user_created",
         table_name="password_reset_tokens",
