@@ -51,7 +51,7 @@
       <p class="panel-copy">Enter the six-digit code from your authenticator app, or use one of your recovery codes.</p>
       <form id="mfa-login-form" class="auth-form">
         <label for="mfa-login-code">Authenticator or recovery code</label>
-        <input id="mfa-login-code" inputmode="numeric" autocomplete="one-time-code" maxlength="32" required>
+        <input id="mfa-login-code" inputmode="text" autocomplete="one-time-code" maxlength="40" required>
         <button type="submit" class="primary-button">Continue securely</button>
       </form>
       <p id="mfa-login-message" class="form-message" role="status" aria-live="polite"></p>
@@ -137,7 +137,7 @@
             <label for="mfa-disable-password">Current password to disable MFA</label>
             <input id="mfa-disable-password" type="password" autocomplete="current-password" maxlength="1024" required>
             <label for="mfa-disable-code">Authenticator or unused recovery code</label>
-            <input id="mfa-disable-code" autocomplete="one-time-code" maxlength="32" required>
+            <input id="mfa-disable-code" autocomplete="one-time-code" maxlength="40" required>
             <button type="submit" class="secondary-button">Disable MFA</button>
           </form>
           <p id="mfa-message" class="form-message" role="status" aria-live="polite"></p>
