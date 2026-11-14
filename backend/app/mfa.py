@@ -245,7 +245,9 @@ def disable_mfa(user):
         or not isinstance(code, str)
     ):
         return (
-            jsonify({"error": "Enter your current password and an authenticator or recovery code."}),
+            jsonify(
+                {"error": "Enter your current password and an authenticator or recovery code."}
+            ),
             400,
         )
     if not user.password_hash:
