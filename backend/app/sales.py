@@ -104,8 +104,11 @@ def _sale_json(item, customer_name=None, line_items=None):
 @company_permission_required("view_reports")
 def list_customers(_user):
     company_id = _company_id()
+    include_inactive = request.args.get("include_inactive") == "true"
+    if include_inactive and g.company_membership.role not in {"admin", "manager"}:
+        return jsonify({"error": "You are not allowed to view archived customers."}), 403
     query = select(Customer).where(Customer.company_id == company_id)
-    if request.args.get("include_inactive") != "true":
+    if not include_inactive:
         query = query.where(Customer.is_active.is_(True))
     search = request.args.get("search", "").strip()
     if search:
@@ -194,8 +197,11 @@ def update_customer(_user, customer_id):
 @company_permission_required("view_reports")
 def list_products(_user):
     company_id = _company_id()
+    include_inactive = request.args.get("include_inactive") == "true"
+    if include_inactive and g.company_membership.role not in {"admin", "manager"}:
+        return jsonify({"error": "You are not allowed to view archived products."}), 403
     query = select(Product).where(Product.company_id == company_id)
-    if request.args.get("include_inactive") != "true":
+    if not include_inactive:
         query = query.where(Product.is_active.is_(True))
     search = request.args.get("search", "").strip()
     if search:

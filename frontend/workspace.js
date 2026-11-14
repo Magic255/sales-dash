@@ -57,15 +57,113 @@ function selectTab(name) {
   });
 }
 
+function canManageCatalog() {
+  return ["admin", "manager"].includes(workspaceRole);
+}
+
+function addCatalogAction(cell, label, callback, danger = false) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = danger ? "table-action table-action-danger" : "table-action";
+  button.textContent = label;
+  button.addEventListener("click", callback);
+  cell.append(button);
+}
+
+async function editCustomer(item) {
+  const name = window.prompt("Customer name", item.name);
+  if (name === null) return;
+  const email = window.prompt("Email (optional)", item.email || "");
+  if (email === null) return;
+  const phone = window.prompt("Phone (optional)", item.phone || "");
+  if (phone === null) return;
+  const organization = window.prompt("Organization (optional)", item.organization || "");
+  if (organization === null) return;
+  try {
+    await workspaceRequest("/api/customers/" + encodeURIComponent(item.id), {
+      method: "PATCH",
+      body: JSON.stringify({name, email, phone, organization}),
+    });
+    await loadWorkspace();
+    workspaceMessage("Customer updated.");
+  } catch (error) {
+    workspaceMessage(error.message);
+  }
+}
+
+async function setCustomerActive(item) {
+  const next = !item.is_active;
+  const action = next ? "restore" : "archive";
+  if (!window.confirm("Are you sure you want to " + action + " this customer?")) return;
+  try {
+    await workspaceRequest("/api/customers/" + encodeURIComponent(item.id), {
+      method: "PATCH", body: JSON.stringify({is_active: next}),
+    });
+    await loadWorkspace();
+    workspaceMessage(next ? "Customer restored." : "Customer archived.");
+  } catch (error) {
+    workspaceMessage(error.message);
+  }
+}
+
+async function editProduct(item) {
+  const sku = window.prompt("Product code / SKU", item.sku);
+  if (sku === null) return;
+  const name = window.prompt("Product name", item.name);
+  if (name === null) return;
+  const description = window.prompt("Description (optional)", item.description || "");
+  if (description === null) return;
+  const unitPrice = window.prompt("Unit price", item.unit_price);
+  if (unitPrice === null) return;
+  const currency = window.prompt("Currency (3-letter code)", item.currency);
+  if (currency === null) return;
+  try {
+    await workspaceRequest("/api/products/" + encodeURIComponent(item.id), {
+      method: "PATCH",
+      body: JSON.stringify({sku, name, description, unit_price: unitPrice, currency}),
+    });
+    await loadWorkspace();
+    workspaceMessage("Product updated. Existing sales retain their saved price snapshots.");
+  } catch (error) {
+    workspaceMessage(error.message);
+  }
+}
+
+async function setProductActive(item) {
+  const next = !item.is_active;
+  const action = next ? "restore" : "archive";
+  if (!window.confirm("Are you sure you want to " + action + " this product?")) return;
+  try {
+    await workspaceRequest("/api/products/" + encodeURIComponent(item.id), {
+      method: "PATCH", body: JSON.stringify({is_active: next}),
+    });
+    await loadWorkspace();
+    workspaceMessage(next ? "Product restored." : "Product archived.");
+  } catch (error) {
+    workspaceMessage(error.message);
+  }
+}
+
 function renderCustomers() {
   const body = document.querySelector("#customer-rows");
   body.replaceChildren();
-  if (!customers.length) return emptyRow(body, 3, "No customers yet. Add the first customer above.");
+  if (!customers.length) return emptyRow(body, 5, "No customers yet. Add the first customer above.");
   for (const item of customers) {
     const row = document.createElement("tr");
     textCell(row, item.name);
     textCell(row, item.email);
     textCell(row, item.phone);
+    textCell(row, item.is_active ? "Active" : "Archived");
+    const actions = document.createElement("td");
+    if (canManageCatalog()) {
+      addCatalogAction(actions, "Edit", () => editCustomer(item));
+      addCatalogAction(
+        actions, item.is_active ? "Archive" : "Restore",
+        () => setCustomerActive(item), item.is_active,
+      );
+    }
+    if (!actions.childElementCount) actions.textContent = "—";
+    row.append(actions);
     body.append(row);
   }
 }
@@ -73,13 +171,24 @@ function renderCustomers() {
 function renderProducts() {
   const body = document.querySelector("#product-rows");
   body.replaceChildren();
-  if (!products.length) return emptyRow(body, 4, "No products yet. Add the first product above.");
+  if (!products.length) return emptyRow(body, 6, "No products yet. Add the first product above.");
   for (const item of products) {
     const row = document.createElement("tr");
     textCell(row, item.sku);
     textCell(row, item.name);
     textCell(row, amount(item.currency, item.unit_price));
     textCell(row, item.currency);
+    textCell(row, item.is_active ? "Active" : "Archived");
+    const actions = document.createElement("td");
+    if (canManageCatalog()) {
+      addCatalogAction(actions, "Edit", () => editProduct(item));
+      addCatalogAction(
+        actions, item.is_active ? "Archive" : "Restore",
+        () => setProductActive(item), item.is_active,
+      );
+    }
+    if (!actions.childElementCount) actions.textContent = "—";
+    row.append(actions);
     body.append(row);
   }
 }
@@ -87,10 +196,12 @@ function renderProducts() {
 function fillSaleChoices() {
   const customer = document.querySelector("#sale-customer");
   const product = document.querySelector("#sale-product");
-  customer.replaceChildren(new Option(customers.length ? "Choose a customer" : "Add a customer first", ""));
-  product.replaceChildren(new Option(products.length ? "Choose a product" : "Add a product first", ""));
-  customers.forEach((item) => customer.add(new Option(item.name, item.id)));
-  products.forEach((item) => product.add(new Option(
+  const activeCustomers = customers.filter((item) => item.is_active);
+  const activeProducts = products.filter((item) => item.is_active);
+  customer.replaceChildren(new Option(activeCustomers.length ? "Choose a customer" : "Add an active customer first", ""));
+  product.replaceChildren(new Option(activeProducts.length ? "Choose a product" : "Add an active product first", ""));
+  activeCustomers.forEach((item) => customer.add(new Option(item.name, item.id)));
+  activeProducts.forEach((item) => product.add(new Option(
     item.name + " · " + amount(item.currency, item.unit_price), item.id,
   )));
 }
@@ -200,8 +311,8 @@ async function loadWorkspace() {
   try {
     const [summary, customerData, productData] = await Promise.all([
       workspaceRequest("/api/dashboard/summary"),
-      workspaceRequest("/api/customers"),
-      workspaceRequest("/api/products"),
+      workspaceRequest("/api/customers" + (canManageCatalog() ? "?include_inactive=true" : "")),
+      workspaceRequest("/api/products" + (canManageCatalog() ? "?include_inactive=true" : "")),
     ]);
     if (generation !== workspaceGeneration) return;
     customers = customerData.items;

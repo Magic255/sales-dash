@@ -1,10 +1,11 @@
 from decimal import Decimal
+from uuid import UUID
 
 from argon2 import PasswordHasher
 
 from app import create_app
 from app.extensions import db
-from app.models import Company, CompanyMembership, Product, User
+from app.models import Company, CompanyMembership, Customer, Product, User
 
 
 def make_client(role="admin"):
@@ -326,6 +327,91 @@ def test_sales_report_rejects_invalid_date_range():
         response = client.get("/api/reports/sales?from=2026-12-01&to=2026-11-01")
         assert response.status_code == 400
         assert response.json["error"] == "Invalid report filters. Check the dates and selections."
+    finally:
+        with application.app_context():
+            db.session.remove()
+            db.drop_all()
+
+def test_manager_can_edit_archive_and_restore_catalog_records():
+    application, client = make_client("manager")
+    try:
+        customer = client.post(
+            "/api/customers",
+            json={"name": "Archive Customer", "email": "archive@example.test"},
+        ).json["item"]
+        product = client.post(
+            "/api/products",
+            json={
+                "sku": "ARCHIVE-1", "name": "Archive Product",
+                "unit_price": "25.00", "currency": "TZS",
+            },
+        ).json["item"]
+
+        archived_customer = client.patch(
+            f"/api/customers/{customer['id']}", json={"is_active": False}
+        )
+        archived_product = client.patch(
+            f"/api/products/{product['id']}", json={"is_active": False}
+        )
+        assert archived_customer.status_code == archived_product.status_code == 200
+        assert client.get("/api/customers").json["items"] == []
+        assert client.get("/api/products").json["items"] == []
+        inactive_customers = client.get("/api/customers?include_inactive=true").json["items"]
+        assert inactive_customers[0]["is_active"] is False
+        inactive_products = client.get("/api/products?include_inactive=true").json["items"]
+        assert inactive_products[0]["is_active"] is False
+
+        restored_customer = client.patch(
+            f"/api/customers/{customer['id']}",
+            json={"name": "Updated Customer", "is_active": True},
+        )
+        restored_product = client.patch(
+            f"/api/products/{product['id']}",
+            json={"name": "Updated Product", "is_active": True},
+        )
+        assert restored_customer.status_code == restored_product.status_code == 200
+        active_customers = client.get("/api/customers").json["items"]
+        assert active_customers[0]["name"] == "Updated Customer"
+        active_products = client.get("/api/products").json["items"]
+        assert active_products[0]["name"] == "Updated Product"
+    finally:
+        with application.app_context():
+            db.session.remove()
+            db.drop_all()
+
+
+
+def test_salesperson_cannot_list_archived_customers_or_products():
+    application, client = make_client("salesperson")
+    try:
+        customer = client.post(
+            "/api/customers", json={"name": "Archived Customer"}
+        ).json["item"]
+        with application.app_context():
+            user = db.session.query(User).filter_by(
+                email="salesperson@example.test"
+            ).one()
+            company = db.session.query(Company).filter_by(
+                slug="sales-api-salesperson"
+            ).one()
+            customer_row = db.session.get(Customer, UUID(customer["id"]))
+            customer_row.is_active = False
+            product = Product(
+                company_id=company.id,
+                created_by_user_id=user.id,
+                sku="ARCHIVED-ITEM",
+                name="Archived item",
+                unit_price=Decimal("20.00"),
+                currency="TZS",
+                is_active=False,
+            )
+            db.session.add(product)
+            db.session.commit()
+
+        assert client.get("/api/customers").status_code == 200
+        assert client.get("/api/products").status_code == 200
+        assert client.get("/api/customers?include_inactive=true").status_code == 403
+        assert client.get("/api/products?include_inactive=true").status_code == 403
     finally:
         with application.app_context():
             db.session.remove()

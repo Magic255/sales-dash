@@ -60,7 +60,7 @@ Implemented and merged:
 - Admin, Manager, Salesperson, and Viewer permission checks; admins can invite existing verified accounts, review members, change non-admin roles, and suspend or restore company access.
 - Administrator-only company display-name settings and team-member management, protected by PostgreSQL row-level security and append-only audit events.
 - Append-only, company-scoped security audit logs.
-- Tenant-scoped customer and product APIs, sales workflows, dashboard summaries, sales reports, CSV exports, and draft sale editing.
+- Tenant-scoped customer and product workflows with edit/archive/restore controls, sales workflows, dashboard summaries, sales reports, CSV exports, and draft sale editing.
 - PWA installation support and a public offline app shell. Sign-in and private company data require an internet connection.
 
 Still required before public launch:
