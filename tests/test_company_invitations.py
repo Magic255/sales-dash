@@ -317,3 +317,62 @@ def test_postgres_restricted_runtime_role_can_create_and_accept_invitation():
             db.session.execute(db.delete(User).where(User.id == admin_id))
             db.session.execute(db.delete(User).where(User.id == invitee_id))
             db.session.commit()
+
+
+def test_replacement_invitation_invalidates_previous_link(invitation_app):
+    admin = _admin_client(invitation_app)
+    with patch("app.email.send_email") as send:
+        admin.post(
+            "/api/team/invitations",
+            json={"email": "invitee@example.test", "role": "viewer"},
+        )
+        first = _token_from_email(send)
+        admin.post(
+            "/api/team/invitations",
+            json={"email": "invitee@example.test", "role": "manager"},
+        )
+        second = _token_from_email(send)
+    assert first != second
+    invitee = _client_for(
+        invitation_app, "invitee@example.test", "original-invitee-password"
+    )
+    assert invitee.post(
+        "/api/team/invitations/accept", json={"token": first}
+    ).status_code == 400
+    assert invitee.post(
+        "/api/team/invitations/accept", json={"token": second}
+    ).status_code == 200
+
+
+def test_expired_invitation_is_rejected(invitation_app):
+    from datetime import datetime, timedelta, timezone
+
+    admin = _admin_client(invitation_app)
+    with patch("app.email.send_email") as send:
+        admin.post(
+            "/api/team/invitations",
+            json={"email": "invitee@example.test", "role": "viewer"},
+        )
+    token = _token_from_email(send)
+    with invitation_app.app_context():
+        invitation = db.session.scalar(select(CompanyInvitation))
+        invitation.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+        db.session.commit()
+    invitee = _client_for(
+        invitation_app, "invitee@example.test", "original-invitee-password"
+    )
+    assert invitee.post(
+        "/api/team/invitations/accept", json={"token": token}
+    ).status_code == 400
+
+
+def test_failed_invitation_delivery_removes_pending_token(invitation_app):
+    admin = _admin_client(invitation_app)
+    with patch("app.email.send_email", side_effect=RuntimeError("SMTP unavailable")):
+        response = admin.post(
+            "/api/team/invitations",
+            json={"email": "invitee@example.test", "role": "viewer"},
+        )
+    assert response.status_code == 503
+    with invitation_app.app_context():
+        assert db.session.scalar(select(CompanyInvitation)) is None
