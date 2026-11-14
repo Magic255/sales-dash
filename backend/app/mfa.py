@@ -9,7 +9,7 @@ import pyotp
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
 from cryptography.fernet import Fernet, InvalidToken
 from flask import Blueprint, current_app, jsonify, request, session
-from sqlalchemy import delete, select
+from sqlalchemy import delete, or_, select, update
 
 from . import limiter
 from .auth import login_required, password_hasher
@@ -48,8 +48,22 @@ def _normalized_recovery_code(code: str) -> str:
     return code.replace("-", "").replace(" ", "").strip().upper()
 
 
+def _matching_totp_step(secret: str, code: str):
+    """Return the accepted TOTP step within one-step clock tolerance."""
+    if not code.isdigit() or len(code) != 6:
+        return None
+    totp = pyotp.TOTP(secret)
+    current_step = int(datetime.now(timezone.utc).timestamp() // totp.interval)
+    for step in (current_step, current_step - 1, current_step + 1):
+        at_step = datetime.fromtimestamp(step * totp.interval, timezone.utc)
+        if totp.verify(code, for_time=at_step):
+            return step
+    return None
+
+
 def _verify_code(user_id: UUID, credential: MfaCredential, code: str):
-    """Verify a TOTP or atomically consume one matching recovery code."""
+    """Verify a TOTP once per time step or atomically consume a recovery code."""
+
     if not isinstance(code, str) or not 6 <= len(code) <= 32:
         return False, False
     if code.isdigit() and len(code) == 6:
@@ -57,7 +71,22 @@ def _verify_code(user_id: UUID, credential: MfaCredential, code: str):
             secret = _cipher().decrypt(credential.secret_ciphertext.encode()).decode()
         except (InvalidToken, ValueError, RuntimeError):
             return False, False
-        return pyotp.TOTP(secret).verify(code, valid_window=1), False
+        step = _matching_totp_step(secret, code)
+        if step is None:
+            return False, False
+        accepted = db.session.execute(
+            update(MfaCredential)
+            .where(
+                MfaCredential.user_id == user_id,
+                or_(
+                    MfaCredential.last_used_step.is_(None),
+                    MfaCredential.last_used_step < step,
+                ),
+            )
+            .values(last_used_step=step)
+            .returning(MfaCredential.user_id)
+        ).scalar_one_or_none()
+        return accepted is not None, False
 
     normalized = _normalized_recovery_code(code)
     if len(normalized) != 10 or not normalized.isalnum():
@@ -149,9 +178,11 @@ def confirm_mfa_setup(user):
         secret = _cipher().decrypt(credential.secret_ciphertext.encode()).decode()
     except (InvalidToken, ValueError, RuntimeError):
         return jsonify({"error": "MFA setup is unavailable. Start again or contact support."}), 503
-    if not pyotp.TOTP(secret).verify(code, valid_window=1):
+    matched_step = _matching_totp_step(secret, code)
+    if matched_step is None:
         return jsonify({"error": "That authenticator code is not valid. Try again."}), 400
 
+    credential.last_used_step = matched_step
     recovery_codes = [secrets.token_hex(5).upper() for _ in range(10)]
     credential.enabled_at = datetime.now(timezone.utc)
     db.session.execute(
@@ -268,6 +299,8 @@ def complete_mfa_login():
         if recovery_used:
             record_audit_event(db.session, user.id, "mfa_recovery_code_used")
         record_audit_event(db.session, user.id, "login_succeeded")
+        authenticated_user_id = user.id
+        authenticated_auth_version = user.auth_version
         db.session.commit()
     except (TenantAccessDenied, ValueError, TypeError, RuntimeError):
         db.session.rollback()
@@ -276,7 +309,7 @@ def complete_mfa_login():
         return jsonify({"error": "Your sign-in challenge is no longer valid."}), 401
 
     session.clear()
-    session["user_id"] = str(user.id)
-    session["auth_version"] = user.auth_version
+    session["user_id"] = str(authenticated_user_id)
+    session["auth_version"] = authenticated_auth_version
     session.permanent = True
     return jsonify({"authenticated": True})
