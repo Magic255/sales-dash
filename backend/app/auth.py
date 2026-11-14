@@ -16,7 +16,13 @@ from sqlalchemy.orm import joinedload
 from . import limiter
 from .extensions import db
 from .models import CompanyMembership, EmailVerificationToken, User
-from .tenancy import TenantAccessDenied, find_login_user, set_tenant_context, set_user_context
+from .tenancy import (
+    TenantAccessDenied,
+    activate_app_role,
+    find_login_user,
+    set_tenant_context,
+    set_user_context,
+)
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/api/auth")
 password_hasher = PasswordHasher()
@@ -167,6 +173,7 @@ def confirm_email_verification():
     now = datetime.now(timezone.utc)
     try:
         if db.session.get_bind().dialect.name == "postgresql":
+            activate_app_role(db.session)
             db.session.execute(
                 text("SELECT set_config('app.email_verification_token_hash', :token_hash, true)"),
                 {"token_hash": token_hash},
