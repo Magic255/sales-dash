@@ -4,7 +4,7 @@ from argon2 import PasswordHasher
 
 from app import create_app
 from app.extensions import db
-from app.models import Company, CompanyMembership, Product, User
+from app.models import Company, CompanyMembership, Customer, Product, User
 
 
 def make_client(role="admin"):
@@ -373,6 +373,44 @@ def test_manager_can_edit_archive_and_restore_catalog_records():
         assert active_customers[0]["name"] == "Updated Customer"
         active_products = client.get("/api/products").json["items"]
         assert active_products[0]["name"] == "Updated Product"
+    finally:
+        with application.app_context():
+            db.session.remove()
+            db.drop_all()
+
+
+
+def test_salesperson_cannot_list_archived_customers_or_products():
+    application, client = make_client("salesperson")
+    try:
+        customer = client.post(
+            "/api/customers", json={"name": "Archived Customer"}
+        ).json["item"]
+        with application.app_context():
+            user = db.session.query(User).filter_by(
+                email="salesperson@example.test"
+            ).one()
+            company = db.session.query(Company).filter_by(
+                slug="sales-api-salesperson"
+            ).one()
+            customer_row = db.session.get(Customer, customer["id"])
+            customer_row.is_active = False
+            product = Product(
+                company_id=company.id,
+                created_by_user_id=user.id,
+                sku="ARCHIVED-ITEM",
+                name="Archived item",
+                unit_price=Decimal("20.00"),
+                currency="TZS",
+                is_active=False,
+            )
+            db.session.add(product)
+            db.session.commit()
+
+        assert client.get("/api/customers").status_code == 200
+        assert client.get("/api/products").status_code == 200
+        assert client.get("/api/customers?include_inactive=true").status_code == 403
+        assert client.get("/api/products?include_inactive=true").status_code == 403
     finally:
         with application.app_context():
             db.session.remove()
