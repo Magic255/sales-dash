@@ -19,7 +19,7 @@ Do not open the service to public registration or real customer data until all a
 - [ ] Configure monitoring for application errors, database availability, Redis availability, and backup failures. Avoid logging passwords, session cookies, tokens, or customer data.
 - [ ] Complete and test the backup/restore procedure in [DATABASE_BACKUP_RESTORE.md](DATABASE_BACKUP_RESTORE.md).
 - [ ] Configure email verification, password reset, MFA, and controlled invitation workflows before enabling public onboarding. Public self-registration is intentionally not implemented.
-- [ ] Review role permissions, tenant isolation, audit-log access, and all security scan findings before launch.
+- [ ] Verify role permissions, tenant isolation, team-member administration, audit-log access, and all security scan findings before launch.
 - [ ] Set an incident contact and document credential rotation, session revocation, and security-event response steps.
 
 ## First deployment sequence

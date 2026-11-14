@@ -34,6 +34,7 @@ def set_user_context(session: Session, user_id: UUID) -> User:
     activate_app_role(session)
     if session.get_bind().dialect.name == "postgresql":
         session.execute(text("SELECT set_config('app.current_company_id', '', true)"))
+        session.execute(text("SELECT set_config('app.current_company_role', '', true)"))
         session.execute(text("SELECT set_config('app.login_email', '', true)"))
         session.execute(
             text("SELECT set_config('app.current_user_id', :user_id, true)"),
@@ -77,5 +78,9 @@ def set_tenant_context(
         session.execute(
             text("SELECT set_config('app.current_company_id', :company_id, true)"),
             {"company_id": str(company_id)},
+        )
+        session.execute(
+            text("SELECT set_config('app.current_company_role', :role, true)"),
+            {"role": membership.role},
         )
     return membership

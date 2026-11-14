@@ -26,7 +26,7 @@ SALES DASH helps organizations manage sales activity across one or more companie
 - Passwords are hashed with Argon2id.
 - Login attempts are rate-limited both per source IP and per normalized account identifier (the account key is HMAC-hashed before storage); production requires shared Redis-backed rate-limit storage.
 - Sessions carry an account auth-version checked against the database on each authenticated request; incrementing it revokes all existing sessions for that account.
-- Security audit events record successful sign-in, password changes, company selection, sign-out, email verification, password reset, company invitation, and MFA activity. They exclude passwords, tokens, raw email addresses, IP addresses, and session identifiers.
+- Security audit events record successful sign-in, password changes, company selection, sign-out, email verification, password reset, company invitation, team membership changes, company settings, and MFA activity. They exclude passwords, tokens, raw email addresses, IP addresses, and session identifiers.
 - Audit records are append-only for the restricted runtime role, protected by PostgreSQL row-level security, and visible only to an administrator in the active company.
 - Keep secrets out of source control; use environment variables locally and a managed secret store in production.
 - The service worker caches only the public app shell. It does not cache authentication or private API responses.
@@ -57,15 +57,15 @@ Work in small milestones. Each milestone must have a clear scope, tests, and rev
 Implemented and merged:
 - Multi-company accounts, memberships, company switching, and PostgreSQL row-level security.
 - Secure session authentication, CSRF protection, Argon2id password hashing, login throttling, account session revocation, one-time email verification, one-time password reset, and optional authenticator-app MFA with single-use recovery codes.
-- Admin, Manager, Salesperson, and Viewer permission checks; admins can invite existing verified accounts to a company using expiring, one-time links.
-- Administrator-only company display-name settings, protected by PostgreSQL row-level security and append-only audit events.
+- Admin, Manager, Salesperson, and Viewer permission checks; admins can invite existing verified accounts, review members, change non-admin roles, and suspend or restore company access.
+- Administrator-only company display-name settings and team-member management, protected by PostgreSQL row-level security and append-only audit events.
 - Append-only, company-scoped security audit logs.
 - Tenant-scoped customer and product APIs, sales workflows, dashboard summaries, sales reports, CSV exports, and draft sale editing.
 - PWA installation support and a public offline app shell. Sign-in and private company data require an internet connection.
 
 Still required before public launch:
 - Secure configuration and protected backup of the MFA encryption key in Render's secret environment settings.
-- Completion and review of all planned team-management and company-settings workflows.
+- Production-like verification of company settings and team-member administration.
 - Render resources configured and a tested production deployment.
 - Verified monitoring, backup retention, restore rehearsals, and incident-response procedures.
 - Final security review and role/tenant-isolation smoke tests in the production-like environment.
@@ -82,4 +82,5 @@ Public self-registration is intentionally disabled. Do not use real customer dat
 - [Email delivery configuration](docs/EMAIL_CONFIGURATION.md)
 - [Controlled company invitations](docs/COMPANY_INVITATIONS.md)
 - [Company settings](docs/COMPANY_SETTINGS.md)
+- [Team management](docs/TEAM_MANAGEMENT.md)
 - [Multi-factor authentication](docs/MFA.md)
