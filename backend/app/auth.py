@@ -241,8 +241,7 @@ def _password_reset_rate_limit_key():
 
 def _password_reset_link(token: str) -> str:
     base_url = (current_app.config.get("PUBLIC_BASE_URL") or "").strip().rstrip("/")
-    if not base_url or "\r" in base_url or "
-" in base_url:
+    if not base_url or "\r" in base_url or "\n" in base_url:
         raise RuntimeError("Public application URL is not configured.")
     if current_app.config.get("APP_ENV") == "production" and not base_url.startswith("https://"):
         raise RuntimeError("Production email links must use HTTPS.")
@@ -287,12 +286,8 @@ def request_password_reset():
                 recipient,
                 "Reset your SALES DASH password",
                 "A password reset was requested for your SALES DASH account. "
-                "Use this link within 30 minutes. It can be used once:
-
-"
-                f"{link}
-
-"
+                "Use this link within 30 minutes. It can be used once:\n\n"
+                f"{link}\n\n"
                 "If you did not request this, you can ignore this message.",
             )
         except Exception:
