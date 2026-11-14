@@ -130,12 +130,13 @@ def resend_verification():
                         "expires_at": now + timedelta(hours=24),
                     },
                 )
+                recipient = user.email
                 db.session.commit()
                 from .email import send_email
 
                 link = _verification_link(raw_token)
                 send_email(
-                    user.email,
+                    recipient,
                     "Verify your SALES DASH email",
                     "Use this link to verify your SALES DASH email address. "
                     "It expires in 24 hours and can be used once:\n\n"
