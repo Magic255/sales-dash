@@ -56,14 +56,14 @@ Work in small milestones. Each milestone must have a clear scope, tests, and rev
 
 Implemented and merged:
 - Multi-company accounts, memberships, company switching, and PostgreSQL row-level security.
-- Secure session authentication, CSRF protection, Argon2id password hashing, login throttling, account session revocation, and one-time email verification.
+- Secure session authentication, CSRF protection, Argon2id password hashing, login throttling, account session revocation, one-time email verification, and one-time password reset.
 - Admin, Manager, Salesperson, and Viewer permission checks.
 - Append-only, company-scoped security audit logs.
 - Tenant-scoped customer and product APIs, sales workflows, dashboard summaries, sales reports, CSV exports, and draft sale editing.
 - PWA installation support and a public offline app shell. Sign-in and private company data require an internet connection.
 
 Still required before public launch:
-- Password reset, MFA, and controlled invitation workflows.
+- MFA and controlled invitation workflows.
 - Completion and review of all planned team-management and company-settings workflows.
 - A selected hosting provider and a tested production deployment.
 - Verified monitoring, backup retention, restore rehearsals, and incident-response procedures.
