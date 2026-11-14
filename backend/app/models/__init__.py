@@ -8,8 +8,8 @@ from sqlalchemy import CheckConstraint, DateTime, ForeignKey, String, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
 from ..email_verification import EmailVerificationToken  # noqa: F401
-from ..password_reset import PasswordResetToken  # noqa: F401
 from ..extensions import db
+from ..password_reset import PasswordResetToken  # noqa: F401
 
 
 def utc_now() -> datetime:
