@@ -245,7 +245,14 @@
         </section>
         <section class="module-panel" data-workspace-panel="team" hidden>
           <h3>Team access</h3>
-          <p class="panel-copy">Invite an existing, email-verified SALES DASH account to this company. The invitation expires after 7 days and can be used once.</p>
+          <p class="panel-copy">Review current members, change non-admin roles, and suspend or restore company access. Administrator access cannot be changed here.</p>
+          <h4>Current members</h4>
+          <div class="table-wrap"><table class="data-table">
+            <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody id="team-member-rows"><tr><td colspan="5">Loading team members…</td></tr></tbody>
+          </table></div>
+          <h4>Invite a member</h4>
+          <p class="panel-copy">The recipient must already have an active, email-verified SALES DASH account. The invitation expires after 7 days and can be used once.</p>
           <form id="invitation-form" class="record-form">
             <label for="invitation-email">Account email</label>
             <input id="invitation-email" type="email" maxlength="320" required>
