@@ -5,17 +5,17 @@ import hmac
 import secrets
 from datetime import datetime, timedelta, timezone
 from functools import wraps
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
 from flask import Blueprint, current_app, jsonify, request, session
-from sqlalchemy import select, text
+from sqlalchemy import delete, select, text, update
 from sqlalchemy.orm import joinedload
 
 from . import limiter
 from .extensions import db
-from .models import CompanyMembership
+from .models import CompanyMembership, EmailVerificationToken, User
 from .tenancy import TenantAccessDenied, find_login_user, set_tenant_context, set_user_context
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/api/auth")
@@ -109,8 +109,7 @@ def resend_verification():
     if user and user.is_active:
         verified = bool(
             db.session.scalar(
-                text("SELECT email_verified FROM users WHERE id = :user_id"),
-                {"user_id": str(user.id)},
+                select(User.email_verified).where(User.id == user.id)
             )
         )
         if not verified:
@@ -120,21 +119,16 @@ def resend_verification():
             try:
                 # A resend invalidates every earlier outstanding link for this account.
                 db.session.execute(
-                    text("DELETE FROM email_verification_tokens WHERE user_id = :user_id"),
-                    {"user_id": str(user.id)},
+                    delete(EmailVerificationToken).where(
+                        EmailVerificationToken.user_id == user.id
+                    )
                 )
-                db.session.execute(
-                    text(
-                        "INSERT INTO email_verification_tokens "
-                        "(id, user_id, token_hash, expires_at) "
-                        "VALUES (:id, :user_id, :token_hash, :expires_at)"
-                    ),
-                    {
-                        "id": str(uuid4()),
-                        "user_id": str(user.id),
-                        "token_hash": token_hash,
-                        "expires_at": now + timedelta(hours=24),
-                    },
+                db.session.add(
+                    EmailVerificationToken(
+                        user_id=user.id,
+                        token_hash=token_hash,
+                        expires_at=now + timedelta(hours=24),
+                    )
                 )
                 recipient = user.email
                 db.session.commit()
@@ -178,12 +172,14 @@ def confirm_email_verification():
                 {"token_hash": token_hash},
             )
         user_id = db.session.execute(
-            text(
-                "UPDATE email_verification_tokens SET consumed_at = :now "
-                "WHERE token_hash = :token_hash AND consumed_at IS NULL "
-                "AND expires_at > :now RETURNING user_id"
-            ),
-            {"token_hash": token_hash, "now": now},
+            update(EmailVerificationToken)
+            .where(
+                EmailVerificationToken.token_hash == token_hash,
+                EmailVerificationToken.consumed_at.is_(None),
+                EmailVerificationToken.expires_at > now,
+            )
+            .values(consumed_at=now)
+            .returning(EmailVerificationToken.user_id)
         ).scalar_one_or_none()
         if user_id is None:
             db.session.rollback()
@@ -195,8 +191,9 @@ def confirm_email_verification():
         user_id = UUID(str(user_id))
         set_user_context(db.session, user_id)
         db.session.execute(
-            text("UPDATE users SET email_verified = TRUE WHERE id = :user_id"),
-            {"user_id": str(user_id)},
+            update(User)
+            .where(User.id == user_id)
+            .values(email_verified=True)
         )
         from .audit import record_audit_event
 
