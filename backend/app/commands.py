@@ -82,7 +82,7 @@ def register_commands(app):
         if (
             not email
             or len(email) > 320
-            or not re.fullmatch(r"[^@\\s]+@[^@\\s]+\\.[^@\\s]+", email)
+            or not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email)
         ):
             raise click.ClickException("Enter a valid email address.")
         display_name = click.prompt(
