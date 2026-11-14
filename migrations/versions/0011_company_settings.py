@@ -18,7 +18,7 @@ def upgrade():
     # The runtime role may update only the display name. The endpoint applies
     # the company-admin permission check, while RLS independently limits the
     # row to an active administrator in the transaction's selected company.
-    op.execute("GRANT UPDATE (name) ON companies TO sales_dash_app")
+    op.execute("GRANT UPDATE (name, updated_at) ON companies TO sales_dash_app")
     op.execute(
         """
         CREATE POLICY companies_update_admin ON companies
@@ -71,4 +71,4 @@ def downgrade():
         "'mfa_disabled', 'mfa_recovery_code_used')",
     )
     op.execute("DROP POLICY IF EXISTS companies_update_admin ON companies")
-    op.execute("REVOKE UPDATE (name) ON companies FROM sales_dash_app")
+    op.execute("REVOKE UPDATE (name, updated_at) ON companies FROM sales_dash_app")
