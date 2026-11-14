@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import CheckConstraint, DateTime, ForeignKey, String, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
+from ..company_invitation import CompanyInvitation  # noqa: F401
 from ..email_verification import EmailVerificationToken  # noqa: F401
 from ..extensions import db
 from ..password_reset import PasswordResetToken  # noqa: F401
@@ -128,7 +129,9 @@ class AuditLog(db.Model):
     __table_args__ = (
         db.CheckConstraint(
             "event_type IN ('login_succeeded', 'password_changed', "
-            "'company_selected', 'logout', 'email_verified', 'password_reset')",
+            "'company_selected', 'logout', 'email_verified', 'password_reset', "
+            "'company_invitation_created', 'company_invitation_accepted', "
+            "'company_invitation_revoked')",
             name="event_type_is_supported",
         ),
         db.Index("ix_audit_logs_company_time", "company_id", "occurred_at"),

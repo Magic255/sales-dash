@@ -133,6 +133,7 @@
           <button type="button" class="module-tab" data-workspace-tab="products">Products</button>
           <button type="button" class="module-tab" data-workspace-tab="sales">Sales</button>
           <button type="button" class="module-tab" data-workspace-tab="reports">Reports</button>
+          <button id="team-tab" type="button" class="module-tab" data-workspace-tab="team" hidden>Team</button>
         </nav>
         <p id="workspace-message" class="form-message" role="status" aria-live="polite"></p>
         <section class="module-panel" data-workspace-panel="overview">
@@ -190,6 +191,25 @@
           <p id="report-totals" class="panel-copy">Completed revenue: —</p>
           <p id="report-limit" class="panel-copy"></p>
           <div class="table-wrap"><table class="data-table"><thead><tr><th>Sale</th><th>Date</th><th>Customer</th><th>Status</th><th>Total</th><th>Items</th></tr></thead><tbody id="report-rows"><tr><td colspan="6">Run a report to see sales.</td></tr></tbody></table></div>
+        </section>
+        <section class="module-panel" data-workspace-panel="team" hidden>
+          <h3>Team access</h3>
+          <p class="panel-copy">Invite an existing, email-verified SALES DASH account to this company. The invitation expires after 7 days and can be used once.</p>
+          <form id="invitation-form" class="record-form">
+            <label for="invitation-email">Account email</label>
+            <input id="invitation-email" type="email" maxlength="320" required>
+            <label for="invitation-role">Company role</label>
+            <select id="invitation-role" required>
+              <option value="manager">Manager</option>
+              <option value="salesperson">Salesperson</option>
+              <option value="viewer">Viewer</option>
+            </select>
+            <button type="submit" class="primary-button">Send invitation</button>
+          </form>
+          <div class="table-wrap"><table class="data-table">
+            <thead><tr><th>Email</th><th>Role</th><th>Expires</th><th>Action</th></tr></thead>
+            <tbody id="invitation-rows"><tr><td colspan="4">No pending invitations loaded.</td></tr></tbody>
+          </table></div>
         </section>
       </section>
       </section>

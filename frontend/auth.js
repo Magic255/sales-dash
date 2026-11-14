@@ -119,11 +119,28 @@ async function loadAuditLogs() {
 async function loadCurrentUser() {
   const data = await apiRequest("/api/auth/me");
   if (!data.authenticated) {
-    showLogin();
+    showLogin(pendingInvitationToken
+      ? "Sign in with the email address that received this company invitation."
+      : "");
     return;
   }
   signedInUserId = data.user.id;
   showCompanies(data);
+  if (pendingInvitationToken) {
+    try {
+      const accepted = await apiRequest("/api/team/invitations/accept", {
+        method: "POST",
+        body: JSON.stringify({ token: pendingInvitationToken }),
+      });
+      pendingInvitationToken = "";
+      window.history.replaceState({}, document.title, window.location.pathname);
+      const refreshed = await apiRequest("/api/auth/me");
+      showCompanies(refreshed);
+      companyMessage.textContent = accepted.message;
+    } catch (error) {
+      companyMessage.textContent = error.message;
+    }
+  }
 }
 
 loginForm.addEventListener("submit", async (event) => {
@@ -186,6 +203,7 @@ document.querySelector("#logout-button").addEventListener("click", async () => {
 document.querySelector("#audit-refresh").addEventListener("click", loadAuditLogs);
 const pendingVerificationToken = new URLSearchParams(window.location.hash.slice(1)).get("verify_email");
 const pendingPasswordResetToken = new URLSearchParams(window.location.hash.slice(1)).get("reset_password");
+let pendingInvitationToken = new URLSearchParams(window.location.hash.slice(1)).get("accept_invitation");
 if (pendingVerificationToken) {
   loginPanel.hidden = true;
   companyPanel.hidden = true;

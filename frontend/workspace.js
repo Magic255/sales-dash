@@ -247,6 +247,8 @@ document.addEventListener("salesdash:company-selected", (event) => {
   document.querySelector("#customer-form").hidden = workspaceRole === "viewer";
   document.querySelector("#product-form").hidden = !["admin", "manager"].includes(workspaceRole);
   document.querySelector("#sale-form").hidden = workspaceRole === "viewer";
+  document.querySelector("#team-tab").hidden = workspaceRole !== "admin";
+  if (workspaceRole !== "admin") selectTab("overview");
   loadWorkspace();
 });
 
@@ -424,3 +426,69 @@ document.querySelector("#report-export").addEventListener("click", async () => {
     workspaceMessage(error.message);
   }
 });
+
+
+async function loadCompanyInvitations() {
+  const body = document.querySelector("#invitation-rows");
+  if (!body || workspaceRole !== "admin") return;
+  try {
+    const data = await workspaceRequest("/api/team/invitations");
+    body.replaceChildren();
+    if (!data.items.length) return emptyRow(body, 4, "No pending invitations.");
+    for (const item of data.items) {
+      const row = document.createElement("tr");
+      textCell(row, item.email);
+      textCell(row, item.role);
+      const expiry = new Date(item.expires_at);
+      textCell(row, Number.isNaN(expiry.getTime()) ? item.expires_at : expiry.toLocaleString());
+      const actions = document.createElement("td");
+      const revoke = document.createElement("button");
+      revoke.type = "button";
+      revoke.className = "table-action table-action-danger";
+      revoke.textContent = "Revoke";
+      revoke.addEventListener("click", async () => {
+        revoke.disabled = true;
+        try {
+          await workspaceRequest("/api/team/invitations/" + encodeURIComponent(item.id), {
+            method: "DELETE",
+          });
+          await loadCompanyInvitations();
+          workspaceMessage("Invitation revoked.");
+        } catch (error) {
+          workspaceMessage(error.message);
+          revoke.disabled = false;
+        }
+      });
+      actions.append(revoke);
+      row.append(actions);
+      body.append(row);
+    }
+  } catch (error) {
+    workspaceMessage(error.message);
+  }
+}
+
+document.querySelector("#invitation-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const button = form.querySelector("button");
+  button.disabled = true;
+  try {
+    const result = await workspaceRequest("/api/team/invitations", {
+      method: "POST",
+      body: JSON.stringify({
+        email: document.querySelector("#invitation-email").value,
+        role: document.querySelector("#invitation-role").value,
+      }),
+    });
+    form.reset();
+    workspaceMessage(result.message);
+    await loadCompanyInvitations();
+  } catch (error) {
+    workspaceMessage(error.message);
+  } finally {
+    button.disabled = false;
+  }
+});
+
+document.querySelector("#team-tab").addEventListener("click", loadCompanyInvitations);
