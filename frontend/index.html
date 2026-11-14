@@ -42,6 +42,19 @@
       </form>
       <button id="resend-verification-button" type="button" class="secondary-button">Resend verification email</button>
       <button id="forgot-password-button" type="button" class="secondary-button">Forgot password?</button>
+    </section>
+
+    <section id="mfa-login-panel" class="auth-panel" aria-labelledby="mfa-login-title" hidden>
+      <p class="eyebrow">TWO-STEP SIGN-IN</p>
+      <h2 id="mfa-login-title">Verify it’s you</h2>
+      <p class="panel-copy">Enter the six-digit code from your authenticator app, or use one of your recovery codes.</p>
+      <form id="mfa-login-form" class="auth-form">
+        <label for="mfa-login-code">Authenticator or recovery code</label>
+        <input id="mfa-login-code" inputmode="numeric" autocomplete="one-time-code" maxlength="32" required>
+        <button type="submit" class="primary-button">Continue securely</button>
+      </form>
+      <p id="mfa-login-message" class="form-message" role="status" aria-live="polite"></p>
+    </section>
       <p id="login-message" class="form-message" role="status" aria-live="polite"></p>
     </section>
 
@@ -103,6 +116,33 @@
           <button type="submit" class="secondary-button">Update password</button>
         </form>
         <p id="password-message" class="form-message" role="status" aria-live="polite"></p>
+        <div class="mfa-settings">
+          <h3>Two-step sign-in</h3>
+          <p class="panel-copy">Add an authenticator app for an extra layer of account security. This is optional.</p>
+          <form id="mfa-setup-form" class="auth-form">
+            <label for="mfa-setup-password">Current password to begin setup</label>
+            <input id="mfa-setup-password" type="password" autocomplete="current-password" maxlength="1024" required>
+            <button type="submit" class="secondary-button">Set up authenticator</button>
+          </form>
+          <p id="mfa-secret" class="form-message" role="status" aria-live="polite"></p>
+          <form id="mfa-confirm-form" class="auth-form" hidden>
+            <label for="mfa-confirm-code">Six-digit authenticator code</label>
+            <input id="mfa-confirm-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required>
+            <button type="submit" class="secondary-button">Confirm and enable MFA</button>
+          </form>
+          <div id="mfa-recovery-panel" hidden>
+            <p class="panel-copy">Save these recovery codes somewhere safe. Each code works once, and they will not be shown again.</p>
+            <pre id="mfa-recovery-codes"></pre>
+          </div>
+          <form id="mfa-disable-form" class="auth-form" hidden>
+            <label for="mfa-disable-password">Current password to disable MFA</label>
+            <input id="mfa-disable-password" type="password" autocomplete="current-password" maxlength="1024" required>
+            <label for="mfa-disable-code">Authenticator or unused recovery code</label>
+            <input id="mfa-disable-code" autocomplete="one-time-code" maxlength="32" required>
+            <button type="submit" class="secondary-button">Disable MFA</button>
+          </form>
+          <p id="mfa-message" class="form-message" role="status" aria-live="polite"></p>
+        </div>
       </div>
       <section id="audit-panel" class="audit-panel" aria-labelledby="audit-title" hidden>
         <p class="eyebrow">ADMINISTRATION</p>
