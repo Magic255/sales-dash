@@ -29,10 +29,12 @@ def test_company_permission_is_enforced_by_server():
         admin = User(
             email="admin@example.test",
             password_hash=PasswordHasher().hash("strong-admin-password"),
+            email_verified=True,
         )
         viewer = User(
             email="viewer@example.test",
             password_hash=PasswordHasher().hash("strong-viewer-password"),
+            email_verified=True,
         )
         db.session.add_all([company, admin, viewer])
         db.session.flush()
