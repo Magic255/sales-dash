@@ -7,6 +7,15 @@ const verificationMessage = document.querySelector("#verification-message");
 const passwordResetPanel = document.querySelector("#password-reset-panel");
 const passwordResetForm = document.querySelector("#password-reset-form");
 const passwordResetMessage = document.querySelector("#password-reset-message");
+const mfaLoginPanel = document.querySelector("#mfa-login-panel");
+const mfaLoginForm = document.querySelector("#mfa-login-form");
+const mfaLoginMessage = document.querySelector("#mfa-login-message");
+const mfaSetupForm = document.querySelector("#mfa-setup-form");
+const mfaConfirmForm = document.querySelector("#mfa-confirm-form");
+const mfaDisableForm = document.querySelector("#mfa-disable-form");
+const mfaMessage = document.querySelector("#mfa-message");
+const mfaSecret = document.querySelector("#mfa-secret");
+const mfaRecoveryPanel = document.querySelector("#mfa-recovery-panel");
 const companyMessage = document.querySelector("#company-message");
 const companySelect = document.querySelector("#company-select");
 const workspaceReady = document.querySelector("#workspace-ready");
@@ -45,6 +54,7 @@ async function apiRequest(path, options = {}) {
 function showLogin(message = "") {
   loginPanel.hidden = false;
   companyPanel.hidden = true;
+  mfaLoginPanel.hidden = true;
   loginMessage.textContent = message;
   workspaceReady.hidden = true;
   auditPanel.hidden = true;
@@ -126,6 +136,7 @@ async function loadCurrentUser() {
   }
   signedInUserId = data.user.id;
   showCompanies(data);
+  loadMfaStatus().catch((error) => { mfaMessage.textContent = error.message; });
   if (pendingInvitationToken) {
     try {
       const accepted = await apiRequest("/api/team/invitations/accept", {
@@ -150,7 +161,7 @@ loginForm.addEventListener("submit", async (event) => {
   loginMessage.textContent = "Signing in…";
   try {
     await refreshCsrfToken();
-    await apiRequest("/api/auth/login", {
+    const loginResult = await apiRequest("/api/auth/login", {
       method: "POST",
       body: JSON.stringify({
         email: document.querySelector("#email").value,
@@ -161,6 +172,13 @@ loginForm.addEventListener("submit", async (event) => {
     csrfToken = "";
     await refreshCsrfToken();
     loginForm.reset();
+    if (loginResult.mfa_required) {
+      loginPanel.hidden = true;
+      mfaLoginPanel.hidden = false;
+      document.querySelector("#mfa-login-code").focus();
+      mfaLoginMessage.textContent = "Enter your authenticator code to finish signing in.";
+      return;
+    }
     await loadCurrentUser();
   } catch (error) {
     loginMessage.textContent = error.message;
@@ -215,6 +233,106 @@ if (pendingVerificationToken) {
 } else {
   loadCurrentUser().catch((error) => showLogin(error.message));
 }
+
+async function loadMfaStatus() {
+  const data = await apiRequest("/api/auth/mfa/status");
+  mfaSetupForm.hidden = data.enabled;
+  mfaDisableForm.hidden = !data.enabled;
+  if (data.enabled) {
+    mfaConfirmForm.hidden = true;
+    mfaSecret.textContent = "Authenticator MFA is enabled for this account.";
+  }
+}
+
+mfaLoginForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const button = mfaLoginForm.querySelector("button");
+  button.disabled = true;
+  mfaLoginMessage.textContent = "Checking your code…";
+  try {
+    await apiRequest("/api/auth/mfa/challenge", {
+      method: "POST",
+      body: JSON.stringify({ code: document.querySelector("#mfa-login-code").value.trim() }),
+    });
+    csrfToken = "";
+    await refreshCsrfToken();
+    mfaLoginForm.reset();
+    mfaLoginPanel.hidden = true;
+    await loadCurrentUser();
+  } catch (error) {
+    mfaLoginMessage.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+});
+
+mfaSetupForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const button = mfaSetupForm.querySelector("button");
+  button.disabled = true;
+  mfaMessage.textContent = "Preparing your authenticator setup…";
+  try {
+    const data = await apiRequest("/api/auth/mfa/setup", {
+      method: "POST",
+      body: JSON.stringify({ current_password: document.querySelector("#mfa-setup-password").value }),
+    });
+    mfaSecret.textContent = "In your authenticator app, add SALES DASH using this setup key: " + data.secret;
+    mfaConfirmForm.hidden = false;
+    document.querySelector("#mfa-confirm-code").focus();
+    mfaSetupForm.reset();
+    mfaMessage.textContent = "Enter the code shown by your authenticator app to finish setup.";
+  } catch (error) {
+    mfaMessage.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+});
+
+mfaConfirmForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const button = mfaConfirmForm.querySelector("button");
+  button.disabled = true;
+  mfaMessage.textContent = "Confirming authenticator…";
+  try {
+    const data = await apiRequest("/api/auth/mfa/confirm", {
+      method: "POST",
+      body: JSON.stringify({ code: document.querySelector("#mfa-confirm-code").value.trim() }),
+    });
+    document.querySelector("#mfa-recovery-codes").textContent = data.recovery_codes.join("\\n");
+    mfaRecoveryPanel.hidden = false;
+    mfaConfirmForm.hidden = true;
+    mfaSetupForm.hidden = true;
+    mfaMessage.textContent = data.message;
+    await loadMfaStatus();
+  } catch (error) {
+    mfaMessage.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+});
+
+mfaDisableForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const button = mfaDisableForm.querySelector("button");
+  button.disabled = true;
+  mfaMessage.textContent = "Disabling MFA…";
+  try {
+    const data = await apiRequest("/api/auth/mfa/disable", {
+      method: "POST",
+      body: JSON.stringify({
+        current_password: document.querySelector("#mfa-disable-password").value,
+        code: document.querySelector("#mfa-disable-code").value.trim(),
+      }),
+    });
+    mfaDisableForm.reset();
+    csrfToken = "";
+    showLogin(data.message);
+  } catch (error) {
+    mfaMessage.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+});
 
 const passwordForm = document.querySelector("#password-form");
 const passwordMessage = document.querySelector("#password-message");
