@@ -359,7 +359,7 @@ def test_manager_can_edit_archive_and_restore_catalog_records():
         assert client.get("/api/products?include_inactive=true").json["items"][0]["is_active"] is False
 
         restored_customer = client.patch(
-            f"/api/customers/{customer['id']}", json={"name": "Updated Customer"}
+            f"/api/customers/{customer['id']}", json={"name": "Updated Customer", "is_active": True}
         )
         restored_product = client.patch(
             f"/api/products/{product['id']}",
