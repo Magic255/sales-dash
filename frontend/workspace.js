@@ -248,6 +248,7 @@ document.addEventListener("salesdash:company-selected", (event) => {
   document.querySelector("#product-form").hidden = !["admin", "manager"].includes(workspaceRole);
   document.querySelector("#sale-form").hidden = workspaceRole === "viewer";
   document.querySelector("#team-tab").hidden = workspaceRole !== "admin";
+  document.querySelector("#company-settings-tab").hidden = workspaceRole !== "admin";
   if (workspaceRole !== "admin") selectTab("overview");
   loadWorkspace();
 });
@@ -492,3 +493,37 @@ document.querySelector("#invitation-form").addEventListener("submit", async (eve
 });
 
 document.querySelector("#team-tab").addEventListener("click", loadCompanyInvitations);
+
+async function loadCompanySettings() {
+  if (workspaceRole !== "admin") return;
+  const message = document.querySelector("#company-settings-message");
+  try {
+    const data = await workspaceRequest("/api/company/settings");
+    document.querySelector("#company-settings-name").value = data.item.name;
+    message.textContent = "";
+  } catch (error) {
+    message.textContent = error.message;
+  }
+}
+
+document.querySelector("#company-settings-tab").addEventListener("click", loadCompanySettings);
+document.querySelector("#company-settings-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const button = form.querySelector("button");
+  const message = document.querySelector("#company-settings-message");
+  button.disabled = true;
+  try {
+    const data = await workspaceRequest("/api/company/settings", {
+      method: "PATCH",
+      body: JSON.stringify({name: document.querySelector("#company-settings-name").value}),
+    });
+    document.querySelector("#company-settings-name").value = data.item.name;
+    message.textContent = "Company name updated.";
+    workspaceMessage("Company settings saved.");
+  } catch (error) {
+    message.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+});
