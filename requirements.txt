@@ -7,4 +7,4 @@ Flask-Limiter>=3.12,<5.0
 argon2-cffi>=23.1,<26.0
 psycopg[binary]>=3.2,<4.0
 pyotp>=2.9,<3.0
-cryptography>=42,<47
+cryptography>=50.0.0,<51.0
