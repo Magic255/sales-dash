@@ -60,6 +60,22 @@ def upgrade():
     op.execute("ALTER TABLE email_verification_tokens FORCE ROW LEVEL SECURITY")
     op.execute(
         """
+        CREATE POLICY email_verification_token_read ON email_verification_tokens
+        FOR SELECT TO sales_dash_app
+        USING (
+            token_hash =
+                NULLIF(current_setting('app.email_verification_token_hash', true), '')
+            OR EXISTS (
+                SELECT 1 FROM users
+                WHERE users.id = email_verification_tokens.user_id
+                  AND users.email =
+                      NULLIF(current_setting('app.login_email', true), '')
+            )
+        )
+        """
+    )
+    op.execute(
+        """
         CREATE POLICY email_verification_token_redeem ON email_verification_tokens
         FOR UPDATE TO sales_dash_app
         USING (
@@ -124,6 +140,7 @@ def downgrade():
     for policy in (
         "email_verification_token_replace",
         "email_verification_token_create",
+        "email_verification_token_read",
         "email_verification_token_redeem",
     ):
         op.execute(f"DROP POLICY IF EXISTS {policy} ON email_verification_tokens")
