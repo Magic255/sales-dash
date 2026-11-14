@@ -6,6 +6,8 @@ from flask import current_app
 from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
 
+from backend.app.config import normalize_database_url
+
 config = context.config
 
 if config.config_file_name is not None:
@@ -19,7 +21,7 @@ _admin_engine = None
 def get_engine():
     """Use a dedicated admin connection for migrations, never the web runtime role."""
     global _admin_engine
-    admin_url = os.environ.get("ADMIN_DATABASE_URL")
+    admin_url = normalize_database_url(os.environ.get("ADMIN_DATABASE_URL"))
     if admin_url:
         _admin_engine = create_engine(admin_url, poolclass=NullPool, pool_pre_ping=True)
         return _admin_engine
