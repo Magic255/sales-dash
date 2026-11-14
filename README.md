@@ -58,6 +58,7 @@ Implemented and merged:
 - Multi-company accounts, memberships, company switching, and PostgreSQL row-level security.
 - Secure session authentication, CSRF protection, Argon2id password hashing, login throttling, account session revocation, one-time email verification, one-time password reset, and optional authenticator-app MFA with single-use recovery codes.
 - Admin, Manager, Salesperson, and Viewer permission checks; admins can invite existing verified accounts to a company using expiring, one-time links.
+- Administrator-only company display-name settings, protected by PostgreSQL row-level security and append-only audit events.
 - Append-only, company-scoped security audit logs.
 - Tenant-scoped customer and product APIs, sales workflows, dashboard summaries, sales reports, CSV exports, and draft sale editing.
 - PWA installation support and a public offline app shell. Sign-in and private company data require an internet connection.
@@ -80,4 +81,5 @@ Public self-registration is intentionally disabled. Do not use real customer dat
 - [Security monitoring](docs/SECURITY_MONITORING.md)
 - [Email delivery configuration](docs/EMAIL_CONFIGURATION.md)
 - [Controlled company invitations](docs/COMPANY_INVITATIONS.md)
+- [Company settings](docs/COMPANY_SETTINGS.md)
 - [Multi-factor authentication](docs/MFA.md)
