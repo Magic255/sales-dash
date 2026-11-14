@@ -156,7 +156,10 @@ def confirm_email_verification():
     data = request.get_json(silent=True) or {}
     raw_token = data.get("token", "")
     if not isinstance(raw_token, str) or not 32 <= len(raw_token) <= 128:
-        return jsonify({"error": "This verification link is invalid or has expired."}), 400
+        return (
+            jsonify({"error": "This verification link is invalid or has expired."}),
+            400,
+        )
 
     token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
     now = datetime.now(timezone.utc)
