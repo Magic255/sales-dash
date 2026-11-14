@@ -16,7 +16,7 @@ from .company_invitation import CompanyInvitation
 from .extensions import db
 from .models import Company, CompanyMembership
 from .permissions import company_permission_required
-from .tenancy import activate_app_role, find_login_user, set_user_context
+from .tenancy import activate_app_role, find_login_user, set_tenant_context, set_user_context
 
 team_bp = Blueprint("team", __name__, url_prefix="/api/team")
 _INVITABLE_ROLES = frozenset({"manager", "salesperson", "viewer"})
@@ -95,6 +95,7 @@ def create_company_invitation(user):
         db.session.rollback()
         return jsonify({"error": "The selected company is unavailable."}), 409
 
+    company_name = company.name
     now = datetime.now(timezone.utc)
     raw_token = secrets.token_urlsafe(32)
     token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
@@ -121,20 +122,22 @@ def create_company_invitation(user):
 
         send_email(
             email,
-            f"Invitation to join {company.name} on SALES DASH",
+            f"Invitation to join {company_name} on SALES DASH",
             (
-                f"You have been invited to join {company.name} on SALES DASH "
+                f"You have been invited to join {company_name} on SALES DASH "
                 f"with the {role} role. Sign in using this same email address, "
                 "then open this link to accept. The link expires in 7 days and "
                 f"can be used once:\n\n{_invitation_link(raw_token)}\n\n"
                 "If you were not expecting this invitation, you can ignore this email."
             ),
         )
+        set_tenant_context(db.session, user.id, company_id)
         record_audit_event(db.session, user.id, "company_invitation_created", company_id)
         db.session.commit()
     except Exception:
         db.session.rollback()
         try:
+            set_tenant_context(db.session, user.id, company_id)
             db.session.execute(
                 delete(CompanyInvitation).where(
                     CompanyInvitation.token_hash == token_hash
