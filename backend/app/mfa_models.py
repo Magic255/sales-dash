@@ -19,6 +19,7 @@ class MfaCredential(db.Model):
     )
     secret_ciphertext: Mapped[str] = mapped_column(String(255), nullable=False)
     enabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_used_step: Mapped[int | None] = mapped_column()
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
