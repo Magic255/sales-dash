@@ -202,7 +202,12 @@ def confirm_email_verification():
             400,
         )
 
-    return jsonify({"email_verified": True, "message": "Your email is verified. You can now sign in."})
+    return jsonify(
+        {
+            "email_verified": True,
+            "message": "Your email is verified. You can now sign in.",
+        }
+    )
 
 
 @auth_bp.post("/login")
