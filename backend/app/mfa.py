@@ -143,7 +143,10 @@ def begin_mfa_setup(user):
         db.session.commit()
     except RuntimeError:
         db.session.rollback()
-        return jsonify({"error": "MFA setup is not available until server encryption is configured."}), 503
+        return (
+            jsonify({"error": "MFA setup is not available until server encryption is configured."}),
+            503,
+        )
     except Exception:
         db.session.rollback()
         current_app.logger.warning("MFA setup could not be started.")
@@ -156,7 +159,10 @@ def begin_mfa_setup(user):
         {
             "secret": secret,
             "provisioning_uri": uri,
-            "message": "Add this account to your authenticator app, then confirm with its six-digit code.",
+            "message": (
+                "Add this account to your authenticator app, then confirm "
+                "with its six-digit code."
+            ),
         }
     )
 
@@ -212,7 +218,10 @@ def confirm_mfa_setup(user):
             "recovery_codes": [
                 f"{value[:5]}-{value[5:]}" for value in recovery_codes
             ],
-            "message": "MFA is enabled. Save these recovery codes now; they will not be shown again.",
+            "message": (
+                "MFA is enabled. Save these recovery codes now; "
+                "they will not be shown again."
+            ),
         }
     )
 
@@ -232,7 +241,10 @@ def disable_mfa(user):
         or len(password) > 1024
         or not isinstance(code, str)
     ):
-        return jsonify({"error": "Enter your current password and an authenticator or recovery code."}), 400
+        return (
+            jsonify({"error": "Enter your current password and an authenticator or recovery code."}),
+            400,
+        )
     if not user.password_hash:
         return jsonify({"error": "A password is required to disable MFA."}), 403
     try:
@@ -260,7 +272,13 @@ def disable_mfa(user):
     record_audit_event(db.session, user.id, "mfa_disabled")
     db.session.commit()
     session.clear()
-    return jsonify({"enabled": False, "authenticated": False, "message": "MFA is disabled. Sign in again."})
+    return jsonify(
+        {
+            "enabled": False,
+            "authenticated": False,
+            "message": "MFA is disabled. Sign in again.",
+        }
+    )
 
 
 @mfa_bp.post("/challenge")
