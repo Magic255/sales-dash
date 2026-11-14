@@ -88,7 +88,7 @@ def test_verification_token_is_hashed_one_time_and_expires(verification_app):
         )
         assert stored.token_hash == token_hash
         assert raw_token not in stored.token_hash
-        assert stored.expires_at > datetime.now(timezone.utc)
+        assert stored.expires_at.replace(tzinfo=timezone.utc) > datetime.now(timezone.utc)
 
     verified = client.post(
         "/api/auth/verification/confirm", json={"token": raw_token}
