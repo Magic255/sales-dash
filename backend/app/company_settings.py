@@ -1,7 +1,8 @@
 """Company settings available only to company administrators."""
 
-from flask import Blueprint, jsonify, request, session
 from uuid import UUID
+
+from flask import Blueprint, jsonify, request, session
 
 from .audit import record_audit_event
 from .auth import login_required
@@ -23,7 +24,9 @@ def get_company_settings(_user):
     company = db.session.get(Company, company_id)
     if company is None:
         return jsonify({"error": "The selected company is unavailable."}), 404
-    return jsonify({"item": {"id": str(company.id), "name": company.name, "slug": company.slug}})
+    return jsonify(
+        {"item": {"id": str(company.id), "name": company.name, "slug": company.slug}}
+    )
 
 
 @company_settings_bp.patch("")
