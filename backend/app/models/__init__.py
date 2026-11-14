@@ -132,7 +132,8 @@ class AuditLog(db.Model):
             "event_type IN ('login_succeeded', 'password_changed', "
             "'company_selected', 'logout', 'email_verified', 'password_reset', "
             "'company_invitation_created', 'company_invitation_accepted', "
-            "'company_invitation_revoked')",
+            "'company_invitation_revoked', 'mfa_enabled', 'mfa_disabled', "
+            "'mfa_recovery_code_used')",
             name="event_type_is_supported",
         ),
         db.Index("ix_audit_logs_company_time", "company_id", "occurred_at"),
