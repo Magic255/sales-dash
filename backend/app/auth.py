@@ -317,7 +317,7 @@ def confirm_password_reset():
         or not isinstance(new_password, str)
         or not 12 <= len(new_password) <= 1024
     ):
-        return jsonify({"error": "The reset link is invalid or expired, or the password is too short."}), 400
+        return (\n            jsonify(\n                {"error": "The reset link is invalid or expired, or the password is too short."}\n            ),\n            400,\n        )
 
     token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
     now = datetime.now(timezone.utc)
@@ -353,7 +353,7 @@ def confirm_password_reset():
             pass
         else:
             db.session.rollback()
-            return jsonify({"error": "Choose a password different from your current password."}), 400
+            return (\n                jsonify({"error": "Choose a password different from your current password."}),\n                400,\n            )
 
         user.password_hash = password_hasher.hash(new_password)
         user.auth_version += 1
@@ -367,7 +367,7 @@ def confirm_password_reset():
         return jsonify({"error": "The reset link is invalid or has expired."}), 400
 
     session.clear()
-    return jsonify({"password_reset": True, "message": "Your password has been reset. Sign in with your new password."})
+    return jsonify(\n        {\n            "password_reset": True,\n            "message": "Your password has been reset. Sign in with your new password.",\n        }\n    )
 
 
 
