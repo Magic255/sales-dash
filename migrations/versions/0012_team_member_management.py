@@ -21,6 +21,7 @@ def upgrade():
         FOR SELECT TO sales_dash_app
         USING (
             company_id = NULLIF(current_setting('app.current_company_id', true), '')::uuid
+            AND NULLIF(current_setting('app.current_company_role', true), '') = 'admin'
         )
         """
     )
@@ -35,6 +36,7 @@ def upgrade():
                 WHERE membership.company_id =
                     NULLIF(current_setting('app.current_company_id', true), '')::uuid
                   AND membership.user_id = users.id
+                  AND NULLIF(current_setting('app.current_company_role', true), '') = 'admin'
             )
         )
         """
