@@ -4,6 +4,9 @@ const loginForm = document.querySelector("#login-form");
 const loginMessage = document.querySelector("#login-message");
 const verificationPanel = document.querySelector("#verification-panel");
 const verificationMessage = document.querySelector("#verification-message");
+const passwordResetPanel = document.querySelector("#password-reset-panel");
+const passwordResetForm = document.querySelector("#password-reset-form");
+const passwordResetMessage = document.querySelector("#password-reset-message");
 const companyMessage = document.querySelector("#company-message");
 const companySelect = document.querySelector("#company-select");
 const workspaceReady = document.querySelector("#workspace-ready");
@@ -182,10 +185,15 @@ document.querySelector("#logout-button").addEventListener("click", async () => {
 
 document.querySelector("#audit-refresh").addEventListener("click", loadAuditLogs);
 const pendingVerificationToken = new URLSearchParams(window.location.hash.slice(1)).get("verify_email");
+const pendingPasswordResetToken = new URLSearchParams(window.location.hash.slice(1)).get("reset_password");
 if (pendingVerificationToken) {
   loginPanel.hidden = true;
   companyPanel.hidden = true;
   verificationPanel.hidden = false;
+} else if (pendingPasswordResetToken) {
+  loginPanel.hidden = true;
+  companyPanel.hidden = true;
+  passwordResetPanel.hidden = false;
 } else {
   loadCurrentUser().catch((error) => showLogin(error.message));
 }
@@ -271,6 +279,64 @@ document.querySelector("#confirm-verification-button").addEventListener("click",
     showLogin(data.message);
   } catch (error) {
     verificationMessage.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+});
+
+
+document.querySelector("#forgot-password-button").addEventListener("click", async () => {
+  const email = document.querySelector("#email").value.trim();
+  if (!email) {
+    loginMessage.textContent = "Enter your email address first.";
+    return;
+  }
+  const button = document.querySelector("#forgot-password-button");
+  button.disabled = true;
+  loginMessage.textContent = "Requesting a password reset email…";
+  try {
+    const data = await apiRequest("/api/auth/password/reset/request", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    });
+    loginMessage.textContent = data.message;
+  } catch (error) {
+    loginMessage.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+});
+
+passwordResetForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const password = document.querySelector("#reset-new-password").value;
+  const confirmation = document.querySelector("#reset-confirm-password").value;
+  const button = passwordResetForm.querySelector("button");
+  if (password !== confirmation) {
+    passwordResetMessage.textContent = "The new passwords do not match.";
+    return;
+  }
+  if (password.length < 12) {
+    passwordResetMessage.textContent = "Your password must contain at least 12 characters.";
+    return;
+  }
+  if (!pendingPasswordResetToken) {
+    passwordResetMessage.textContent = "This reset link is invalid or has expired.";
+    return;
+  }
+  button.disabled = true;
+  passwordResetMessage.textContent = "Resetting your password…";
+  try {
+    const data = await apiRequest("/api/auth/password/reset/confirm", {
+      method: "POST",
+      body: JSON.stringify({ token: pendingPasswordResetToken, new_password: password }),
+    });
+    window.history.replaceState({}, document.title, window.location.pathname);
+    passwordResetForm.reset();
+    passwordResetPanel.hidden = true;
+    showLogin(data.message);
+  } catch (error) {
+    passwordResetMessage.textContent = error.message;
   } finally {
     button.disabled = false;
   }
