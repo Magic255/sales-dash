@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import CheckConstraint, DateTime, ForeignKey, String, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
+from ..email_verification import EmailVerificationToken  # noqa: F401
 from ..extensions import db
 
 
@@ -346,6 +347,3 @@ class SaleItem(db.Model):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
-
-# Keep the global verification-token table in Alembic's shared metadata.
-from ..email_verification import EmailVerificationToken  # noqa: F401,E402
