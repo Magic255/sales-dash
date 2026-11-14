@@ -125,7 +125,7 @@ def upgrade():
     )
 
     op.drop_constraint(
-        "ck_audit_logs_event_type_is_supported", "audit_logs", type_="check"
+        op.f("ck_audit_logs_event_type_is_supported"), "audit_logs", type_="check"
     )
     op.create_check_constraint(
         "event_type_is_supported",
@@ -137,7 +137,7 @@ def upgrade():
 
 def downgrade():
     op.drop_constraint(
-        "ck_audit_logs_event_type_is_supported", "audit_logs", type_="check"
+        op.f("ck_audit_logs_event_type_is_supported"), "audit_logs", type_="check"
     )
     op.create_check_constraint(
         "event_type_is_supported",
