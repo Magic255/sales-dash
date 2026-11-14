@@ -132,6 +132,7 @@ def begin_mfa_setup(user):
         existing = _credential(user.id)
         if existing and existing.enabled_at is not None:
             return jsonify({"error": "MFA is already enabled."}), 409
+        account_email = user.email
         secret = pyotp.random_base32()
         encrypted = cipher.encrypt(secret.encode()).decode()
         if existing:
@@ -150,7 +151,7 @@ def begin_mfa_setup(user):
         return jsonify({"error": "MFA setup could not be started. Try again."}), 503
 
     uri = pyotp.TOTP(secret).provisioning_uri(
-        name=user.email, issuer_name="SALES DASH"
+        name=account_email, issuer_name="SALES DASH"
     )
     return jsonify(
         {
@@ -169,7 +170,9 @@ def confirm_mfa_setup(user):
     if not isinstance(data, dict):
         data = {}
     code = data.get("code", "")
-    credential = _credential(user.id)
+    credential = db.session.scalar(
+        select(MfaCredential).where(MfaCredential.user_id == user.id).with_for_update()
+    )
     if not credential or credential.enabled_at is not None:
         return jsonify({"error": "Start a new MFA setup before confirming."}), 409
     if not isinstance(code, str) or not code.isdigit() or len(code) != 6:
