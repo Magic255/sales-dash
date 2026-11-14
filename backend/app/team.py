@@ -89,6 +89,7 @@ def create_company_invitation(user):
             }
         )
 
+    actor_user_id = user.id
     company_id = UUID(session["company_id"])
     company = db.session.get(Company, company_id)
     if company is None:
@@ -104,7 +105,7 @@ def create_company_invitation(user):
         invited_email=email,
         role=role,
         token_hash=token_hash,
-        invited_by_user_id=user.id,
+        invited_by_user_id=actor_user_id,
         expires_at=now + timedelta(days=7),
     )
     stage = "save invitation"
@@ -134,13 +135,15 @@ def create_company_invitation(user):
             ),
         )
         stage = "record invitation audit event"
-        set_tenant_context(db.session, user.id, company_id)
-        record_audit_event(db.session, user.id, "company_invitation_created", company_id)
+        set_tenant_context(db.session, actor_user_id, company_id)
+        record_audit_event(
+            db.session, actor_user_id, "company_invitation_created", company_id
+        )
         db.session.commit()
     except Exception as error:
         db.session.rollback()
         try:
-            set_tenant_context(db.session, user.id, company_id)
+            set_tenant_context(db.session, actor_user_id, company_id)
             db.session.execute(
                 delete(CompanyInvitation).where(
                     CompanyInvitation.token_hash == token_hash
