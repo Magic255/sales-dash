@@ -107,6 +107,7 @@ def create_company_invitation(user):
         invited_by_user_id=user.id,
         expires_at=now + timedelta(days=7),
     )
+    stage = "save invitation"
     try:
         # Only one live invitation per company/email; a resend replaces the old link.
         db.session.execute(
@@ -118,6 +119,7 @@ def create_company_invitation(user):
         )
         db.session.add(invitation)
         db.session.commit()
+        stage = "send invitation email"
         from .email import send_email
 
         send_email(
@@ -131,6 +133,7 @@ def create_company_invitation(user):
                 "If you were not expecting this invitation, you can ignore this email."
             ),
         )
+        stage = "record invitation audit event"
         set_tenant_context(db.session, user.id, company_id)
         record_audit_event(db.session, user.id, "company_invitation_created", company_id)
         db.session.commit()
@@ -147,7 +150,7 @@ def create_company_invitation(user):
         except Exception:
             db.session.rollback()
         current_app.logger.warning(
-            "Company invitation delivery failed (%s).", type(error).__name__
+            "Company invitation failed during %s (%s).", stage, type(error).__name__
         )
         return jsonify({"error": "The invitation email could not be sent. Try again later."}), 503
 
