@@ -148,7 +148,10 @@ def test_postgres_restricted_runtime_role_can_update_company_name():
         assert client.post("/api/auth/login", json={
             "email": email, "password": "a-very-strong-test-password"
         }).status_code == 200
-        assert client.post("/api/auth/company", json={"company_id": str(company_id)}).status_code == 200
+        selected = client.post(
+            "/api/auth/company", json={"company_id": str(company_id)}
+        )
+        assert selected.status_code == 200
         updated = client.patch("/api/company/settings", json={"name": "Updated by runtime"})
         assert updated.status_code == 200
         assert updated.json["item"]["name"] == "Updated by runtime"
