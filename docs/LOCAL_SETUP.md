@@ -72,6 +72,8 @@ flask --app backend/run.py create-admin
 
 Follow the prompts to enter the administrator email, company name, and a strong password. Never put a password in a command, source file, or chat message.
 
+For controlled onboarding after the first administrator exists, use the operator-only commands described in [ACCOUNT_PROVISIONING.md](ACCOUNT_PROVISIONING.md): `create-user` creates an unverified account with no company access, and `create-company` creates a new company for an existing verified account.
+
 ## 8. Start SALES DASH
 
 ```powershell
