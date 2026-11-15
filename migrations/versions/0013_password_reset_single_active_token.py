@@ -1,6 +1,6 @@
 """Enforce at most one unconsumed password reset token per account.
 
-Revision ID: 0013_password_reset_single_active_token
+Revision ID: 0013_reset_active_unique
 Revises: 0012_team_member_management
 """
 
@@ -9,7 +9,7 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = "0013_password_reset_single_active_token"
+revision = "0013_reset_active_unique"
 down_revision = "0012_team_member_management"
 branch_labels = None
 depends_on = None
