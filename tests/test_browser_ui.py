@@ -30,7 +30,7 @@ def browser_server():
 
 
 def test_sign_in_company_selection_and_dashboard_controls_work_in_browser(browser_server):
-    from playwright.sync_api import sync_playwright
+    from playwright.sync_api import expect, sync_playwright
 
     state = {"signed_in": False, "analytics_requests": 0}
 
@@ -109,7 +109,7 @@ def test_sign_in_company_selection_and_dashboard_controls_work_in_browser(browse
             company_select.wait_for(state="visible")
             company_select.select_option("test-company-1")
 
-            assert page.locator("#selected-company-name").inner_text() == "Browser Test Company"
+            expect(page.locator("#selected-company-name")).to_have_text("Browser Test Company")
             page.locator("#sales-workspace").wait_for(state="visible")
             assert page.locator("#metric-customers").inner_text() == "0"
 
