@@ -57,7 +57,7 @@ Work in small milestones. Each milestone must have a clear scope, tests, and rev
 Implemented and merged:
 - Multi-company accounts, memberships, company switching, controlled operator account/company provisioning, and PostgreSQL row-level security.
 - Secure session authentication, CSRF protection, Argon2id password hashing, login throttling, account session revocation, one-time email verification, one-time password reset, and optional authenticator-app MFA with single-use recovery codes.
-- Admin, Manager, Salesperson, and Viewer permission checks; admins can invite existing verified accounts, review members, change non-admin roles, and suspend or restore company access.
+- Admin, Manager, Salesperson, and Viewer permission checks; admins can invite existing verified accounts or invite new people through a single-use email link that lets the recipient set their own password; admins can also review members, change non-admin roles, and suspend or restore company access.
 - Administrator-only company display-name settings and team-member management, protected by PostgreSQL row-level security and append-only audit events.
 - Append-only, company-scoped security audit logs.
 - Tenant-scoped customer and product workflows with edit/archive/restore controls, sales workflows, dashboard summaries, sales reports, CSV exports, and draft sale editing.
@@ -70,7 +70,7 @@ Still required before public launch:
 - Verified monitoring, backup retention, restore rehearsals, and incident-response procedures.
 - Final security review and role/tenant-isolation smoke tests in the production-like environment.
 
-Public self-registration is intentionally disabled. Do not use real customer data or describe the project as production-ready until the remaining release blockers have been completed and verified.
+Public self-registration is intentionally disabled. New accounts can be created only through a valid company invitation or controlled operator provisioning. Do not use real customer data or describe the project as production-ready until the remaining release blockers have been completed and verified.
 
 ## Documentation
 
