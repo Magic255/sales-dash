@@ -780,7 +780,9 @@ def dashboard_salespeople(_user):
         if date_from > date_to or (date_to - date_from).days > 366:
             raise ValueError
     except (TypeError, ValueError):
-        return jsonify({"error": "Invalid dashboard date range. Choose a range of up to 367 days."}), 400
+        return jsonify({
+            "error": "Invalid dashboard date range. Choose a range of up to 367 days."
+        }), 400
     company_id = _company_id()
     members = db.session.execute(
         select(User.id, User.display_name, User.email)
