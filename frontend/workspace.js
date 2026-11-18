@@ -329,12 +329,44 @@ async function loadWorkspace() {
     await loadSales(generation);
     await loadSalesTargets(generation);
     await loadDashboardAnalytics(generation);
+    await loadDashboardSalespeople(generation);
     if (generation === workspaceGeneration) {
       workspaceMessage("Company data is up to date.");
     }
   } catch (error) {
     if (generation === workspaceGeneration) workspaceMessage(error.message);
   }
+}
+
+async function loadDashboardSalespeople(generation = workspaceGeneration) {
+  const panel = document.querySelector("#dashboard-salespeople-panel");
+  const body = document.querySelector("#dashboard-salespeople-rows");
+  if (!["admin", "manager"].includes(workspaceRole)) { panel.hidden = true; return; }
+  panel.hidden = false;
+  const params = new URLSearchParams({
+    from: document.querySelector("#dashboard-analytics-from").value,
+    to: document.querySelector("#dashboard-analytics-to").value,
+  });
+  const data = await workspaceRequest("/api/dashboard/salespeople?" + params.toString());
+  if (generation !== workspaceGeneration) return;
+  body.replaceChildren();
+  if (!data.salespeople.length) {
+    const row = document.createElement("tr"), cell = document.createElement("td");
+    cell.colSpan = 4; cell.textContent = "No active salespeople in this company.";
+    row.append(cell); body.append(row); return;
+  }
+  data.salespeople.forEach((person) => {
+    const metrics = person.by_currency.length ? person.by_currency :
+      [{currency: "—", revenue: "0.00", completed_sales: 0, average_sale: "0.00"}];
+    metrics.forEach((metric) => {
+      const row = document.createElement("tr");
+      [person.name, metric.currency,
+       metric.currency === "—" ? "—" : amount(metric.currency, metric.revenue),
+       metric.completed_sales + " · avg " + (metric.currency === "—" ? "—" : amount(metric.currency, metric.average_sale))]
+        .forEach((value) => { const cell = document.createElement("td"); cell.textContent = value; row.append(cell); });
+      body.append(row);
+    });
+  });
 }
 
 async function loadDashboardAnalytics(generation = workspaceGeneration) {
@@ -622,6 +654,7 @@ document.querySelector("#dashboard-analytics-form").addEventListener("submit", a
   button.disabled = true;
   try {
     await loadDashboardAnalytics();
+    await loadDashboardSalespeople();
   } catch (error) {
     document.querySelector("#dashboard-analytics-message").textContent = error.message;
   } finally {
