@@ -455,7 +455,8 @@ def test_manager_dashboard_shows_salesperson_performance():
                 password_hash=PasswordHasher().hash("a-very-strong-test-password"),
                 email_verified=True)
             customer = Customer(company_id=company.id, created_by_user_id=manager.id, name="Test")
-            db.session.add_all([seller, customer]); db.session.flush()
+            db.session.add_all([seller, customer])
+            db.session.flush()
             db.session.add(CompanyMembership(user_id=seller.id, company_id=company.id,
                 role="salesperson", status="active"))
             db.session.add(Sale(company_id=company.id, sale_number="PERF-001",
@@ -471,10 +472,14 @@ def test_manager_dashboard_shows_salesperson_performance():
             "currency": "TZS", "revenue": "1250.00",
             "completed_sales": 1, "average_sale": "1250.00",
         }]
-        assert client.get("/api/dashboard/salespeople?from=2027-01-02&to=2027-01-01").status_code == 400
+        invalid_range = client.get(
+            "/api/dashboard/salespeople?from=2027-01-02&to=2027-01-01"
+        )
+        assert invalid_range.status_code == 400
     finally:
         with app.app_context():
-            db.session.remove(); db.drop_all()
+            db.session.remove()
+            db.drop_all()
 
 
 def test_salesperson_cannot_view_team_performance():
