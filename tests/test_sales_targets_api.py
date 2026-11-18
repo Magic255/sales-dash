@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal
 
 from argon2 import PasswordHasher
@@ -5,7 +6,7 @@ from argon2 import PasswordHasher
 from app import create_app
 from app.extensions import db
 from app.models import (
-    Company, CompanyMembership, Customer, Product, Sale, User,
+    Company, CompanyMembership, Customer, Product, Sale, SalesTarget, User,
 )
 
 
@@ -102,14 +103,14 @@ def test_manager_can_set_salesperson_target_and_actual_uses_completed_sales_only
                 company_id=company.id, sale_number="TARGET-COMPLETE",
                 customer_id=customer.id, salesperson_user_id=seller.id,
                 created_by_user_id=manager.id, status="completed",
-                sale_date=__import__("datetime").date(2026, 11, 10),
+                sale_date=date(2026, 11, 10),
                 currency="TZS", total_amount=Decimal("500.00"),
             )
             draft = Sale(
                 company_id=company.id, sale_number="TARGET-DRAFT",
                 customer_id=customer.id, salesperson_user_id=seller.id,
                 created_by_user_id=manager.id, status="draft",
-                sale_date=__import__("datetime").date(2026, 11, 12),
+                sale_date=date(2026, 11, 12),
                 currency="TZS", total_amount=Decimal("900.00"),
             )
             db.session.add_all([completed, draft])
@@ -148,8 +149,8 @@ def test_salesperson_can_only_view_own_target_and_cannot_manage_targets():
                 role="salesperson", status="active",
             ))
             db.session.add_all([
-                __import__("app.models", fromlist=["SalesTarget"]).SalesTarget(
-                    company_id=company.id, period_start=__import__("datetime").date(2026, 11, 1),
+                SalesTarget(
+                    company_id=company.id, period_start=date(2026, 11, 1),
                     target_type="salesperson", salesperson_user_id=seller.id,
                     currency="TZS", target_amount=Decimal("100"),
                 ),
