@@ -154,8 +154,8 @@ def test_salesperson_can_only_view_own_target_and_cannot_manage_targets():
                     target_type="salesperson", salesperson_user_id=seller.id,
                     currency="TZS", target_amount=Decimal("100"),
                 ),
-                __import__("app.models", fromlist=["SalesTarget"]).SalesTarget(
-                    company_id=company.id, period_start=__import__("datetime").date(2026, 11, 1),
+                SalesTarget(
+                    company_id=company.id, period_start=date(2026, 11, 1),
                     target_type="salesperson", salesperson_user_id=manager.id,
                     currency="TZS", target_amount=Decimal("200"),
                 ),
