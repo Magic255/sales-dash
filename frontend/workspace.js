@@ -357,8 +357,24 @@ async function loadDashboardSalespeople(generation = workspaceGeneration) {
     row.append(cell); body.append(row); return;
   }
   data.salespeople.forEach((person) => {
-    const metrics = person.by_currency.length ? person.by_currency :
-      [{currency: "—", revenue: "0.00", completed_sales: 0, average_sale: "0.00"}];
+    const metricsByCurrency = new Map(
+      person.by_currency.map((metric) => [metric.currency, metric])
+    );
+    salespersonTargets
+      .filter((item) => item.user_id === person.user_id)
+      .forEach((target) => {
+        if (!metricsByCurrency.has(target.currency)) {
+          metricsByCurrency.set(target.currency, {
+            currency: target.currency,
+            revenue: "0.00",
+            completed_sales: 0,
+            average_sale: "0.00",
+          });
+        }
+      });
+    const metrics = metricsByCurrency.size
+      ? [...metricsByCurrency.values()]
+      : [{currency: "—", revenue: "0.00", completed_sales: 0, average_sale: "0.00"}];
     metrics.forEach((metric) => {
       const target = salespersonTargets.find((item) =>
         item.user_id === person.user_id && item.currency === metric.currency
