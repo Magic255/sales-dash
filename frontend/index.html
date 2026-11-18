@@ -180,6 +180,28 @@
         <section class="module-panel" data-workspace-panel="overview">
           <h3>Company performance</h3>
           <p class="panel-copy">Revenue and completed sales update when a sale is marked completed. Draft sales are not included in revenue.</p>
+          <div class="target-heading">
+            <div><h4>Monthly sales targets</h4><p class="panel-copy">Track completed revenue against this month's company and salesperson goals.</p></div>
+            <label for="sales-target-month">Month</label><input id="sales-target-month" type="month">
+          </div>
+          <div id="company-target-progress" class="target-progress-list" aria-live="polite"><p class="panel-copy">Loading company target…</p></div>
+          <div id="salesperson-target-progress" class="target-progress-list" aria-live="polite"></div>
+          <div id="sales-target-management" hidden>
+            <h4>Set company target</h4>
+            <form id="company-target-form" class="record-form">
+              <label for="company-target-amount">Monthly revenue target</label><input id="company-target-amount" type="number" min="0.01" step="0.01" required>
+              <label for="company-target-currency">Currency</label><input id="company-target-currency" value="TZS" minlength="3" maxlength="3" required>
+              <button class="primary-button" type="submit">Save company target</button>
+            </form>
+            <h4>Set salesperson target</h4>
+            <form id="salesperson-target-form" class="record-form">
+              <label for="sales-target-salesperson">Salesperson</label><select id="sales-target-salesperson" required><option value="">Choose a salesperson</option></select>
+              <label for="salesperson-target-amount">Monthly revenue target</label><input id="salesperson-target-amount" type="number" min="0.01" step="0.01" required>
+              <label for="salesperson-target-currency">Currency</label><input id="salesperson-target-currency" value="TZS" minlength="3" maxlength="3" required>
+              <button class="primary-button" type="submit">Save salesperson target</button>
+            </form>
+          </div>
+          <p id="sales-target-message" class="form-message" role="status" aria-live="polite"></p>
         </section>
         <section class="module-panel" data-workspace-panel="customers" hidden>
           <h3>Customers</h3><p class="panel-copy">Add and search customers for this company.</p>
