@@ -1,6 +1,6 @@
 """Allow account creation only through a valid company invitation token.
 
-Revision ID: 0015_invitation_account_registration
+Revision ID: 0015_invite_account
 Revises: 0014_reset_active_unique
 """
 
@@ -8,7 +8,7 @@ Revises: 0014_reset_active_unique
 from alembic import op
 
 
-revision = "0015_invitation_account_registration"
+revision = "0015_invite_account"
 down_revision = "0014_reset_active_unique"
 branch_labels = None
 depends_on = None
