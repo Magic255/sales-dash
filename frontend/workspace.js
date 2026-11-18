@@ -523,6 +523,7 @@ async function saveMonthlyTarget(payload) {
     });
     message.textContent = "Monthly target saved.";
     await loadSalesTargets();
+    await loadDashboardSalespeople();
   } catch (error) {
     message.textContent = error.message;
   }
@@ -581,10 +582,13 @@ document.querySelectorAll("[data-workspace-tab]").forEach((button) => {
 
 document.querySelector("#workspace-refresh").addEventListener("click", loadWorkspace);
 
-document.querySelector("#sales-target-month").addEventListener("change", () => {
-  loadSalesTargets().catch((error) => {
+document.querySelector("#sales-target-month").addEventListener("change", async () => {
+  try {
+    await loadSalesTargets();
+    await loadDashboardSalespeople();
+  } catch (error) {
     document.querySelector("#sales-target-message").textContent = error.message;
-  });
+  }
 });
 
 document.querySelector("#company-target-form").addEventListener("submit", async (event) => {
