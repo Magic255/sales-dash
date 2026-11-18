@@ -1,5 +1,6 @@
 import json
 import threading
+from urllib.parse import urlparse
 
 import pytest
 from werkzeug.serving import make_server
@@ -35,7 +36,7 @@ def test_sign_in_company_selection_and_dashboard_controls_work_in_browser(browse
 
     def api_response(route):
         request = route.request
-        path = request.url.split("?", 1)[0]
+        path = urlparse(request.url).path
         method = request.method
 
         if path == "/api/auth/csrf":
