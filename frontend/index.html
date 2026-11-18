@@ -202,6 +202,19 @@
             </form>
           </div>
           <p id="sales-target-message" class="form-message" role="status" aria-live="polite"></p>
+          <div class="dashboard-analytics">
+            <div class="target-heading">
+              <div><h4>Revenue trend</h4><p class="panel-copy">Completed sales only. Amounts stay separated by currency.</p></div>
+              <form id="dashboard-analytics-form" class="analytics-filter">
+                <label for="dashboard-analytics-from">From</label><input id="dashboard-analytics-from" type="date" required>
+                <label for="dashboard-analytics-to">To</label><input id="dashboard-analytics-to" type="date" required>
+                <button type="submit" class="secondary-button">Update trend</button>
+              </form>
+            </div>
+            <p id="dashboard-analytics-totals" class="panel-copy" aria-live="polite">Loading revenue trend…</p>
+            <div id="dashboard-revenue-trend" class="revenue-trend" aria-live="polite"></div>
+            <p id="dashboard-analytics-message" class="form-message" role="status" aria-live="polite"></p>
+          </div>
         </section>
         <section class="module-panel" data-workspace-panel="customers" hidden>
           <h3>Customers</h3><p class="panel-copy">Add and search customers for this company.</p>

@@ -2,7 +2,7 @@
 
 import csv
 import io
-from datetime import date
+from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from uuid import UUID, uuid4
 
@@ -714,6 +714,55 @@ def void_sale(_user, sale_id):
     result = _sale_json(item)
     db.session.commit()
     return jsonify({"item": result})
+
+
+@sales_bp.get("/dashboard/analytics")
+@login_required
+@company_permission_required("view_dashboard")
+def dashboard_analytics(_user):
+    """Return completed-sales trends for a bounded dashboard date range."""
+    today = date.today()
+    try:
+        default_from = (today - timedelta(days=29)).isoformat()
+        date_from = date.fromisoformat(request.args.get("from", default_from))
+        date_to = date.fromisoformat(request.args.get("to", today.isoformat()))
+        if date_from > date_to or (date_to - date_from).days > 366:
+            raise ValueError
+    except (TypeError, ValueError):
+        return jsonify(
+            {"error": "Invalid dashboard date range. Choose a range of up to 367 days."}
+        ), 400
+
+    rows = db.session.execute(
+        select(Sale.sale_date, Sale.currency, func.sum(Sale.total_amount), func.count(Sale.id))
+        .where(
+            Sale.company_id == _company_id(),
+            Sale.status == "completed",
+            Sale.sale_date >= date_from,
+            Sale.sale_date <= date_to,
+        )
+        .group_by(Sale.sale_date, Sale.currency)
+        .order_by(Sale.sale_date, Sale.currency)
+    ).all()
+    daily_revenue = [
+        {"date": sale_date.isoformat(), "currency": currency, "amount": str(total), "sales": count}
+        for sale_date, currency, total, count in rows
+    ]
+    totals = {}
+    for item in daily_revenue:
+        currency = item["currency"]
+        totals.setdefault(currency, {"currency": currency, "amount": Decimal("0.00"), "sales": 0})
+        totals[currency]["amount"] += Decimal(item["amount"])
+        totals[currency]["sales"] += item["sales"]
+    return jsonify({
+        "from": date_from.isoformat(),
+        "to": date_to.isoformat(),
+        "daily_revenue": daily_revenue,
+        "totals_by_currency": [
+            {"currency": item["currency"], "amount": str(item["amount"]), "sales": item["sales"]}
+            for item in sorted(totals.values(), key=lambda value: value["currency"])
+        ],
+    })
 
 
 @sales_bp.get("/dashboard/summary")
