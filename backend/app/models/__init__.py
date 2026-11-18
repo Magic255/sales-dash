@@ -357,4 +357,5 @@ class SaleItem(db.Model):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
-\nfrom .sales_target import SalesTarget  # noqa: F401 - register monthly target model\n
+
+from .sales_target import SalesTarget  # noqa: F401 - register monthly target model
