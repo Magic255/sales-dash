@@ -175,7 +175,7 @@ def save_sales_target(user):
         if not isinstance(currency, str) or len(currency.strip()) != 3:
             raise ValueError("Currency must be a 3-letter code.")
         currency = currency.strip().upper()
-        if not currency.isalpha():
+        if not currency.isascii() or not currency.isalpha():
             raise ValueError("Currency must be a 3-letter code.")
         target_amount = _target_amount(data.get("target_amount"))
         salesperson_id = None
