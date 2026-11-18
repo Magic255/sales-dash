@@ -99,8 +99,8 @@ def test_sign_in_company_selection_and_dashboard_controls_work_in_browser(browse
             page.goto(browser_server, wait_until="networkidle")
             assert page.get_by_role("heading", name="Sign in to SALES DASH").is_visible()
 
-            page.get_by_label("Email address").fill("browser@example.test")
-            page.get_by_label("Password").fill("a-browser-only-test-password")
+            page.locator("#email").fill("browser@example.test")
+            page.locator("#password").fill("a-browser-only-test-password")
             page.get_by_role("button", name="Sign in securely").click()
 
             company_select = page.locator("#company-select")
