@@ -90,7 +90,8 @@ def test_sign_in_company_selection_and_dashboard_controls_work_in_browser(browse
 
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch()
-        page = browser.new_page()
+        context = browser.new_context(service_workers="block")
+        page = context.new_page()
         page_errors = []
         page.on("pageerror", lambda error: page_errors.append(str(error)))
         page.route("**/api/**", api_response)
