@@ -776,22 +776,7 @@ document.querySelector("#sale-form").addEventListener("submit", async (event) =>
       }),
     });
     form.reset();
-    
-document.querySelector("#dashboard-analytics-form").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const button = event.currentTarget.querySelector("button");
-  button.disabled = true;
-  try {
-    await loadDashboardAnalytics();
-    await loadDashboardSalespeople();
-  } catch (error) {
-    document.querySelector("#dashboard-analytics-message").textContent = error.message;
-  } finally {
-    button.disabled = false;
-  }
-});
-
-document.querySelector("#sale-date").value = localDate();
+    document.querySelector("#sale-date").value = localDate();
     document.querySelector("#sale-quantity").value = "1";
     document.querySelector("#sale-item-discount").value = "0";
     document.querySelector("#sale-discount").value = "0";
@@ -801,6 +786,20 @@ document.querySelector("#sale-date").value = localDate();
     await loadWorkspace();
   } catch (error) {
     workspaceMessage(error.message);
+  } finally {
+    button.disabled = false;
+  }
+});
+
+document.querySelector("#dashboard-analytics-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const button = event.currentTarget.querySelector("button");
+  button.disabled = true;
+  try {
+    await loadDashboardAnalytics();
+    await loadDashboardSalespeople();
+  } catch (error) {
+    document.querySelector("#dashboard-analytics-message").textContent = error.message;
   } finally {
     button.disabled = false;
   }
