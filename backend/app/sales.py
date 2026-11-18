@@ -2,7 +2,7 @@
 
 import csv
 import io
-from datetime import date
+from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from uuid import UUID, uuid4
 
@@ -723,7 +723,7 @@ def dashboard_analytics(_user):
     """Return completed-sales trends for a bounded dashboard date range."""
     today = date.today()
     try:
-        date_from = date.fromisoformat(request.args.get("from", (today - __import__("datetime").timedelta(days=29)).isoformat()))
+        date_from = date.fromisoformat(request.args.get("from", (today - timedelta(days=29)).isoformat()))
         date_to = date.fromisoformat(request.args.get("to", today.isoformat()))
         if date_from > date_to or (date_to - date_from).days > 366:
             raise ValueError
