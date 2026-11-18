@@ -203,15 +203,15 @@ def test_only_company_admin_can_send_invitations(invitation_app):
     assert response.status_code == 403
 
 
-def test_unknown_or_unverified_accounts_receive_no_invitation(invitation_app):
+def test_unknown_accounts_can_be_invited_but_unverified_accounts_are_not(invitation_app):
     admin = _admin_client(invitation_app)
     with patch("app.email.send_email") as send:
         unknown = admin.post(
             "/api/team/invitations",
             json={"email": "missing@example.test", "role": "viewer"},
         )
-        assert unknown.status_code == 200
-        assert "If this is an active" in unknown.json["message"]
+        assert unknown.status_code == 201
+        send.assert_called_once()
 
         with invitation_app.app_context():
             unverified = User(
@@ -222,12 +222,108 @@ def test_unknown_or_unverified_accounts_receive_no_invitation(invitation_app):
             db.session.add(unverified)
             db.session.commit()
 
-        unverified_response = admin.post(
+        response = admin.post(
             "/api/team/invitations",
             json={"email": "unverified@example.test", "role": "viewer"},
         )
-        assert unverified_response.status_code == 200
-        send.assert_not_called()
+        assert response.status_code == 200
+        assert send.call_count == 1
+
+
+def test_new_invitee_creates_verified_account_and_joins_company(invitation_app):
+    admin = _admin_client(invitation_app)
+    with patch("app.email.send_email") as send:
+        created = admin.post(
+            "/api/team/invitations",
+            json={"email": "new-person@example.test", "role": "salesperson"},
+        )
+    assert created.status_code == 201
+    token = _token_from_email(send)
+
+    anonymous = invitation_app.test_client()
+    registered = anonymous.post(
+        "/api/team/invitations/register",
+        json={
+            "token": token,
+            "display_name": "New Person",
+            "password": "new-person-secure-password",
+        },
+    )
+    assert registered.status_code == 201
+    assert registered.json["registered"] is True
+    assert registered.json["email"] == "new-person@example.test"
+
+    with invitation_app.app_context():
+        user = db.session.scalar(
+            select(User).where(User.email == "new-person@example.test")
+        )
+        assert user is not None and user.email_verified is True
+        assert user.password_hash != "new-person-secure-password"
+        membership = db.session.scalar(
+            select(CompanyMembership).where(CompanyMembership.user_id == user.id)
+        )
+        assert membership is not None
+        assert membership.role == "salesperson"
+        assert membership.status == "active"
+
+    signed_in = _client_for(
+        invitation_app, "new-person@example.test", "new-person-secure-password"
+    )
+    companies = signed_in.get("/api/auth/me")
+    assert companies.status_code == 200
+    assert any(item["role"] == "salesperson" for item in companies.json["companies"])
+
+    replay = anonymous.post(
+        "/api/team/invitations/register",
+        json={
+            "token": token,
+            "display_name": "New Person",
+            "password": "another-secure-password",
+        },
+    )
+    assert replay.status_code == 400
+
+
+def test_existing_account_cannot_be_overwritten_by_registration(invitation_app):
+    admin = _admin_client(invitation_app)
+    with patch("app.email.send_email") as send:
+        created = admin.post(
+            "/api/team/invitations",
+            json={"email": "invitee@example.test", "role": "viewer"},
+        )
+    assert created.status_code == 201
+    token = _token_from_email(send)
+    response = invitation_app.test_client().post(
+        "/api/team/invitations/register",
+        json={
+            "token": token,
+            "display_name": "Changed Name",
+            "password": "attacker-chosen-password",
+        },
+    )
+    assert response.status_code == 409
+    with invitation_app.app_context():
+        existing = db.session.scalar(
+            select(User).where(User.email == "invitee@example.test")
+        )
+        assert PasswordHasher().verify(
+            existing.password_hash, "original-invitee-password"
+        )
+
+
+def test_invitation_registration_requires_valid_password(invitation_app):
+    admin = _admin_client(invitation_app)
+    with patch("app.email.send_email") as send:
+        admin.post(
+            "/api/team/invitations",
+            json={"email": "new-person@example.test", "role": "viewer"},
+        )
+    token = _token_from_email(send)
+    response = invitation_app.test_client().post(
+        "/api/team/invitations/register",
+        json={"token": token, "display_name": "New Person", "password": "short"},
+    )
+    assert response.status_code == 400
 
 
 def test_invitation_rejects_admin_role_and_malformed_payload(invitation_app):
@@ -272,15 +368,10 @@ def test_postgres_restricted_runtime_role_can_create_and_accept_invitation():
             password_hash=PasswordHasher().hash(admin_password),
             email_verified=True,
         )
-        invitee = User(
-            email=email,
-            password_hash=PasswordHasher().hash(invitee_password),
-            email_verified=True,
-        )
         company = Company(name="Restricted Invitation", slug=f"invite-{uuid4().hex}")
-        db.session.add_all([admin, invitee, company])
+        db.session.add_all([admin, company])
         db.session.flush()
-        admin_id, invitee_id, company_id = admin.id, invitee.id, company.id
+        admin_id, company_id = admin.id, company.id
         admin_email = admin.email
         db.session.add(
             CompanyMembership(
@@ -302,11 +393,17 @@ def test_postgres_restricted_runtime_role_can_create_and_accept_invitation():
         assert created.status_code == 201
         token = _token_from_email(send)
 
-        invitee_client = _client_for(runtime_app, email, invitee_password)
-        accepted = invitee_client.post(
-            "/api/team/invitations/accept", json={"token": token}
+        anonymous = runtime_app.test_client()
+        registered = anonymous.post(
+            "/api/team/invitations/register",
+            json={
+                "token": token,
+                "display_name": "New Invitee",
+                "password": invitee_password,
+            },
         )
-        assert accepted.status_code == 200
+        assert registered.status_code == 201
+        invitee_client = _client_for(runtime_app, email, invitee_password)
         assert any(
             item["id"] == str(company_id) and item["role"] == "manager"
             for item in invitee_client.get("/api/auth/me").json["companies"]
@@ -315,7 +412,7 @@ def test_postgres_restricted_runtime_role_can_create_and_accept_invitation():
         with admin_app.app_context():
             db.session.execute(db.delete(Company).where(Company.id == company_id))
             db.session.execute(db.delete(User).where(User.id == admin_id))
-            db.session.execute(db.delete(User).where(User.id == invitee_id))
+            db.session.execute(db.delete(User).where(User.email == email))
             db.session.commit()
 
 
