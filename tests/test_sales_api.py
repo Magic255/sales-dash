@@ -488,4 +488,5 @@ def test_salesperson_cannot_view_team_performance():
         assert client.get("/api/dashboard/salespeople").status_code == 403
     finally:
         with app.app_context():
-            db.session.remove(); db.drop_all()
+            db.session.remove()
+            db.drop_all()
