@@ -802,7 +802,7 @@ def dashboard_salespeople(_user):
         by_seller.setdefault(seller_id, []).append({
             "currency": currency, "revenue": str(revenue),
             "completed_sales": count,
-            "average_sale": str(average.quantize(Decimal("0.01"))),
+            "average_sale": str(Decimal(str(average)).quantize(Decimal("0.01")) ),
         })
     return jsonify({
         "from": date_from.isoformat(), "to": date_to.isoformat(),
