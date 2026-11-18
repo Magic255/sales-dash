@@ -30,7 +30,7 @@ jobs:
       APP_DATABASE_URL: postgresql+psycopg://sales_dash_runtime:ci-runtime-password@127.0.0.1:5432/sales_dash
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python
         uses: actions/setup-python@v5
