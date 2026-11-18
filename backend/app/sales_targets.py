@@ -128,7 +128,7 @@ def list_sales_targets(user):
             "currency": target.currency,
             "target_amount": str(target.target_amount),
             "actual_amount": str(actual),
-            "progress_percent": str((actual / target.target_amount * 100).quantize(Decimal("0.01"))),
+            "progress_percent": str(\n                (actual / target.target_amount * 100).quantize(\n                    Decimal("0.01")\n                )\n            ),
         })
 
     salespeople = []
