@@ -327,11 +327,84 @@ async function loadWorkspace() {
     renderProducts();
     fillSaleChoices();
     await loadSales(generation);
+    await loadSalesTargets(generation);
     if (generation === workspaceGeneration) {
       workspaceMessage("Company data is up to date.");
     }
   } catch (error) {
     if (generation === workspaceGeneration) workspaceMessage(error.message);
+  }
+}
+
+function targetProgress(container, item, label) {
+  const wrapper = document.createElement("article");
+  wrapper.className = "target-progress-item";
+  const heading = document.createElement("div");
+  heading.className = "target-progress-heading";
+  const name = document.createElement("strong");
+  name.textContent = label + " · " + item.currency;
+  const percentage = document.createElement("span");
+  percentage.textContent = item.progress_percent + "%";
+  heading.append(name, percentage);
+  const progress = document.createElement("progress");
+  progress.max = 100;
+  progress.value = Math.min(100, Math.max(0, Number(item.progress_percent) || 0));
+  progress.setAttribute("aria-label", label + " progress");
+  const detail = document.createElement("p");
+  detail.className = "panel-copy";
+  detail.textContent = amount(item.currency, item.actual_amount) + " of " + amount(item.currency, item.target_amount);
+  wrapper.append(heading, progress, detail);
+  container.append(wrapper);
+}
+
+async function loadSalesTargets(generation = workspaceGeneration) {
+  const monthInput = document.querySelector("#sales-target-month");
+  if (!monthInput.value) monthInput.value = localDate().slice(0, 7);
+  const month = monthInput.value;
+  const data = await workspaceRequest("/api/sales-targets?month=" + encodeURIComponent(month));
+  if (generation !== workspaceGeneration) return;
+  const company = document.querySelector("#company-target-progress");
+  const sellers = document.querySelector("#salesperson-target-progress");
+  company.replaceChildren();
+  sellers.replaceChildren();
+  if (!data.company_targets.length) {
+    const empty = document.createElement("p");
+    empty.className = "panel-copy";
+    empty.textContent = "No company target has been set for this month yet.";
+    company.append(empty);
+  } else {
+    data.company_targets.forEach((item) => targetProgress(company, item, "Company target"));
+  }
+  if (!data.salesperson_targets.length) {
+    const empty = document.createElement("p");
+    empty.className = "panel-copy";
+    empty.textContent = workspaceRole === "salesperson"
+      ? "No personal target has been set for you this month."
+      : "No salesperson targets have been set for this month.";
+    sellers.append(empty);
+  } else {
+    data.salesperson_targets.forEach((item) => targetProgress(sellers, item, item.name));
+  }
+  const management = document.querySelector("#sales-target-management");
+  management.hidden = !["admin", "manager"].includes(workspaceRole);
+  const choices = document.querySelector("#sales-target-salesperson");
+  const selected = choices.value;
+  choices.replaceChildren(new Option("Choose a salesperson", ""));
+  data.salespeople.forEach((item) => choices.add(new Option(item.name, item.user_id)));
+  if (data.salespeople.some((item) => item.user_id === selected)) choices.value = selected;
+}
+
+async function saveMonthlyTarget(payload) {
+  const message = document.querySelector("#sales-target-message");
+  try {
+    await workspaceRequest("/api/sales-targets", {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+    message.textContent = "Monthly target saved.";
+    await loadSalesTargets();
+  } catch (error) {
+    message.textContent = error.message;
   }
 }
 
@@ -354,6 +427,8 @@ document.addEventListener("salesdash:company-selected", (event) => {
   document.querySelector("#metric-products").textContent = "—";
   document.querySelector("#metric-sales").textContent = "—";
   document.querySelector("#metric-revenue").textContent = "—";
+  document.querySelector("#sales-target-month").value = localDate().slice(0, 7);
+  document.querySelector("#sales-target-message").textContent = "";
   workspace.hidden = false;
   document.querySelector("#customer-form").hidden = workspaceRole === "viewer";
   document.querySelector("#product-form").hidden = !["admin", "manager"].includes(workspaceRole);
@@ -376,6 +451,35 @@ document.querySelectorAll("[data-workspace-tab]").forEach((button) => {
 });
 
 document.querySelector("#workspace-refresh").addEventListener("click", loadWorkspace);
+
+document.querySelector("#sales-target-month").addEventListener("change", () => {
+  loadSalesTargets().catch((error) => {
+    document.querySelector("#sales-target-message").textContent = error.message;
+  });
+});
+
+document.querySelector("#company-target-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  await saveMonthlyTarget({
+    month: document.querySelector("#sales-target-month").value,
+    target_type: "company",
+    currency: document.querySelector("#company-target-currency").value,
+    target_amount: document.querySelector("#company-target-amount").value,
+  });
+});
+
+document.querySelector("#salesperson-target-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  await saveMonthlyTarget({
+    month: document.querySelector("#sales-target-month").value,
+    target_type: "salesperson",
+    salesperson_user_id: document.querySelector("#sales-target-salesperson").value,
+    currency: document.querySelector("#salesperson-target-currency").value,
+    target_amount: document.querySelector("#salesperson-target-amount").value,
+  });
+});
+
+
 
 document.querySelector("#customer-form").addEventListener("submit", async (event) => {
   event.preventDefault();

@@ -12,6 +12,7 @@ from ..email_verification import EmailVerificationToken  # noqa: F401
 from ..extensions import db
 from ..mfa_models import MfaCredential, MfaRecoveryCode  # noqa: F401
 from ..password_reset import PasswordResetToken  # noqa: F401
+from .sales_target import SalesTarget  # noqa: F401 - register monthly target model
 
 
 def utc_now() -> datetime:
@@ -356,4 +357,3 @@ class SaleItem(db.Model):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
-
