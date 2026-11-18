@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
@@ -5,7 +6,7 @@ from argon2 import PasswordHasher
 
 from app import create_app
 from app.extensions import db
-from app.models import Company, CompanyMembership, Customer, Product, User
+from app.models import Company, CompanyMembership, Customer, Product, Sale, User
 
 
 def make_client(role="admin"):
@@ -440,5 +441,52 @@ def test_salesperson_cannot_list_archived_customers_or_products():
         assert client.get("/api/products?include_inactive=true").status_code == 403
     finally:
         with application.app_context():
+            db.session.remove()
+            db.drop_all()
+
+
+def test_manager_dashboard_shows_salesperson_performance():
+    app, client = make_client()
+    try:
+        with app.app_context():
+            manager = db.session.query(User).filter_by(email="admin@example.test").one()
+            company = db.session.query(Company).filter_by(slug="sales-api-admin").one()
+            seller = User(email="seller@example.test",
+                password_hash=PasswordHasher().hash("a-very-strong-test-password"),
+                email_verified=True)
+            customer = Customer(company_id=company.id, created_by_user_id=manager.id, name="Test")
+            db.session.add_all([seller, customer])
+            db.session.flush()
+            db.session.add(CompanyMembership(user_id=seller.id, company_id=company.id,
+                role="salesperson", status="active"))
+            db.session.add(Sale(company_id=company.id, sale_number="PERF-001",
+                customer_id=customer.id, salesperson_user_id=seller.id,
+                created_by_user_id=manager.id, status="completed", sale_date=date.today(),
+                currency="TZS", total_amount=Decimal("1250.00")))
+            db.session.commit()
+        response = client.get("/api/dashboard/salespeople")
+        assert response.status_code == 200
+        seller_result = response.json["salespeople"][0]
+        assert seller_result["name"] == "seller@example.test"
+        assert seller_result["by_currency"] == [{
+            "currency": "TZS", "revenue": "1250.00",
+            "completed_sales": 1, "average_sale": "1250.00",
+        }]
+        invalid_range = client.get(
+            "/api/dashboard/salespeople?from=2027-01-02&to=2027-01-01"
+        )
+        assert invalid_range.status_code == 400
+    finally:
+        with app.app_context():
+            db.session.remove()
+            db.drop_all()
+
+
+def test_salesperson_cannot_view_team_performance():
+    app, client = make_client("salesperson")
+    try:
+        assert client.get("/api/dashboard/salespeople").status_code == 403
+    finally:
+        with app.app_context():
             db.session.remove()
             db.drop_all()

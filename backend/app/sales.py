@@ -12,7 +12,7 @@ from sqlalchemy.exc import IntegrityError
 
 from .auth import login_required
 from .extensions import db
-from .models import Customer, Product, Sale, SaleItem
+from .models import CompanyMembership, Customer, Product, Sale, SaleItem, User
 from .permissions import company_permission_required
 
 sales_bp = Blueprint("sales", __name__, url_prefix="/api")
@@ -762,6 +762,56 @@ def dashboard_analytics(_user):
             {"currency": item["currency"], "amount": str(item["amount"]), "sales": item["sales"]}
             for item in sorted(totals.values(), key=lambda value: value["currency"])
         ],
+    })
+
+
+@sales_bp.get("/dashboard/salespeople")
+@login_required
+@company_permission_required("view_dashboard")
+def dashboard_salespeople(_user):
+    """Return active salesperson performance for a bounded date range."""
+    if g.company_membership.role not in {"admin", "manager"}:
+        return jsonify({"error": "You are not allowed to view team performance."}), 403
+    today = date.today()
+    try:
+        default_from = (today - timedelta(days=29)).isoformat()
+        date_from = date.fromisoformat(request.args.get("from", default_from))
+        date_to = date.fromisoformat(request.args.get("to", today.isoformat()))
+        if date_from > date_to or (date_to - date_from).days > 366:
+            raise ValueError
+    except (TypeError, ValueError):
+        return jsonify({
+            "error": "Invalid dashboard date range. Choose a range of up to 367 days."
+        }), 400
+    company_id = _company_id()
+    members = db.session.execute(
+        select(User.id, User.display_name, User.email)
+        .join(CompanyMembership, CompanyMembership.user_id == User.id)
+        .where(CompanyMembership.company_id == company_id,
+               CompanyMembership.role == "salesperson",
+               CompanyMembership.status == "active")
+        .order_by(User.email)
+    ).all()
+    rows = db.session.execute(
+        select(Sale.salesperson_user_id, Sale.currency, func.sum(Sale.total_amount),
+               func.count(Sale.id), func.avg(Sale.total_amount))
+        .where(Sale.company_id == company_id, Sale.status == "completed",
+               Sale.sale_date >= date_from, Sale.sale_date <= date_to)
+        .group_by(Sale.salesperson_user_id, Sale.currency)
+    ).all()
+    by_seller = {}
+    for seller_id, currency, revenue, count, average in rows:
+        by_seller.setdefault(seller_id, []).append({
+            "currency": currency, "revenue": str(revenue),
+            "completed_sales": count,
+            "average_sale": str(Decimal(str(average)).quantize(Decimal("0.01")) ),
+        })
+    return jsonify({
+        "from": date_from.isoformat(), "to": date_to.isoformat(),
+        "salespeople": [{
+            "user_id": str(member.id), "name": member.display_name or member.email,
+            "by_currency": sorted(by_seller.get(member.id, []), key=lambda item: item["currency"]),
+        } for member in members],
     })
 
 
