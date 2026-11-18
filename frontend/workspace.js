@@ -41,6 +41,72 @@ function emptyRow(tbody, columns, message) {
   tbody.replaceChildren(row);
 }
 
+async function loadAuditLogs(generation = workspaceGeneration) {
+  const panel = document.querySelector("#audit-panel");
+  const body = document.querySelector("#audit-rows");
+  const message = document.querySelector("#audit-message");
+  if (workspaceRole !== "admin") {
+    panel.hidden = true;
+    return;
+  }
+
+  message.textContent = "";
+  emptyRow(body, 3, "Loading security activity…");
+  try {
+    const data = await workspaceRequest("/api/audit-logs?limit=50");
+    if (generation !== workspaceGeneration || workspaceRole !== "admin") return;
+    body.replaceChildren();
+    if (!data.items.length) {
+      emptyRow(body, 3, "No security activity recorded yet.");
+      return;
+    }
+
+    const eventLabels = {
+      login_succeeded: "Signed in",
+      password_changed: "Password changed",
+      company_selected: "Company selected",
+      logout: "Signed out",
+      email_verified: "Email verified",
+      password_reset: "Password reset",
+      company_invitation_created: "Invitation created",
+      company_invitation_accepted: "Invitation accepted",
+      company_invitation_revoked: "Invitation revoked",
+      mfa_enabled: "Two-step sign-in enabled",
+      mfa_disabled: "Two-step sign-in disabled",
+      mfa_recovery_code_used: "Recovery code used",
+      company_settings_updated: "Company settings updated",
+      team_member_role_changed: "Team role changed",
+      team_member_suspended: "Team member suspended",
+      team_member_reactivated: "Team member reactivated",
+    };
+    for (const item of data.items) {
+      const row = document.createElement("tr");
+      const occurredAt = new Date(item.occurred_at);
+      textCell(
+        row,
+        Number.isNaN(occurredAt.getTime())
+          ? item.occurred_at
+          : occurredAt.toLocaleString(),
+      );
+      textCell(
+        row,
+        eventLabels[item.event_type] ||
+          String(item.event_type || "Unknown event").replaceAll("_", " "),
+      );
+      textCell(
+        row,
+        item.actor_user_id ? "Account " + item.actor_user_id.slice(0, 8) : "System",
+      );
+      body.append(row);
+    }
+    message.textContent = "Showing the " + data.items.length + " most recent events.";
+  } catch (error) {
+    if (generation !== workspaceGeneration) return;
+    emptyRow(body, 3, "Security activity could not be loaded.");
+    message.textContent = error.message;
+  }
+}
+
 function amount(currency, value) {
   return currency + " " + Number(value).toLocaleString(undefined, {
     minimumFractionDigits: 2, maximumFractionDigits: 2,
@@ -565,6 +631,13 @@ document.addEventListener("salesdash:company-selected", (event) => {
   document.querySelector("#sale-form").hidden = workspaceRole === "viewer";
   document.querySelector("#team-tab").hidden = workspaceRole !== "admin";
   document.querySelector("#company-settings-tab").hidden = workspaceRole !== "admin";
+  const auditPanel = document.querySelector("#audit-panel");
+  auditPanel.hidden = workspaceRole !== "admin";
+  if (workspaceRole === "admin") {
+    loadAuditLogs(workspaceGeneration);
+  } else {
+    emptyRow(document.querySelector("#audit-rows"), 3, "Security activity is available to company admins only.");
+  }
   if (workspaceRole !== "admin") selectTab("overview");
   loadWorkspace();
 });
@@ -573,6 +646,9 @@ document.addEventListener("salesdash:signed-out", () => {
   workspaceGeneration += 1;
   customers = [];
   products = [];
+  document.querySelector("#audit-panel").hidden = true;
+  document.querySelector("#audit-message").textContent = "";
+  emptyRow(document.querySelector("#audit-rows"), 3, "Select a company to view activity.");
   workspace.hidden = true;
 });
 
@@ -581,6 +657,16 @@ document.querySelectorAll("[data-workspace-tab]").forEach((button) => {
 });
 
 document.querySelector("#workspace-refresh").addEventListener("click", loadWorkspace);
+
+document.querySelector("#audit-refresh").addEventListener("click", async (event) => {
+  const button = event.currentTarget;
+  button.disabled = true;
+  try {
+    await loadAuditLogs();
+  } finally {
+    button.disabled = false;
+  }
+});
 
 document.querySelector("#sales-target-month").addEventListener("change", async () => {
   try {
