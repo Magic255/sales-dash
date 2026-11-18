@@ -21,7 +21,7 @@ ROLE_PERMISSIONS = {
     }),
     "manager": frozenset({
         "view_dashboard", "view_reports", "create_sales", "edit_sales",
-        "manage_products", "manage_customers",
+        "manage_products", "manage_customers", "manage_sales_targets",
     }),
     "salesperson": frozenset({"view_dashboard", "view_reports", "create_sales"}),
     "viewer": frozenset({"view_dashboard", "view_reports"}),
