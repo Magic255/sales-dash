@@ -450,7 +450,8 @@ document.querySelectorAll("[data-workspace-tab]").forEach((button) => {
   button.addEventListener("click", () => selectTab(button.dataset.workspaceTab));
 });
 
-document.querySelector("#workspace-refresh").addEventListener("click", loadWorkspace);\n
+document.querySelector("#workspace-refresh").addEventListener("click", loadWorkspace);
+
 document.querySelector("#sales-target-month").addEventListener("change", () => {
   loadSalesTargets().catch((error) => {
     document.querySelector("#sales-target-message").textContent = error.message;
