@@ -39,6 +39,10 @@ The application reads credentials from environment variables only. Missing crede
 
 The verification workflow sends a link from the configured Gmail account. Set `PUBLIC_BASE_URL` to the exact public HTTPS origin of the deployed app; production refuses to generate verification links from a non-HTTPS URL. A verification link expires after 24 hours, contains a random token whose SHA-256 hash alone is stored in PostgreSQL, and can be used once. Requesting a new link invalidates the previous link. The resend endpoint uses generic responses and account/IP rate limits so it does not reveal whether an email address has an account.
 
-Opening a verification link does not consume it. The user must press **Verify email address** on the SALES DASH page; this avoids email-security scanners accidentally consuming links. Unverified accounts cannot sign in. Existing accounts are preserved as verified during migration, and the operator-created initial administrator is marked verified. Future invitation flows must explicitly create new accounts as unverified.
+Opening a verification link does not consume it. The user must press **Verify email address** on the SALES DASH page; this avoids email-security scanners accidentally consuming links. Unverified accounts cannot sign in. Existing accounts are preserved as verified during migration, and the operator-created initial administrator is marked verified.
 
-Email verification is now implemented, but password reset, MFA, and controlled company invitations remain separate work. Public self-registration remains disabled.
+## Other email-based security workflows
+
+Password reset and company invitations also use single-use, expiring links. Password reset invalidates existing sessions when completed. Company invitations are created by company administrators for existing active, email-verified accounts; the recipient must sign in using the exact invited email address before accepting. Invitations grant Manager, Salesperson, or Viewer access, never administrator access. Public self-registration and invitation-based creation of new global accounts are not enabled.
+
+Optional authenticator-app MFA is implemented separately and does not use email for its one-time codes. See [MFA setup](MFA.md) for enrollment, recovery codes, and configuration of the encryption key.
