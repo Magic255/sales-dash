@@ -158,3 +158,6 @@ footer span { color: #51d6bd; padding: 0 6px; }
   .revenue-trend-track { grid-column: 1 / -1; grid-row: 2; }
   .revenue-trend-value { text-align: right; }
 }
+
+#dashboard-salespeople-panel[hidden] { display: none; }
+#dashboard-salespeople-panel .table-wrap { margin-top: 14px; }
