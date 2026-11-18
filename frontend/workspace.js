@@ -328,12 +328,62 @@ async function loadWorkspace() {
     fillSaleChoices();
     await loadSales(generation);
     await loadSalesTargets(generation);
+    await loadDashboardAnalytics(generation);
     if (generation === workspaceGeneration) {
       workspaceMessage("Company data is up to date.");
     }
   } catch (error) {
     if (generation === workspaceGeneration) workspaceMessage(error.message);
   }
+}
+
+async function loadDashboardAnalytics(generation = workspaceGeneration) {
+  const fromInput = document.querySelector("#dashboard-analytics-from");
+  const toInput = document.querySelector("#dashboard-analytics-to");
+  if (!fromInput.value) fromInput.value = localDateDaysAgo(29);
+  if (!toInput.value) toInput.value = localDate();
+  const message = document.querySelector("#dashboard-analytics-message");
+  message.textContent = "";
+  const params = new URLSearchParams({from: fromInput.value, to: toInput.value});
+  const data = await workspaceRequest("/api/dashboard/analytics?" + params.toString());
+  if (generation !== workspaceGeneration) return;
+  const totals = data.totals_by_currency.map((item) =>
+    amount(item.currency, item.amount) + " · " + item.sales + " sales"
+  );
+  document.querySelector("#dashboard-analytics-totals").textContent =
+    totals.length ? "Period totals: " + totals.join("  |  ") : "No completed sales in this date range.";
+  const container = document.querySelector("#dashboard-revenue-trend");
+  container.replaceChildren();
+  if (!data.daily_revenue.length) {
+    const empty = document.createElement("p");
+    empty.className = "panel-copy";
+    empty.textContent = "Complete a sale to start building your revenue trend.";
+    container.append(empty);
+    return;
+  }
+  const maximums = new Map();
+  data.daily_revenue.forEach((item) => {
+    maximums.set(item.currency, Math.max(maximums.get(item.currency) || 0, Number(item.amount)));
+  });
+  data.daily_revenue.forEach((item) => {
+    const row = document.createElement("div");
+    row.className = "revenue-trend-row";
+    const label = document.createElement("span");
+    label.className = "revenue-trend-label";
+    label.textContent = item.date + " · " + item.currency;
+    const track = document.createElement("div");
+    track.className = "revenue-trend-track";
+    const bar = document.createElement("div");
+    bar.className = "revenue-trend-bar";
+    bar.style.width = Math.max(2, Number(item.amount) / maximums.get(item.currency) * 100) + "%";
+    bar.setAttribute("aria-label", amount(item.currency, item.amount));
+    track.append(bar);
+    const value = document.createElement("strong");
+    value.className = "revenue-trend-value";
+    value.textContent = amount(item.currency, item.amount) + " · " + item.sales;
+    row.append(label, track, value);
+    container.append(row);
+  });
 }
 
 function targetProgress(container, item, label) {
@@ -413,6 +463,12 @@ function localDate() {
   return new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 }
 
+function localDateDaysAgo(days) {
+  const value = new Date();
+  value.setDate(value.getDate() - days);
+  return new Date(value.getTime() - value.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+}
+
 document.addEventListener("salesdash:company-selected", (event) => {
   workspaceGeneration += 1;
   workspaceRole = event.detail.role;
@@ -428,6 +484,8 @@ document.addEventListener("salesdash:company-selected", (event) => {
   document.querySelector("#metric-sales").textContent = "—";
   document.querySelector("#metric-revenue").textContent = "—";
   document.querySelector("#sales-target-month").value = localDate().slice(0, 7);
+  document.querySelector("#dashboard-analytics-from").value = localDateDaysAgo(29);
+  document.querySelector("#dashboard-analytics-to").value = localDate();
   document.querySelector("#sales-target-message").textContent = "";
   workspace.hidden = false;
   document.querySelector("#customer-form").hidden = workspaceRole === "viewer";
@@ -557,7 +615,21 @@ document.querySelector("#sale-form").addEventListener("submit", async (event) =>
       }),
     });
     form.reset();
-    document.querySelector("#sale-date").value = localDate();
+    
+document.querySelector("#dashboard-analytics-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const button = event.currentTarget.querySelector("button");
+  button.disabled = true;
+  try {
+    await loadDashboardAnalytics();
+  } catch (error) {
+    document.querySelector("#dashboard-analytics-message").textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+});
+
+document.querySelector("#sale-date").value = localDate();
     document.querySelector("#sale-quantity").value = "1";
     document.querySelector("#sale-item-discount").value = "0";
     document.querySelector("#sale-discount").value = "0";
