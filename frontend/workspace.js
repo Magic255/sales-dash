@@ -4,6 +4,7 @@ let workspaceUserId = "";
 let customers = [];
 let products = [];
 let workspaceGeneration = 0;
+let salespersonTargets = [];
 
 function workspaceMessage(message) {
   document.querySelector("#workspace-message").textContent = message;
@@ -352,18 +353,54 @@ async function loadDashboardSalespeople(generation = workspaceGeneration) {
   body.replaceChildren();
   if (!data.salespeople.length) {
     const row = document.createElement("tr"), cell = document.createElement("td");
-    cell.colSpan = 4; cell.textContent = "No active salespeople in this company.";
+    cell.colSpan = 6; cell.textContent = "No active salespeople in this company.";
     row.append(cell); body.append(row); return;
   }
   data.salespeople.forEach((person) => {
-    const metrics = person.by_currency.length ? person.by_currency :
-      [{currency: "—", revenue: "0.00", completed_sales: 0, average_sale: "0.00"}];
+    const metricsByCurrency = new Map(
+      person.by_currency.map((metric) => [metric.currency, metric])
+    );
+    salespersonTargets
+      .filter((item) => item.user_id === person.user_id)
+      .forEach((target) => {
+        if (!metricsByCurrency.has(target.currency)) {
+          metricsByCurrency.set(target.currency, {
+            currency: target.currency,
+            revenue: "0.00",
+            completed_sales: 0,
+            average_sale: "0.00",
+          });
+        }
+      });
+    const metrics = metricsByCurrency.size
+      ? [...metricsByCurrency.values()]
+      : [{currency: "—", revenue: "0.00", completed_sales: 0, average_sale: "0.00"}];
     metrics.forEach((metric) => {
+      const target = salespersonTargets.find((item) =>
+        item.user_id === person.user_id && item.currency === metric.currency
+      );
+      const targetText = target
+        ? amount(target.currency, target.target_amount)
+        : "No target";
+      const attainmentText = target
+        ? amount(target.currency, target.actual_amount) + " / " +
+          amount(target.currency, target.target_amount) + " · " +
+          target.progress_percent + "%"
+        : "—";
       const row = document.createElement("tr");
-      [person.name, metric.currency,
-       metric.currency === "—" ? "—" : amount(metric.currency, metric.revenue),
-       metric.completed_sales + " · avg " + (metric.currency === "—" ? "—" : amount(metric.currency, metric.average_sale))]
-        .forEach((value) => { const cell = document.createElement("td"); cell.textContent = value; row.append(cell); });
+      [
+        person.name,
+        metric.currency,
+        metric.currency === "—" ? "—" : amount(metric.currency, metric.revenue),
+        metric.completed_sales + " · avg " +
+          (metric.currency === "—" ? "—" : amount(metric.currency, metric.average_sale)),
+        targetText,
+        attainmentText,
+      ].forEach((value) => {
+        const cell = document.createElement("td");
+        cell.textContent = value;
+        row.append(cell);
+      });
       body.append(row);
     });
   });
@@ -445,6 +482,7 @@ async function loadSalesTargets(generation = workspaceGeneration) {
   const month = monthInput.value;
   const data = await workspaceRequest("/api/sales-targets?month=" + encodeURIComponent(month));
   if (generation !== workspaceGeneration) return;
+  salespersonTargets = data.salesperson_targets;
   const company = document.querySelector("#company-target-progress");
   const sellers = document.querySelector("#salesperson-target-progress");
   company.replaceChildren();
@@ -485,6 +523,7 @@ async function saveMonthlyTarget(payload) {
     });
     message.textContent = "Monthly target saved.";
     await loadSalesTargets();
+    await loadDashboardSalespeople();
   } catch (error) {
     message.textContent = error.message;
   }
@@ -507,6 +546,7 @@ document.addEventListener("salesdash:company-selected", (event) => {
   workspaceUserId = event.detail.userId;
   customers = [];
   products = [];
+  salespersonTargets = [];
   renderCustomers();
   renderProducts();
   fillSaleChoices();
@@ -542,10 +582,13 @@ document.querySelectorAll("[data-workspace-tab]").forEach((button) => {
 
 document.querySelector("#workspace-refresh").addEventListener("click", loadWorkspace);
 
-document.querySelector("#sales-target-month").addEventListener("change", () => {
-  loadSalesTargets().catch((error) => {
+document.querySelector("#sales-target-month").addEventListener("change", async () => {
+  try {
+    await loadSalesTargets();
+    await loadDashboardSalespeople();
+  } catch (error) {
     document.querySelector("#sales-target-message").textContent = error.message;
-  });
+  }
 });
 
 document.querySelector("#company-target-form").addEventListener("submit", async (event) => {
