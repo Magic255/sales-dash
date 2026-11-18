@@ -6,7 +6,13 @@ from argon2 import PasswordHasher
 from app import create_app
 from app.extensions import db
 from app.models import (
-    Company, CompanyMembership, Customer, Product, Sale, SalesTarget, User,
+    Company,
+    CompanyMembership,
+    Customer,
+    Product,
+    Sale,
+    SalesTarget,
+    User,
 )
 
 
