@@ -63,9 +63,7 @@ def list_sales_targets(user):
     except ValueError:
         return jsonify({"error": "Choose a valid month in YYYY-MM format."}), 400
     period_end = _month_end(period_start)
-    role = request.user_role if hasattr(request, "user_role") else None
     # The permission decorator has already refreshed the active membership.
-    from flask import g
     role = g.company_membership.role
 
     targets = db.session.scalars(
@@ -161,8 +159,6 @@ def list_sales_targets(user):
 @login_required
 @company_permission_required("manage_sales_targets")
 def save_sales_target(user):
-    from flask import g
-
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return jsonify({"error": "Send a JSON object."}), 400
