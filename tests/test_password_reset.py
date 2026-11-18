@@ -7,6 +7,7 @@ from uuid import uuid4
 import pytest
 from argon2 import PasswordHasher
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from app import create_app
 from app.extensions import db
@@ -134,6 +135,48 @@ def test_resending_password_reset_invalidates_previous_token(reset_app):
         "/api/auth/password/reset/confirm",
         json={"token": second, "new_password": "new-password-should-work"},
     ).status_code == 200
+
+
+def test_only_one_unconsumed_reset_token_can_exist_per_account(reset_app):
+    with reset_app.app_context():
+        user = db.session.scalar(select(User).where(User.email == "reset@example.test"))
+        expires_at = datetime.now(timezone.utc) + timedelta(minutes=30)
+        db.session.add(
+            PasswordResetToken(
+                user_id=user.id,
+                token_hash="a" * 64,
+                expires_at=expires_at,
+            )
+        )
+        db.session.commit()
+
+        db.session.add(
+            PasswordResetToken(
+                user_id=user.id,
+                token_hash="b" * 64,
+                expires_at=expires_at,
+            )
+        )
+        with pytest.raises(IntegrityError):
+            db.session.commit()
+        db.session.rollback()
+
+        existing = db.session.scalar(select(PasswordResetToken))
+        existing.consumed_at = datetime.now(timezone.utc)
+        db.session.commit()
+        db.session.add(
+            PasswordResetToken(
+                user_id=user.id,
+                token_hash="b" * 64,
+                expires_at=expires_at,
+            )
+        )
+        db.session.commit()
+
+        active = db.session.scalars(
+            select(PasswordResetToken).where(PasswordResetToken.consumed_at.is_(None))
+        ).all()
+        assert len(active) == 1
 
 
 def test_expired_password_reset_token_is_rejected(reset_app):
