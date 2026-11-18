@@ -1,7 +1,7 @@
 """Company-scoped monthly revenue targets and progress."""
 
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from uuid import UUID
 
 from flask import Blueprint, g, jsonify, request, session
@@ -38,7 +38,7 @@ def _target_amount(value):
     try:
         amount = Decimal(str(value))
         rounded = amount.quantize(Decimal("0.01"))
-    except Exception:
+    except (InvalidOperation, ValueError, TypeError):
         raise ValueError("Target amount must be a positive number.") from None
     if not amount.is_finite() or rounded <= 0 or amount != rounded:
         raise ValueError("Target amount must be a positive amount with up to 2 decimals.")
@@ -98,7 +98,7 @@ def list_sales_targets(user):
             "currency": target.currency,
             "target_amount": str(target.target_amount),
             "actual_amount": str(actual),
-            "progress_percent": str((actual / target.target_amount * 100).quantize(Decimal("0.01"))),
+            "progress_percent": str(\n                (actual / target.target_amount * 100).quantize(Decimal("0.01"))\n            ),
         })
 
     salesperson_targets = []
@@ -188,7 +188,7 @@ def save_sales_target(user):
         elif data.get("salesperson_user_id") not in (None, ""):
             raise ValueError("Company targets do not have a salesperson.")
     except (ValueError, TypeError):
-        return jsonify({"error": "Check the month, target type, salesperson, currency and amount."}), 400
+        return jsonify({\n            "error": "Check the month, target type, salesperson, currency and amount."\n        }), 400
 
     company_id = _company_id()
     target = db.session.scalar(select(SalesTarget).where(
