@@ -4,6 +4,7 @@ Revision ID: 0015_invitation_account_registration
 Revises: 0014_reset_active_unique
 """
 
+# ruff: noqa: I001
 from alembic import op
 
 
