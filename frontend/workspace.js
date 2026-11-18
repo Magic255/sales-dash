@@ -358,7 +358,7 @@ function targetProgress(container, item, label) {
 
 async function loadSalesTargets(generation = workspaceGeneration) {
   const monthInput = document.querySelector("#sales-target-month");
-  if (!monthInput.value) monthInput.value = new Date().toISOString().slice(0, 7);
+  if (!monthInput.value) monthInput.value = localDate().slice(0, 7);
   const month = monthInput.value;
   const data = await workspaceRequest("/api/sales-targets?month=" + encodeURIComponent(month));
   if (generation !== workspaceGeneration) return;
