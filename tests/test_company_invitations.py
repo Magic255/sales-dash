@@ -425,13 +425,14 @@ def test_postgres_restricted_runtime_role_can_create_and_accept_invitation():
         # creation unless the transaction carries a matching live invitation.
         with runtime_app.app_context():
             activate_app_role(db.session)
+            blocked_email = f"blocked-{uuid4()}@example.test"
             db.session.execute(
                 text("SELECT set_config('app.login_email', :email, true)"),
-                {"email": f"blocked-{uuid4()}@example.test"},
+                {"email": blocked_email},
             )
             db.session.add(
                 User(
-                    email=f"blocked-{uuid4()}@example.test",
+                    email=blocked_email,
                     password_hash=PasswordHasher().hash("blocked-account-password"),
                     email_verified=True,
                 )
