@@ -1,8 +1,7 @@
 """Monthly company and salesperson sales targets."""
 
-from datetime import date
 from decimal import Decimal
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 from sqlalchemy import CheckConstraint, Date, ForeignKey, Numeric, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
