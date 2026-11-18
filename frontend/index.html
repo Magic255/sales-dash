@@ -81,6 +81,23 @@
       <p id="password-reset-message" class="form-message" role="status" aria-live="polite"></p>
     </section>
 
+    <section id="invitation-registration-panel" class="auth-panel" aria-labelledby="invitation-registration-title" hidden>
+      <p class="eyebrow">COMPANY INVITATION</p>
+      <h2 id="invitation-registration-title">Create your SALES DASH account</h2>
+      <p class="panel-copy">Your email address is verified through this invitation link. Choose your name and a private password to join the company workspace.</p>
+      <form id="invitation-registration-form" class="auth-form">
+        <label for="invitation-display-name">Your name</label>
+        <input id="invitation-display-name" autocomplete="name" maxlength="120" required>
+        <label for="invitation-new-password">Create password</label>
+        <input id="invitation-new-password" type="password" autocomplete="new-password" minlength="12" maxlength="1024" required>
+        <label for="invitation-confirm-password">Confirm password</label>
+        <input id="invitation-confirm-password" type="password" autocomplete="new-password" minlength="12" maxlength="1024" required>
+        <button type="submit" class="primary-button">Create account and join company</button>
+      </form>
+      <p id="invitation-registration-message" class="form-message" role="status" aria-live="polite"></p>
+      <button id="invitation-sign-in" type="button" class="secondary-button">I already have an account — sign in</button>
+    </section>
+
     <section id="company-panel" class="auth-panel" aria-labelledby="company-title" hidden>
       <div class="panel-heading">
         <div>
