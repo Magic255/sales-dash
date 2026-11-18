@@ -24,7 +24,6 @@ const companySelect = document.querySelector("#company-select");
 const workspaceReady = document.querySelector("#workspace-ready");
 const auditPanel = document.querySelector("#audit-panel");
 const auditRows = document.querySelector("#audit-rows");
-const auditMessage = document.querySelector("#audit-message");
 let csrfToken = "";
 let signedInUserId = "";
 let pendingInvitationToken = new URLSearchParams(window.location.hash.slice(1)).get("accept_invitation");
@@ -96,40 +95,7 @@ function showSelectedCompany(company) {
     "Signed in with " + company.role + " access.";
   auditPanel.hidden = company.role !== "admin";
   auditRows.replaceChildren();
-  if (company.role === "admin") loadAuditLogs();
   document.dispatchEvent(new CustomEvent("salesdash:company-selected", { detail: { ...company, userId: signedInUserId } }));
-}
-
-async function loadAuditLogs() {
-  if (auditPanel.hidden) return;
-  auditMessage.textContent = "Loading security activity…";
-  try {
-    const data = await apiRequest("/api/audit-logs?limit=100");
-    auditRows.replaceChildren();
-    if (!data.items.length) {
-      const row = document.createElement("tr");
-      const cell = document.createElement("td");
-      cell.colSpan = 3;
-      cell.textContent = "No security activity has been recorded yet.";
-      row.append(cell);
-      auditRows.append(row);
-    }
-    for (const item of data.items) {
-      const row = document.createElement("tr");
-      const when = document.createElement("td");
-      const event = document.createElement("td");
-      const actor = document.createElement("td");
-      const date = new Date(item.occurred_at);
-      when.textContent = Number.isNaN(date.getTime()) ? item.occurred_at : date.toLocaleString();
-      event.textContent = item.event_type.replaceAll("_", " ");
-      actor.textContent = item.actor_user_id ? item.actor_user_id : "System";
-      row.append(when, event, actor);
-      auditRows.append(row);
-    }
-    auditMessage.textContent = "Showing the latest " + data.items.length + " events.";
-  } catch (error) {
-    auditMessage.textContent = error.message;
-  }
 }
 
 async function loadCurrentUser() {
@@ -230,7 +196,6 @@ document.querySelector("#logout-button").addEventListener("click", async () => {
   }
 });
 
-document.querySelector("#audit-refresh").addEventListener("click", loadAuditLogs);
 const pendingVerificationToken = new URLSearchParams(window.location.hash.slice(1)).get("verify_email");
 const pendingPasswordResetToken = new URLSearchParams(window.location.hash.slice(1)).get("reset_password");
 if (pendingVerificationToken) {
