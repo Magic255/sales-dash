@@ -4,6 +4,7 @@ let workspaceUserId = "";
 let customers = [];
 let products = [];
 let workspaceGeneration = 0;
+let salespersonTargets = [];
 
 function workspaceMessage(message) {
   document.querySelector("#workspace-message").textContent = message;
@@ -352,18 +353,38 @@ async function loadDashboardSalespeople(generation = workspaceGeneration) {
   body.replaceChildren();
   if (!data.salespeople.length) {
     const row = document.createElement("tr"), cell = document.createElement("td");
-    cell.colSpan = 4; cell.textContent = "No active salespeople in this company.";
+    cell.colSpan = 6; cell.textContent = "No active salespeople in this company.";
     row.append(cell); body.append(row); return;
   }
   data.salespeople.forEach((person) => {
     const metrics = person.by_currency.length ? person.by_currency :
       [{currency: "—", revenue: "0.00", completed_sales: 0, average_sale: "0.00"}];
     metrics.forEach((metric) => {
+      const target = salespersonTargets.find((item) =>
+        item.user_id === person.user_id && item.currency === metric.currency
+      );
+      const targetText = target
+        ? amount(target.currency, target.target_amount)
+        : "No target";
+      const attainmentText = target
+        ? amount(target.currency, target.actual_amount) + " / " +
+          amount(target.currency, target.target_amount) + " · " +
+          target.progress_percent + "%"
+        : "—";
       const row = document.createElement("tr");
-      [person.name, metric.currency,
-       metric.currency === "—" ? "—" : amount(metric.currency, metric.revenue),
-       metric.completed_sales + " · avg " + (metric.currency === "—" ? "—" : amount(metric.currency, metric.average_sale))]
-        .forEach((value) => { const cell = document.createElement("td"); cell.textContent = value; row.append(cell); });
+      [
+        person.name,
+        metric.currency,
+        metric.currency === "—" ? "—" : amount(metric.currency, metric.revenue),
+        metric.completed_sales + " · avg " +
+          (metric.currency === "—" ? "—" : amount(metric.currency, metric.average_sale)),
+        targetText,
+        attainmentText,
+      ].forEach((value) => {
+        const cell = document.createElement("td");
+        cell.textContent = value;
+        row.append(cell);
+      });
       body.append(row);
     });
   });
@@ -445,6 +466,7 @@ async function loadSalesTargets(generation = workspaceGeneration) {
   const month = monthInput.value;
   const data = await workspaceRequest("/api/sales-targets?month=" + encodeURIComponent(month));
   if (generation !== workspaceGeneration) return;
+  salespersonTargets = data.salesperson_targets;
   const company = document.querySelector("#company-target-progress");
   const sellers = document.querySelector("#salesperson-target-progress");
   company.replaceChildren();
@@ -507,6 +529,7 @@ document.addEventListener("salesdash:company-selected", (event) => {
   workspaceUserId = event.detail.userId;
   customers = [];
   products = [];
+  salespersonTargets = [];
   renderCustomers();
   renderProducts();
   fillSaleChoices();
