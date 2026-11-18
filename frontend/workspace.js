@@ -327,6 +327,7 @@ async function loadWorkspace() {
     renderProducts();
     fillSaleChoices();
     await loadSales(generation);
+    await loadSalesTargets(generation);
     if (generation === workspaceGeneration) {
       workspaceMessage("Company data is up to date.");
     }
@@ -426,6 +427,8 @@ document.addEventListener("salesdash:company-selected", (event) => {
   document.querySelector("#metric-products").textContent = "—";
   document.querySelector("#metric-sales").textContent = "—";
   document.querySelector("#metric-revenue").textContent = "—";
+  document.querySelector("#sales-target-month").value = localDate().slice(0, 7);
+  document.querySelector("#sales-target-message").textContent = "";
   workspace.hidden = false;
   document.querySelector("#customer-form").hidden = workspaceRole === "viewer";
   document.querySelector("#product-form").hidden = !["admin", "manager"].includes(workspaceRole);
