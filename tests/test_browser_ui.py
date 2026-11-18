@@ -107,17 +107,15 @@ def test_sign_in_company_selection_and_dashboard_controls_work_in_browser(browse
             company_select.wait_for(state="visible")
             company_select.select_option("test-company-1")
 
-            page.get_by_text("Browser Test Company", exact=True).wait_for()
+            assert page.locator("#selected-company-name").inner_text() == "Browser Test Company"
             page.locator("#sales-workspace").wait_for(state="visible")
             assert page.locator("#metric-customers").inner_text() == "0"
 
             initial_analytics_requests = state["analytics_requests"]
-            page.get_by_role("button", name="Update trend").click()
-            page.wait_for_function(
-                "window.__browserTestAnalyticsRequests === undefined"
-                " || true"
-            )
-            page.wait_for_timeout(100)
+            with page.expect_response(
+                lambda response: "/api/dashboard/analytics" in response.url
+            ):
+                page.get_by_role("button", name="Update trend").click()
             assert state["analytics_requests"] > initial_analytics_requests
 
             page.locator('[data-workspace-tab="customers"]').click()
