@@ -723,12 +723,15 @@ def dashboard_analytics(_user):
     """Return completed-sales trends for a bounded dashboard date range."""
     today = date.today()
     try:
-        date_from = date.fromisoformat(request.args.get("from", (today - timedelta(days=29)).isoformat()))
+        default_from = (today - timedelta(days=29)).isoformat()
+        date_from = date.fromisoformat(request.args.get("from", default_from))
         date_to = date.fromisoformat(request.args.get("to", today.isoformat()))
         if date_from > date_to or (date_to - date_from).days > 366:
             raise ValueError
     except (TypeError, ValueError):
-        return jsonify({"error": "Invalid dashboard date range. Choose a range of up to 367 days."}), 400
+        return jsonify(
+            {"error": "Invalid dashboard date range. Choose a range of up to 367 days."}
+        ), 400
 
     rows = db.session.execute(
         select(Sale.sale_date, Sale.currency, func.sum(Sale.total_amount), func.count(Sale.id))
