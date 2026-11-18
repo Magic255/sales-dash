@@ -5,12 +5,14 @@ from uuid import uuid4
 
 import pytest
 from argon2 import PasswordHasher
-from sqlalchemy import select
+from sqlalchemy import select, text
+from sqlalchemy.exc import DBAPIError
 
 from app import create_app
 from app.company_invitation import CompanyInvitation
 from app.extensions import db
 from app.models import Company, CompanyMembership, User
+from app.tenancy import activate_app_role
 
 
 @pytest.fixture()
@@ -326,6 +328,44 @@ def test_invitation_registration_requires_valid_password(invitation_app):
     assert response.status_code == 400
 
 
+@pytest.mark.parametrize("invalid_state", ["expired", "revoked"])
+def test_new_account_registration_rejects_expired_or_revoked_invitation(
+    invitation_app, invalid_state
+):
+    from datetime import datetime, timedelta, timezone
+
+    admin = _admin_client(invitation_app)
+    with patch("app.email.send_email") as send:
+        created = admin.post(
+            "/api/team/invitations",
+            json={"email": "new-person@example.test", "role": "viewer"},
+        )
+    assert created.status_code == 201
+    token = _token_from_email(send)
+
+    with invitation_app.app_context():
+        invitation = db.session.scalar(select(CompanyInvitation))
+        if invalid_state == "expired":
+            invitation.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+        else:
+            invitation.revoked_at = datetime.now(timezone.utc)
+        db.session.commit()
+
+    response = invitation_app.test_client().post(
+        "/api/team/invitations/register",
+        json={
+            "token": token,
+            "display_name": "New Person",
+            "password": "new-person-secure-password",
+        },
+    )
+    assert response.status_code == 400
+    with invitation_app.app_context():
+        assert db.session.scalar(
+            select(User).where(User.email == "new-person@example.test")
+        ) is None
+
+
 def test_invitation_rejects_admin_role_and_malformed_payload(invitation_app):
     admin = _admin_client(invitation_app)
     assert admin.post("/api/team/invitations", json=[]).status_code == 400
@@ -381,6 +421,25 @@ def test_postgres_restricted_runtime_role_can_create_and_accept_invitation():
         db.session.commit()
 
     try:
+        # The runtime role has INSERT privilege, but RLS must reject account
+        # creation unless the transaction carries a matching live invitation.
+        with runtime_app.app_context():
+            activate_app_role(db.session)
+            db.session.execute(
+                text("SELECT set_config('app.login_email', :email, true)"),
+                {"email": f"blocked-{uuid4()}@example.test"},
+            )
+            db.session.add(
+                User(
+                    email=f"blocked-{uuid4()}@example.test",
+                    password_hash=PasswordHasher().hash("blocked-account-password"),
+                    email_verified=True,
+                )
+            )
+            with pytest.raises(DBAPIError):
+                db.session.flush()
+            db.session.rollback()
+
         admin_client = _client_for(runtime_app, admin_email, admin_password)
         assert admin_client.post(
             "/api/auth/company", json={"company_id": str(company_id)}
