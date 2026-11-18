@@ -7,6 +7,9 @@ const verificationMessage = document.querySelector("#verification-message");
 const passwordResetPanel = document.querySelector("#password-reset-panel");
 const passwordResetForm = document.querySelector("#password-reset-form");
 const passwordResetMessage = document.querySelector("#password-reset-message");
+const invitationRegistrationPanel = document.querySelector("#invitation-registration-panel");
+const invitationRegistrationForm = document.querySelector("#invitation-registration-form");
+const invitationRegistrationMessage = document.querySelector("#invitation-registration-message");
 const mfaLoginPanel = document.querySelector("#mfa-login-panel");
 const mfaLoginForm = document.querySelector("#mfa-login-form");
 const mfaLoginMessage = document.querySelector("#mfa-login-message");
@@ -24,6 +27,7 @@ const auditRows = document.querySelector("#audit-rows");
 const auditMessage = document.querySelector("#audit-message");
 let csrfToken = "";
 let signedInUserId = "";
+let pendingInvitationToken = new URLSearchParams(window.location.hash.slice(1)).get("accept_invitation");
 
 async function refreshCsrfToken() {
   const response = await fetch("/api/auth/csrf", { credentials: "same-origin" });
@@ -55,6 +59,7 @@ function showLogin(message = "") {
   loginPanel.hidden = false;
   companyPanel.hidden = true;
   mfaLoginPanel.hidden = true;
+  invitationRegistrationPanel.hidden = true;
   loginMessage.textContent = message;
   workspaceReady.hidden = true;
   auditPanel.hidden = true;
@@ -63,6 +68,7 @@ function showLogin(message = "") {
 
 function showCompanies(data) {
   loginPanel.hidden = true;
+  invitationRegistrationPanel.hidden = true;
   companyPanel.hidden = false;
   document.querySelector("#account-email").textContent = data.user.email;
   companySelect.replaceChildren(new Option("Select a company", ""));
@@ -129,9 +135,15 @@ async function loadAuditLogs() {
 async function loadCurrentUser() {
   const data = await apiRequest("/api/auth/me");
   if (!data.authenticated) {
-    showLogin(pendingInvitationToken
-      ? "Sign in with the email address that received this company invitation."
-      : "");
+    if (pendingInvitationToken) {
+      loginPanel.hidden = true;
+      companyPanel.hidden = true;
+      invitationRegistrationPanel.hidden = false;
+      invitationRegistrationMessage.textContent =
+        "Create an account with the email address that received this invitation, or sign in if you already have an account.";
+    } else {
+      showLogin();
+    }
     return;
   }
   signedInUserId = data.user.id;
@@ -221,7 +233,6 @@ document.querySelector("#logout-button").addEventListener("click", async () => {
 document.querySelector("#audit-refresh").addEventListener("click", loadAuditLogs);
 const pendingVerificationToken = new URLSearchParams(window.location.hash.slice(1)).get("verify_email");
 const pendingPasswordResetToken = new URLSearchParams(window.location.hash.slice(1)).get("reset_password");
-let pendingInvitationToken = new URLSearchParams(window.location.hash.slice(1)).get("accept_invitation");
 if (pendingVerificationToken) {
   loginPanel.hidden = true;
   companyPanel.hidden = true;
@@ -230,6 +241,13 @@ if (pendingVerificationToken) {
   loginPanel.hidden = true;
   companyPanel.hidden = true;
   passwordResetPanel.hidden = false;
+} else if (pendingInvitationToken) {
+  loginPanel.hidden = true;
+  companyPanel.hidden = true;
+  invitationRegistrationPanel.hidden = false;
+  loadCurrentUser().catch((error) => {
+    invitationRegistrationMessage.textContent = error.message;
+  });
 } else {
   loadCurrentUser().catch((error) => showLogin(error.message));
 }
@@ -422,6 +440,54 @@ document.querySelector("#confirm-verification-button").addEventListener("click",
   }
 });
 
+
+invitationRegistrationForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const displayName = document.querySelector("#invitation-display-name").value.trim();
+  const password = document.querySelector("#invitation-new-password").value;
+  const confirmation = document.querySelector("#invitation-confirm-password").value;
+  const button = invitationRegistrationForm.querySelector("button[type='submit']");
+  if (password !== confirmation) {
+    invitationRegistrationMessage.textContent = "The passwords do not match.";
+    return;
+  }
+  if (password.length < 12) {
+    invitationRegistrationMessage.textContent = "Your password must contain at least 12 characters.";
+    return;
+  }
+  if (!pendingInvitationToken) {
+    invitationRegistrationMessage.textContent = "This invitation is invalid or has expired.";
+    return;
+  }
+  button.disabled = true;
+  invitationRegistrationMessage.textContent = "Creating your secure account…";
+  try {
+    const data = await apiRequest("/api/team/invitations/register", {
+      method: "POST",
+      body: JSON.stringify({
+        token: pendingInvitationToken,
+        display_name: displayName,
+        password,
+      }),
+    });
+    pendingInvitationToken = "";
+    window.history.replaceState({}, document.title, window.location.pathname);
+    invitationRegistrationForm.reset();
+    document.querySelector("#email").value = data.email;
+    invitationRegistrationPanel.hidden = true;
+    showLogin(data.message);
+  } catch (error) {
+    invitationRegistrationMessage.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+});
+
+document.querySelector("#invitation-sign-in").addEventListener("click", () => {
+  invitationRegistrationPanel.hidden = true;
+  showLogin("Sign in using the email address that received this invitation.");
+  document.querySelector("#email").focus();
+});
 
 document.querySelector("#forgot-password-button").addEventListener("click", async () => {
   const email = document.querySelector("#email").value.trim();
