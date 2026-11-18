@@ -5,6 +5,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
+from argon2 import PasswordHasher
 from flask import Blueprint, current_app, jsonify, request, session
 from sqlalchemy import delete, select, text, update
 from sqlalchemy.exc import IntegrityError
@@ -82,12 +83,12 @@ def create_company_invitation(user):
         return jsonify({"error": "You cannot invite your own account."}), 400
 
     invited_user = find_login_user(db.session, email)
-    if not invited_user or not invited_user.is_active or not invited_user.email_verified:
+    if invited_user and (not invited_user.is_active or not invited_user.email_verified):
         return jsonify(
             {
                 "message": (
-                    "If this is an active, email-verified SALES DASH account, "
-                    "an invitation will be sent."
+                    "If this address is eligible for a SALES DASH invitation, "
+                    "an email will be sent."
                 )
             }
         )
@@ -131,9 +132,11 @@ def create_company_invitation(user):
             f"Invitation to join {company_name} on SALES DASH",
             (
                 f"You have been invited to join {company_name} on SALES DASH "
-                f"with the {role} role. Sign in using this same email address, "
-                "then open this link to accept. The link expires in 7 days and "
-                f"can be used once:\n\n{_invitation_link(raw_token)}\n\n"
+                f"with the {role} role. If you already have an account, sign in "
+                "using this same email address and open the link to accept. "
+                "If you are new to SALES DASH, open the link to create your account "
+                "and set your own password. The link expires in 7 days and can be "
+                f"used once:\n\n{_invitation_link(raw_token)}\n\n"
                 "If you were not expecting this invitation, you can ignore this email."
             ),
         )
@@ -161,6 +164,123 @@ def create_company_invitation(user):
         return jsonify({"error": "The invitation email could not be sent. Try again later."}), 503
 
     return jsonify({"message": "Invitation email sent. The link expires in 7 days."}), 201
+
+
+@team_bp.post("/invitations/register")
+@limiter.limit("5 per hour")
+def register_from_company_invitation():
+    """Create a verified account and its invited membership from a mailbox-bound token."""
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "This invitation is invalid or has expired."}), 400
+    raw_token = data.get("token", "")
+    password = data.get("password", "")
+    display_name = data.get("display_name", "")
+    if (
+        not isinstance(raw_token, str)
+        or not 32 <= len(raw_token) <= 128
+        or not isinstance(password, str)
+        or not 12 <= len(password) <= 1024
+        or not isinstance(display_name, str)
+        or not 1 <= len(display_name.strip()) <= 120
+    ):
+        return jsonify(
+            {"error": "Enter your name and a password of at least 12 characters."}
+        ), 400
+
+    token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+    now = datetime.now(timezone.utc)
+    try:
+        activate_app_role(db.session)
+        if db.session.get_bind().dialect.name == "postgresql":
+            db.session.execute(
+                text(
+                    "SELECT set_config('app.company_invitation_token_hash', :token_hash, true)"
+                ),
+                {"token_hash": token_hash},
+            )
+        invitation = db.session.scalar(
+            select(CompanyInvitation)
+            .where(
+                CompanyInvitation.token_hash == token_hash,
+                CompanyInvitation.accepted_at.is_(None),
+                CompanyInvitation.revoked_at.is_(None),
+                CompanyInvitation.expires_at > now,
+            )
+            .with_for_update()
+        )
+        if invitation is None:
+            db.session.rollback()
+            return jsonify({"error": "This invitation is invalid or has expired."}), 400
+
+        invited_email = invitation.invited_email
+        existing_user = find_login_user(db.session, invited_email)
+        if existing_user is not None:
+            db.session.rollback()
+            return jsonify(
+                {
+                    "error": (
+                        "This email already has an account. Sign in with that account "
+                        "to accept the invitation."
+                    )
+                }
+            ), 409
+
+        new_user = User(
+            email=invited_email,
+            display_name=display_name.strip(),
+            password_hash=PasswordHasher().hash(password),
+            email_verified=True,
+        )
+        db.session.add(new_user)
+        db.session.flush()
+
+        set_user_context(db.session, new_user.id)
+        if db.session.get_bind().dialect.name == "postgresql":
+            db.session.execute(
+                text("SELECT set_config('app.invitation_company_id', :company_id, true)"),
+                {"company_id": str(invitation.company_id)},
+            )
+            db.session.execute(
+                text("SELECT set_config('app.current_company_id', :company_id, true)"),
+                {"company_id": str(invitation.company_id)},
+            )
+
+        db.session.add(
+            CompanyMembership(
+                company_id=invitation.company_id,
+                user_id=new_user.id,
+                role=invitation.role,
+                status="active",
+            )
+        )
+        invitation.accepted_at = now
+        record_audit_event(
+            db.session,
+            new_user.id,
+            "company_invitation_accepted",
+            invitation.company_id,
+        )
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify(
+            {"error": "This invitation has already been used or the account already exists."}
+        ), 409
+    except Exception as error:
+        db.session.rollback()
+        current_app.logger.warning(
+            "Company invitation registration failed (%s).", type(error).__name__
+        )
+        return jsonify({"error": "This invitation is invalid or has expired."}), 400
+
+    return jsonify(
+        {
+            "registered": True,
+            "email": invited_email,
+            "message": "Your account is ready and the company invitation has been accepted. Sign in to continue.",
+        }
+    ), 201
 
 
 @team_bp.delete("/invitations/<uuid:invitation_id>")
