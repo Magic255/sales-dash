@@ -98,7 +98,11 @@ def list_sales_targets(user):
             "currency": target.currency,
             "target_amount": str(target.target_amount),
             "actual_amount": str(actual),
-            "progress_percent": str(\n                (actual / target.target_amount * 100).quantize(\n                    Decimal("0.01")\n                )\n            ),
+            "progress_percent": str(
+                (actual / target.target_amount * 100).quantize(
+                    Decimal("0.01")
+                )
+            ),
         })
 
     salesperson_targets = []
@@ -128,7 +132,11 @@ def list_sales_targets(user):
             "currency": target.currency,
             "target_amount": str(target.target_amount),
             "actual_amount": str(actual),
-            "progress_percent": str(\n                (actual / target.target_amount * 100).quantize(\n                    Decimal("0.01")\n                )\n            ),
+            "progress_percent": str(
+                (actual / target.target_amount * 100).quantize(
+                    Decimal("0.01")
+                )
+            ),
         })
 
     salespeople = []
@@ -188,7 +196,11 @@ def save_sales_target(user):
         elif data.get("salesperson_user_id") not in (None, ""):
             raise ValueError("Company targets do not have a salesperson.")
     except (ValueError, TypeError):
-        return jsonify({\n            "error": (\n                "Check the month, target type, salesperson, currency and amount."\n            )\n        }), 400
+        return jsonify({
+            "error": (
+                "Check the month, target type, salesperson, currency and amount."
+            )
+        }), 400
 
     company_id = _company_id()
     target = db.session.scalar(select(SalesTarget).where(
