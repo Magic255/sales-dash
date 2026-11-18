@@ -97,6 +97,16 @@ def test_admin_can_create_customer_product_and_complete_sale():
             "customers": 1, "products": 1,
             "completed_sales": 1, "revenue_by_currency": [{"currency": "TZS", "amount": "203.00"}],
         }
+        analytics = client.get("/api/dashboard/analytics?from=2026-11-01&to=2026-11-30")
+        assert analytics.status_code == 200
+        assert analytics.json["from"] == "2026-11-01"
+        assert analytics.json["to"] == "2026-11-30"
+        assert analytics.json["daily_revenue"] == [{
+            "date": "2026-11-13", "currency": "TZS", "amount": "203.00", "sales": 1,
+        }]
+        assert analytics.json["totals_by_currency"] == [{
+            "currency": "TZS", "amount": "203.00", "sales": 1,
+        }]
         assert len(client.get("/api/sales").json["items"]) == 1
     finally:
         with application.app_context():
@@ -317,6 +327,22 @@ def test_completed_sales_cannot_be_edited_and_viewers_cannot_edit():
         assert response.status_code == 403
     finally:
         with viewer_app.app_context():
+            db.session.remove()
+            db.drop_all()
+
+
+def test_dashboard_analytics_rejects_invalid_or_excessive_date_ranges():
+    application, client = make_client()
+    try:
+        invalid = client.get("/api/dashboard/analytics?from=2026-12-01&to=2026-11-01")
+        excessive = client.get("/api/dashboard/analytics?from=2025-01-01&to=2026-11-18")
+        malformed = client.get("/api/dashboard/analytics?from=not-a-date")
+        assert invalid.status_code == excessive.status_code == malformed.status_code == 400
+        assert invalid.json == {
+            "error": "Invalid dashboard date range. Choose a range of up to 367 days."
+        }
+    finally:
+        with application.app_context():
             db.session.remove()
             db.drop_all()
 
