@@ -113,6 +113,44 @@ def test_audit_log_pagination_is_bounded_and_validated(app):
     assert client.get("/api/audit-logs?limit=101").status_code == 400
 
 
+def test_non_admin_cannot_view_company_audit_logs(app):
+    with app.app_context():
+        company = db.session.scalar(select(Company).where(Company.slug == "audit-test"))
+        salesperson = User(
+            email="salesperson@example.test",
+            password_hash=PasswordHasher().hash("a-very-strong-test-password"),
+            email_verified=True,
+        )
+        db.session.add(salesperson)
+        db.session.flush()
+        db.session.add(
+            CompanyMembership(
+                user_id=salesperson.id,
+                company_id=company.id,
+                role="salesperson",
+                status="active",
+            )
+        )
+        db.session.commit()
+
+    client = app.test_client()
+    login = client.post(
+        "/api/auth/login",
+        json={
+            "email": "salesperson@example.test",
+            "password": "a-very-strong-test-password",
+        },
+    )
+    assert login.status_code == 200
+    company_id = client.get("/api/auth/me").json["companies"][0]["id"]
+    selected = client.post("/api/auth/company", json={"company_id": company_id})
+    assert selected.status_code == 200
+
+    response = client.get("/api/audit-logs")
+    assert response.status_code == 403
+    assert response.json["error"] == "You are not allowed to perform this action."
+
+
 def test_postgres_runtime_role_cannot_modify_or_delete_audit_logs():
     if not os.environ.get("APP_DATABASE_URL"):
         pytest.skip("CI PostgreSQL runtime-role credentials are not configured.")
