@@ -278,7 +278,10 @@ def register_from_company_invitation():
         {
             "registered": True,
             "email": invited_email,
-            "message": "Your account is ready and the company invitation has been accepted. Sign in to continue.",
+            "message": (
+                "Your account is ready and the company invitation has been accepted. "
+                "Sign in to continue."
+            ),
         }
     ), 201
 
