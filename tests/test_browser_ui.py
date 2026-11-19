@@ -303,6 +303,7 @@ def test_admin_sales_reporting_invitation_and_audit_flows_work_in_browser(browse
 
         try:
             sign_in_browser(page, browser_server)
+            page.wait_for_response(lambda response: "/api/audit-logs" in response.url)
 
             page.locator("#customer-form").wait_for(state="visible")
             page.locator("#customer-name").fill("Acme Browser Test")
