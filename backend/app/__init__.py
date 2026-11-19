@@ -1,11 +1,11 @@
 import os
 
+from cryptography.fernet import Fernet
 from flask import Flask, jsonify, request, send_from_directory
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_wtf.csrf import CSRFError, CSRFProtect
 from sqlalchemy import text
-from cryptography.fernet import Fernet
 
 from . import models  # noqa: F401 - register model metadata for Alembic
 from .commands import register_commands
