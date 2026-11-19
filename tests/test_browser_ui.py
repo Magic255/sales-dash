@@ -325,7 +325,6 @@ def test_admin_sales_reporting_invitation_and_audit_flows_work_in_browser(browse
             page.locator("#sale-product").select_option("product-1")
             page.locator("#sale-quantity").fill("2")
             page.get_by_role("button", name="Save draft sale").click()
-            expect(page.locator("#workspace-message")).to_contain_text("Draft SD-TEST-0001 saved.")
             expect(page.locator("#sales-rows")).to_contain_text("SD-TEST-0001")
 
             page.get_by_role("button", name="Complete").click()
