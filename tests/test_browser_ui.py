@@ -153,8 +153,20 @@ def test_admin_sales_reporting_invitation_and_audit_flows_work_in_browser(browse
         "csv_exports": 0,
         "company_name": "Browser Test Company",
         "members": [
-            {"user_id": "test-user-1", "display_name": "Browser Admin", "email": "browser@example.test", "role": "admin", "status": "active"},
-            {"user_id": "member-user-1", "display_name": "Browser Member", "email": "member@example.test", "role": "salesperson", "status": "active"},
+            {
+                "user_id": "test-user-1",
+                "display_name": "Browser Admin",
+                "email": "browser@example.test",
+                "role": "admin",
+                "status": "active",
+            },
+            {
+                "user_id": "member-user-1",
+                "display_name": "Browser Member",
+                "email": "member@example.test",
+                "role": "salesperson",
+                "status": "active",
+            },
         ],
     }
 
@@ -374,7 +386,9 @@ def test_admin_sales_reporting_invitation_and_audit_flows_work_in_browser(browse
             member_role = page.get_by_role("combobox", name="Role for member@example.test")
             member_role.select_option("manager")
             page.get_by_role("button", name="Save role").click()
-            expect(page.get_by_role("combobox", name="Role for member@example.test")).to_have_value("manager")
+            expect(
+                page.get_by_role("combobox", name="Role for member@example.test")
+            ).to_have_value("manager")
 
             page.get_by_role("button", name="Suspend").click()
             expect(page.locator("#team-member-rows")).to_contain_text("Suspended")
@@ -385,7 +399,9 @@ def test_admin_sales_reporting_invitation_and_audit_flows_work_in_browser(browse
             expect(page.locator("#company-settings-name")).to_have_value("Browser Test Company")
             page.locator("#company-settings-name").fill("Updated Browser Company")
             page.get_by_role("button", name="Save company name").click()
-            expect(page.locator("#company-settings-message")).to_contain_text("Company name updated.")
+            expect(page.locator("#company-settings-message")).to_contain_text(
+                "Company name updated."
+            )
             assert state["company_name"] == "Updated Browser Company"
 
             with page.expect_response(lambda response: "/api/audit-logs" in response.url):
