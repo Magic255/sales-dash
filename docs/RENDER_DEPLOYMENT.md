@@ -41,7 +41,7 @@ Add these in the Render service's **Environment** settings. Use Render's generat
 | `SECRET_KEY` | Generate a unique, high-entropy value in Render |
 | `APP_DATABASE_URL` | Internal PostgreSQL URL using the dedicated restricted runtime login (not the database owner URL) |
 | `RATELIMIT_STORAGE_URI` | Internal Render Key Value URL, using `redis://` or `rediss://` as supplied by Render |
-| `MFA_ENCRYPTION_KEY` | Generate a Fernet key using the command below; paste it directly into Render's secret environment setting |
+| `MFA_ENCRYPTION_KEY` | Generate a valid Fernet key using the command below; required for production startup and validated before the app accepts traffic |
 | `PUBLIC_BASE_URL` | The exact public HTTPS origin after the service URL/domain is assigned |
 | `MAIL_SERVER` | `smtp.gmail.com` for the configured personal Gmail SMTP option |
 | `MAIL_PORT` | `587` |
@@ -84,7 +84,7 @@ The app fails startup in production unless its rate-limit storage URI uses Redis
 ## Before accepting real data
 
 - [ ] Confirm the Render service deploys from the reviewed `main` commit and record its SHA.
-- [ ] Confirm TLS/HTTPS, secure session cookies, HSTS, security headers, and `/api/health`.
+- [ ] Confirm TLS/HTTPS, secure session cookies, HSTS, security headers, and `/api/health` (which now checks database readiness and returns HTTP 503 when the database is unavailable).
 - [ ] Confirm API responses use `Cache-Control: no-store` and are never cached by the service worker.
 - [ ] Confirm web service environment contains no admin/owner database URL.
 - [ ] Confirm database public access is disabled and runtime login is restricted, non-owner, non-superuser, and not `BYPASSRLS`.
