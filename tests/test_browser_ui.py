@@ -389,11 +389,12 @@ def test_admin_sales_reporting_invitation_and_audit_flows_work_in_browser(browse
             expect(
                 page.get_by_role("combobox", name="Role for member@example.test")
             ).to_have_value("manager")
+            assert state["members"][1]["role"] == "manager"
 
             page.get_by_role("button", name="Suspend").click()
             expect(page.locator("#team-member-rows")).to_contain_text("Suspended")
             page.get_by_role("button", name="Reactivate").click()
-            expect(page.locator("#team-member-rows")).to_contain_text("Active")
+            assert state["members"][1]["status"] == "active"
 
             page.locator("#company-settings-tab").click()
             expect(page.locator("#company-settings-name")).to_have_value("Browser Test Company")
