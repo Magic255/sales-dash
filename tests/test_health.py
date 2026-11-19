@@ -94,6 +94,40 @@ def test_production_accepts_valid_mfa_encryption_key():
     assert app.config["APP_ENV"] == "production"
 
 
+def test_production_requires_explicit_app_database_url(monkeypatch):
+    monkeypatch.delenv("APP_DATABASE_URL", raising=False)
+
+    with pytest.raises(RuntimeError, match="APP_DATABASE_URL must be set explicitly"):
+        create_app(
+            {
+                "TESTING": False,
+                "APP_ENV": "production",
+                "SECRET_KEY": "production-test-secret",
+                "RATELIMIT_STORAGE_URI": "redis://localhost:6379/0",
+                "MFA_ENCRYPTION_KEY": Fernet.generate_key().decode(),
+                "SQLALCHEMY_DATABASE_URI": "postgresql+psycopg://runtime:secret@db/app",
+            }
+        )
+
+
+def test_production_rejects_non_postgres_runtime_database(monkeypatch):
+    monkeypatch.setenv(
+        "APP_DATABASE_URL", "postgresql+psycopg://runtime:secret@db/app"
+    )
+
+    with pytest.raises(RuntimeError, match="Production requires APP_DATABASE_URL"):
+        create_app(
+            {
+                "TESTING": False,
+                "APP_ENV": "production",
+                "SECRET_KEY": "production-test-secret",
+                "RATELIMIT_STORAGE_URI": "redis://localhost:6379/0",
+                "MFA_ENCRYPTION_KEY": Fernet.generate_key().decode(),
+                "SQLALCHEMY_DATABASE_URI": "sqlite://",
+            }
+        )
+
+
 def test_homepage_is_served():
     response = create_test_client().get("/")
 
