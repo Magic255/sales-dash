@@ -40,7 +40,7 @@ def test_health_endpoint_returns_unavailable_when_database_check_fails(monkeypat
         raise RuntimeError("database unavailable")
 
     with app.app_context():
-        monkeypatch.setattr(db.session, "execute", fail_database_check)
+        monkeypatch.setattr(db.engine, "connect", fail_database_check)
         response = app.test_client().get("/api/health")
 
     assert response.status_code == 503
