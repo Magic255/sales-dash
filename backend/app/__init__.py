@@ -32,6 +32,19 @@ def create_app(test_config=None):
     if test_config:
         app.config.update(test_config)
 
+    if not app.testing and app.config.get("APP_ENV") == "production":
+        if not os.environ.get("APP_DATABASE_URL"):
+            raise RuntimeError(
+                "APP_DATABASE_URL must be set explicitly in production; "
+                "the application must not fall back to a default database URL."
+            )
+        if not str(app.config.get("SQLALCHEMY_DATABASE_URI", "")).startswith(
+            "postgresql+psycopg://"
+        ):
+            raise RuntimeError(
+                "Production requires APP_DATABASE_URL to use PostgreSQL with psycopg."
+            )
+
     if not app.testing and not app.config.get("SECRET_KEY"):
         raise RuntimeError("SECRET_KEY must be set before starting SALES DASH.")
     if (
