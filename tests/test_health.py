@@ -1,3 +1,6 @@
+import pytest
+from cryptography.fernet import Fernet
+
 from app import create_app
 from app.extensions import db, migrate
 
@@ -13,7 +16,7 @@ def create_test_client():
     return app.test_client()
 
 
-def test_health_endpoint():
+def test_health_endpoint_checks_database_and_disables_caching():
     response = create_test_client().get("/api/health")
 
     assert response.status_code == 200
@@ -21,6 +24,74 @@ def test_health_endpoint():
         "status": "ok",
         "service": "sales-dash-api",
     }
+    assert response.headers["Cache-Control"] == "no-store"
+
+
+def test_health_endpoint_returns_unavailable_when_database_check_fails(monkeypatch):
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test-only-secret",
+            "SQLALCHEMY_DATABASE_URI": "sqlite://",
+        }
+    )
+
+    def fail_database_check(_statement):
+        raise RuntimeError("database unavailable")
+
+    with app.app_context():
+        monkeypatch.setattr(db.engine, "connect", fail_database_check)
+        response = app.test_client().get("/api/health")
+
+    assert response.status_code == 503
+    assert response.get_json() == {
+        "status": "unavailable",
+        "service": "sales-dash-api",
+    }
+    assert response.headers["Cache-Control"] == "no-store"
+
+
+def test_production_requires_mfa_encryption_key():
+    with pytest.raises(RuntimeError, match="MFA_ENCRYPTION_KEY must be set"):
+        create_app(
+            {
+                "TESTING": True,
+                "APP_ENV": "production",
+                "SECRET_KEY": "production-test-secret",
+                "RATELIMIT_STORAGE_URI": "redis://localhost:6379/0",
+                "MFA_ENCRYPTION_KEY": None,
+                "SQLALCHEMY_DATABASE_URI": "sqlite://",
+            }
+        )
+
+
+def test_production_rejects_invalid_mfa_encryption_key():
+    with pytest.raises(RuntimeError, match="valid Fernet key"):
+        create_app(
+            {
+                "TESTING": True,
+                "APP_ENV": "production",
+                "SECRET_KEY": "production-test-secret",
+                "RATELIMIT_STORAGE_URI": "redis://localhost:6379/0",
+                "MFA_ENCRYPTION_KEY": "not-a-valid-fernet-key",
+                "SQLALCHEMY_DATABASE_URI": "sqlite://",
+            }
+        )
+
+
+def test_production_accepts_valid_mfa_encryption_key():
+    app = create_app(
+        {
+            "TESTING": True,
+            "APP_ENV": "production",
+            "SECRET_KEY": "production-test-secret",
+            "RATELIMIT_STORAGE_URI": "redis://localhost:6379/0",
+            "MFA_ENCRYPTION_KEY": Fernet.generate_key().decode(),
+            "SQLALCHEMY_DATABASE_URI": "sqlite://",
+        }
+    )
+
+    assert app.config["APP_ENV"] == "production"
 
 
 def test_homepage_is_served():
