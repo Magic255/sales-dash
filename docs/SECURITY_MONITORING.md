@@ -1,7 +1,9 @@
 # Security monitoring
 
-SALES DASH runs automated security checks in GitHub Actions:
+SALES DASH runs automated security checks in GitHub Actions and exposes a database-aware readiness endpoint:
 
+- `/api/health` executes a lightweight database query and returns HTTP 503 if the database is unavailable. It does not expose connection details or customer data.
+- Production startup validates `MFA_ENCRYPTION_KEY` as a Fernet key and fails closed when it is missing or malformed.
 - `pip-audit` checks the complete Python development dependency set, including transitive packages, on pushes, pull requests, and weekly.
 - CodeQL scans the Python backend and JavaScript frontend on pushes, pull requests, and weekly.
 - Dependabot checks Python packages and GitHub Actions dependencies weekly and can open update pull requests.
