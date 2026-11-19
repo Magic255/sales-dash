@@ -307,6 +307,7 @@ def test_admin_sales_reporting_invitation_and_audit_flows_work_in_browser(browse
                 "No security activity recorded yet."
             )
 
+            page.locator('[data-workspace-tab="customers"]').click()
             page.locator("#customer-form").wait_for(state="visible")
             page.locator("#customer-name").fill("Acme Browser Test")
             page.locator("#customer-email").fill("acme@example.test")
