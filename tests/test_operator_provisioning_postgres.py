@@ -28,7 +28,7 @@ def make_postgres_provisioning_app():
     )
 
 
-def cleanup_rows(user_email):
+def cleanup_rows(user_email, company_name):
     engine = create_engine(os.environ["DATABASE_URL"], pool_pre_ping=True)
     try:
         with engine.begin() as connection:
@@ -36,23 +36,32 @@ def cleanup_rows(user_email):
                 text("SELECT id FROM users WHERE email = :email"),
                 {"email": user_email},
             )
+            company_ids = connection.execute(
+                text(
+                    "SELECT id FROM companies WHERE name = :company_name "
+                    "UNION SELECT company_id FROM company_memberships "
+                    "WHERE user_id = :user_id"
+                ),
+                {"company_name": company_name, "user_id": user_id},
+            ).scalars().all() if user_id is not None else connection.execute(
+                text("SELECT id FROM companies WHERE name = :company_name"),
+                {"company_name": company_name},
+            ).scalars().all()
             if user_id is not None:
-                company_ids = connection.execute(
-                    text(
-                        "SELECT company_id FROM company_memberships "
-                        "WHERE user_id = :user_id"
-                    ),
-                    {"user_id": user_id},
-                ).scalars().all()
                 connection.execute(
                     text("DELETE FROM company_memberships WHERE user_id = :user_id"),
                     {"user_id": user_id},
                 )
-                for company_id in company_ids:
-                    connection.execute(
-                        text("DELETE FROM companies WHERE id = :company_id"),
-                        {"company_id": company_id},
-                    )
+            for company_id in company_ids:
+                connection.execute(
+                    text("DELETE FROM company_memberships WHERE company_id = :company_id"),
+                    {"company_id": company_id},
+                )
+                connection.execute(
+                    text("DELETE FROM companies WHERE id = :company_id"),
+                    {"company_id": company_id},
+                )
+            if user_id is not None:
                 connection.execute(
                     text("DELETE FROM users WHERE id = :user_id"),
                     {"user_id": user_id},
@@ -95,7 +104,7 @@ def test_create_admin_works_with_non_superuser_table_owner():
         finally:
             engine.dispose()
     finally:
-        cleanup_rows(email)
+        cleanup_rows(email, company_name)
 
 
 def test_create_company_works_with_non_superuser_table_owner():
@@ -139,5 +148,5 @@ def test_create_company_works_with_non_superuser_table_owner():
         finally:
             provisioner_engine.dispose()
     finally:
-        cleanup_rows(email)
+        cleanup_rows(email, company_name)
         admin_engine.dispose()
