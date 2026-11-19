@@ -495,3 +495,47 @@ def test_viewer_role_cannot_see_write_or_admin_controls_in_browser(browser_serve
             assert not page_errors, "Browser JavaScript errors: " + "; ".join(page_errors)
         finally:
             browser.close()
+
+
+
+def test_service_worker_keeps_private_api_online_only(browser_server):
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch()
+        context = browser.new_context(service_workers="allow")
+        page = context.new_page()
+        try:
+            page.goto(browser_server, wait_until="networkidle")
+            page.wait_for_function(
+                "navigator.serviceWorker.controller !== null",
+                timeout=15000,
+            )
+            online = page.evaluate(
+                """async () => ({
+                    apiStatus: (await fetch("/api/health")).status,
+                    apiCached: Boolean(await caches.match("/api/health")),
+                    shellCached: Boolean(await caches.match("/static/styles.css")),
+                })"""
+            )
+            assert online["apiStatus"] == 200
+            assert online["apiCached"] is False
+            assert online["shellCached"] is True
+
+            context.set_offline(True)
+            offline = page.evaluate(
+                """async () => {
+                    const shellResponse = await fetch("/static/styles.css");
+                    let apiResult = "unexpected-success";
+                    try {
+                        await fetch("/api/health");
+                    } catch (_error) {
+                        apiResult = "network-failed";
+                    }
+                    return {shellOk: shellResponse.ok, apiResult};
+                }"""
+            )
+            assert offline["shellOk"] is True
+            assert offline["apiResult"] == "network-failed"
+        finally:
+            browser.close()
