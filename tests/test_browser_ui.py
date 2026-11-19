@@ -433,7 +433,7 @@ def test_viewer_role_cannot_see_write_or_admin_controls_in_browser(browser_serve
         page.route("**/api/**", api_response)
 
         try:
-            sign_in_browser(page, browser_server, role="viewer")
+            sign_in_browser(page, browser_server)
             expect(page.locator("#customer-form")).to_be_hidden()
             expect(page.locator("#product-form")).to_be_hidden()
             expect(page.locator("#sale-form")).to_be_hidden()
