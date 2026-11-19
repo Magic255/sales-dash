@@ -78,19 +78,20 @@ jobs:
           set -euo pipefail
           BACKUP_FILE="$RUNNER_TEMP/sales-dash-ci-backup.dump"
           RESTORE_DATABASE_URL="postgresql://sales_dash:sales_dash_dev@127.0.0.1:5432/sales_dash_restore"
-          trap 'rm -f "$BACKUP_FILE"; dropdb --if-exists -h 127.0.0.1 -U sales_dash sales_dash_restore' EXIT
+          export PGHOST=127.0.0.1 PGPORT=5432 PGUSER=sales_dash PGPASSWORD=sales_dash_dev
+          trap 'rm -f "$BACKUP_FILE"; dropdb --if-exists sales_dash_restore' EXIT
           umask 077
-          pg_dump --format=custom --no-owner --file="$BACKUP_FILE" "$DATABASE_URL"
+          pg_dump --format=custom --no-owner --file="$BACKUP_FILE" --dbname=sales_dash
           test -s "$BACKUP_FILE"
           pg_restore --list "$BACKUP_FILE" >/dev/null
-          createdb -h 127.0.0.1 -U sales_dash sales_dash_restore
+          createdb sales_dash_restore
           pg_restore --exit-on-error --no-owner --dbname="$RESTORE_DATABASE_URL" "$BACKUP_FILE"
 
-          SOURCE_REVISION="$(psql "$DATABASE_URL" -Atc 'SELECT version_num FROM alembic_version')"
+          SOURCE_REVISION="$(psql --dbname=sales_dash -Atc 'SELECT version_num FROM alembic_version')"
           RESTORED_REVISION="$(psql "$RESTORE_DATABASE_URL" -Atc 'SELECT version_num FROM alembic_version')"
           test "$SOURCE_REVISION" = "$RESTORED_REVISION"
 
-          SOURCE_TABLES="$(psql "$DATABASE_URL" -Atc "SELECT count(*) FROM pg_tables WHERE schemaname = 'public'")"
+          SOURCE_TABLES="$(psql --dbname=sales_dash -Atc "SELECT count(*) FROM pg_tables WHERE schemaname = 'public'")"
           RESTORED_TABLES="$(psql "$RESTORE_DATABASE_URL" -Atc "SELECT count(*) FROM pg_tables WHERE schemaname = 'public'")"
           test "$SOURCE_TABLES" -gt 0
           test "$SOURCE_TABLES" = "$RESTORED_TABLES"
