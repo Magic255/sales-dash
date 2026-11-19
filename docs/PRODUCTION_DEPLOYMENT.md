@@ -10,7 +10,7 @@ Do not open the service to public registration or real customer data until all a
 - [ ] Deploy only from a reviewed commit on `main`; record the exact commit SHA.
 - [ ] Use Gunicorn behind Render's HTTPS edge. Do not use Flask's development server or enable debug mode in production.
 - [ ] Set both `APP_ENV=production` and `FLASK_ENV=production`.
-- [ ] Set a unique, high-entropy `SECRET_KEY` and `MFA_ENCRYPTION_KEY` in Render's protected environment settings. Never put secrets in Git, build logs, tickets, or chat.
+- [ ] Set a unique, high-entropy `SECRET_KEY` and a valid Fernet `MFA_ENCRYPTION_KEY` in Render's protected environment settings. Production startup now fails if the MFA key is missing or invalid. Never put secrets in Git, build logs, tickets, or chat.
 - [ ] Set `APP_DATABASE_URL` to a dedicated non-superuser login granted membership in `sales_dash_app`. It must not own tenant tables and must not have `BYPASSRLS`.
 - [ ] Keep `ADMIN_DATABASE_URL` and `DATABASE_URL` out of the web service. Supply the admin URL only to a restricted, short-lived migration or operator-provisioning task.
 - [ ] Configure private Render Key Value using `RATELIMIT_STORAGE_URI=redis://...` or `rediss://...`; production startup rejects in-memory rate limiting.
