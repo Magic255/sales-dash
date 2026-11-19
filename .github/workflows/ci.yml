@@ -28,6 +28,7 @@ jobs:
       DATABASE_URL: postgresql+psycopg://sales_dash:sales_dash_dev@127.0.0.1:5432/sales_dash
       ADMIN_DATABASE_URL: postgresql+psycopg://sales_dash:sales_dash_dev@127.0.0.1:5432/sales_dash
       APP_DATABASE_URL: postgresql+psycopg://sales_dash_runtime:ci-runtime-password@127.0.0.1:5432/sales_dash
+      PROVISIONER_DATABASE_URL: postgresql+psycopg://sales_dash_provisioner:ci-provisioner-password@127.0.0.1:5432/sales_dash
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -62,6 +63,13 @@ jobs:
         run: |
           psql "postgresql://sales_dash:sales_dash_dev@127.0.0.1:5432/sales_dash" -v ON_ERROR_STOP=1 -c "CREATE ROLE sales_dash_runtime LOGIN PASSWORD 'ci-runtime-password'"
           psql "postgresql://sales_dash:sales_dash_dev@127.0.0.1:5432/sales_dash" -v ON_ERROR_STOP=1 -c "GRANT sales_dash_app TO sales_dash_runtime"
+
+      - name: Create isolated operator provisioning database login
+        run: |
+          psql "postgresql://sales_dash:sales_dash_dev@127.0.0.1:5432/sales_dash" -v ON_ERROR_STOP=1 -c "CREATE ROLE sales_dash_provisioner LOGIN PASSWORD 'ci-provisioner-password'"
+          psql "postgresql://sales_dash:sales_dash_dev@127.0.0.1:5432/sales_dash" -v ON_ERROR_STOP=1 -c "GRANT USAGE, CREATE ON SCHEMA public TO sales_dash_provisioner"
+          psql "postgresql://sales_dash:sales_dash_dev@127.0.0.1:5432/sales_dash" -v ON_ERROR_STOP=1 -c "ALTER TABLE public.users OWNER TO sales_dash_provisioner; ALTER TABLE public.companies OWNER TO sales_dash_provisioner; ALTER TABLE public.company_memberships OWNER TO sales_dash_provisioner"
+          psql "postgresql://sales_dash:sales_dash_dev@127.0.0.1:5432/sales_dash" -v ON_ERROR_STOP=1 -c "REVOKE CREATE ON SCHEMA public FROM sales_dash_provisioner"
 
       - name: Run tests
         run: pytest

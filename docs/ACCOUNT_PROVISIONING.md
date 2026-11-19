@@ -32,9 +32,10 @@ Enter the verified account email and company name. The command creates the compa
 
 ## Security rules
 
-- Both commands require ADMIN_DATABASE_URL and use a separate database-admin connection.
+- Both commands require ADMIN_DATABASE_URL and use a separate operator database connection.
+- The operator connection must be the owner of the `users`, `companies`, and `company_memberships` tables (or a separately controlled PostgreSQL role with equivalent administrative privileges). The migrations add owner-only RLS policies so FORCE ROW LEVEL SECURITY does not block controlled provisioning.
 - Do not expose ADMIN_DATABASE_URL or DATABASE_URL to the public web service.
-- The web runtime continues to use APP_DATABASE_URL with the restricted sales_dash_app role.
+- The web runtime continues to use APP_DATABASE_URL with the restricted sales_dash_app role. It must not be the table owner or have BYPASSRLS.
 - User provisioning does not grant company access. A separate invitation or company creation is required.
 - Company creation requires an existing active account with a verified email.
 - Keep operator credentials in a protected environment and never share passwords or secrets in chat or source control.
