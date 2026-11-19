@@ -356,9 +356,9 @@ def test_admin_sales_reporting_invitation_and_audit_flows_work_in_browser(browse
             expect(page.locator("#invitation-rows")).to_contain_text("new-member@example.test")
             expect(page.locator("#invitation-rows")).to_contain_text("salesperson")
 
-            previous_audit_requests = state["audit_requests"]
             with page.expect_response(lambda response: "/api/audit-logs" in response.url):
                 page.locator("#audit-refresh").click()
+            assert state["audit_requests"] >= 2
             assert not page_errors, "Browser JavaScript errors: " + "; ".join(page_errors)
         finally:
             browser.close()
