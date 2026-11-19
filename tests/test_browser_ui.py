@@ -151,6 +151,11 @@ def test_admin_sales_reporting_invitation_and_audit_flows_work_in_browser(browse
         "audit_requests": 0,
         "report_queries": [],
         "csv_exports": 0,
+        "company_name": "Browser Test Company",
+        "members": [
+            {"user_id": "test-user-1", "display_name": "Browser Admin", "email": "browser@example.test", "role": "admin", "status": "active"},
+            {"user_id": "member-user-1", "display_name": "Browser Member", "email": "member@example.test", "role": "salesperson", "status": "active"},
+        ],
     }
 
     def api_response(route):
@@ -271,8 +276,18 @@ def test_admin_sales_reporting_invitation_and_audit_flows_work_in_browser(browse
         elif path == "/api/audit-logs":
             state["audit_requests"] += 1
             data = {"items": []}
-        elif path == "/api/team/members":
-            data = {"items": []}
+        elif path == "/api/team/members" and method == "GET":
+            data = {"items": state["members"]}
+        elif path.startswith("/api/team/members/") and method == "PATCH":
+            member_id = path.rsplit("/", 1)[-1]
+            member = next(item for item in state["members"] if item["user_id"] == member_id)
+            member.update(payload)
+            data = {"item": member}
+        elif path == "/api/company/settings" and method == "GET":
+            data = {"item": {"name": state["company_name"], "slug": "browser-test-company"}}
+        elif path == "/api/company/settings" and method == "PATCH":
+            state["company_name"] = payload["name"]
+            data = {"item": {"name": state["company_name"], "slug": "browser-test-company"}}
         elif path == "/api/team/invitations" and method == "POST":
             invitation = {
                 "id": "invitation-1",
@@ -355,6 +370,23 @@ def test_admin_sales_reporting_invitation_and_audit_flows_work_in_browser(browse
             page.get_by_role("button", name="Send invitation").click()
             expect(page.locator("#invitation-rows")).to_contain_text("new-member@example.test")
             expect(page.locator("#invitation-rows")).to_contain_text("salesperson")
+
+            member_role = page.get_by_role("combobox", name="Role for member@example.test")
+            member_role.select_option("manager")
+            page.get_by_role("button", name="Save role").click()
+            expect(page.get_by_role("combobox", name="Role for member@example.test")).to_have_value("manager")
+
+            page.get_by_role("button", name="Suspend").click()
+            expect(page.locator("#team-member-rows")).to_contain_text("Suspended")
+            page.get_by_role("button", name="Reactivate").click()
+            expect(page.locator("#team-member-rows")).to_contain_text("Active")
+
+            page.locator("#company-settings-tab").click()
+            expect(page.locator("#company-settings-name")).to_have_value("Browser Test Company")
+            page.locator("#company-settings-name").fill("Updated Browser Company")
+            page.get_by_role("button", name="Save company name").click()
+            expect(page.locator("#company-settings-message")).to_contain_text("Company name updated.")
+            assert state["company_name"] == "Updated Browser Company"
 
             with page.expect_response(lambda response: "/api/audit-logs" in response.url):
                 page.locator("#audit-refresh").click()
