@@ -4,6 +4,7 @@ Revision ID: 0016_operator_provisioning_rls
 Revises: 0015_invite_account
 """
 
+# ruff: noqa: I001
 from alembic import op
 
 
