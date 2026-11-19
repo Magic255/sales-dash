@@ -128,7 +128,7 @@ def test_sign_in_company_selection_and_dashboard_controls_work_in_browser(browse
 
 
 
-def sign_in_browser(page, base_url, role="admin"):
+def sign_in_browser(page, base_url):
     page.goto(base_url, wait_until="networkidle")
     page.locator("#email").fill("browser@example.test")
     page.locator("#password").fill("a-browser-only-test-password")
@@ -354,8 +354,8 @@ def test_admin_sales_reporting_invitation_and_audit_flows_work_in_browser(browse
             expect(page.locator("#invitation-rows")).to_contain_text("salesperson")
 
             previous_audit_requests = state["audit_requests"]
-            page.locator("#audit-refresh").click()
-            expect.poll(lambda: state["audit_requests"]).to_be_greater_than(previous_audit_requests)
+            with page.expect_response(lambda response: "/api/audit-logs" in response.url):
+                page.locator("#audit-refresh").click()
             assert not page_errors, "Browser JavaScript errors: " + "; ".join(page_errors)
         finally:
             browser.close()
