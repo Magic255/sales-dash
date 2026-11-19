@@ -71,5 +71,38 @@ jobs:
           psql "postgresql://sales_dash:sales_dash_dev@127.0.0.1:5432/sales_dash" -v ON_ERROR_STOP=1 -c "ALTER TABLE public.users OWNER TO sales_dash_provisioner; ALTER TABLE public.companies OWNER TO sales_dash_provisioner; ALTER TABLE public.company_memberships OWNER TO sales_dash_provisioner"
           psql "postgresql://sales_dash:sales_dash_dev@127.0.0.1:5432/sales_dash" -v ON_ERROR_STOP=1 -c "REVOKE CREATE ON SCHEMA public FROM sales_dash_provisioner"
 
+      - name: Rehearse PostgreSQL backup and isolated restore
+        env:
+          PGPASSWORD: sales_dash_dev
+        run: |
+          set -euo pipefail
+          BACKUP_FILE="$RUNNER_TEMP/sales-dash-ci-backup.dump"
+          RESTORE_DATABASE_URL="postgresql://sales_dash:sales_dash_dev@127.0.0.1:5432/sales_dash_restore"
+          trap 'rm -f "$BACKUP_FILE"; dropdb --if-exists -h 127.0.0.1 -U sales_dash sales_dash_restore' EXIT
+          umask 077
+          pg_dump --format=custom --no-owner --file="$BACKUP_FILE" "$DATABASE_URL"
+          test -s "$BACKUP_FILE"
+          pg_restore --list "$BACKUP_FILE" >/dev/null
+          createdb -h 127.0.0.1 -U sales_dash sales_dash_restore
+          pg_restore --exit-on-error --no-owner --dbname="$RESTORE_DATABASE_URL" "$BACKUP_FILE"
+
+          SOURCE_REVISION="$(psql "$DATABASE_URL" -Atc 'SELECT version_num FROM alembic_version')"
+          RESTORED_REVISION="$(psql "$RESTORE_DATABASE_URL" -Atc 'SELECT version_num FROM alembic_version')"
+          test "$SOURCE_REVISION" = "$RESTORED_REVISION"
+
+          SOURCE_TABLES="$(psql "$DATABASE_URL" -Atc "SELECT count(*) FROM pg_tables WHERE schemaname = 'public'")"
+          RESTORED_TABLES="$(psql "$RESTORE_DATABASE_URL" -Atc "SELECT count(*) FROM pg_tables WHERE schemaname = 'public'")"
+          test "$SOURCE_TABLES" -gt 0
+          test "$SOURCE_TABLES" = "$RESTORED_TABLES"
+
+          RESTORED_RLS_TABLES="$(psql "$RESTORE_DATABASE_URL" -Atc "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relkind = 'r' AND c.relrowsecurity AND c.relforcerowsecurity")"
+          RESTORED_POLICIES="$(psql "$RESTORE_DATABASE_URL" -Atc "SELECT count(*) FROM pg_policies WHERE schemaname = 'public'")"
+          test "$RESTORED_RLS_TABLES" -gt 0
+          test "$RESTORED_POLICIES" -gt 0
+
+          RUNTIME_ROLE_OK="$(psql "$RESTORE_DATABASE_URL" -Atc "SELECT pg_has_role('sales_dash_runtime', 'sales_dash_app', 'member')")"
+          test "$RUNTIME_ROLE_OK" = "t"
+          echo "Backup archive restored successfully; schema revision, table count, forced RLS, policies, and runtime role membership verified."
+
       - name: Run tests
         run: pytest
