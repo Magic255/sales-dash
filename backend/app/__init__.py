@@ -4,6 +4,8 @@ from flask import Flask, jsonify, request, send_from_directory
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_wtf.csrf import CSRFError, CSRFProtect
+from sqlalchemy import text
+from cryptography.fernet import Fernet
 
 from . import models  # noqa: F401 - register model metadata for Alembic
 from .commands import register_commands
@@ -38,6 +40,14 @@ def create_app(test_config=None):
         and not app.config.get("RATELIMIT_STORAGE_URI", "").startswith("rediss://")
     ):
         raise RuntimeError("Production requires Redis-backed login rate limiting.")
+    if app.config.get("APP_ENV") == "production":
+        encryption_key = app.config.get("MFA_ENCRYPTION_KEY")
+        if not isinstance(encryption_key, str) or not encryption_key:
+            raise RuntimeError("MFA_ENCRYPTION_KEY must be set in production.")
+        try:
+            Fernet(encryption_key.encode("ascii"))
+        except (ValueError, UnicodeEncodeError) as error:
+            raise RuntimeError("MFA_ENCRYPTION_KEY must be a valid Fernet key.") from error
 
     db.init_app(app)
     migrate.init_app(app, db)
@@ -86,6 +96,12 @@ def create_app(test_config=None):
 
     @app.get("/api/health")
     def health():
+        try:
+            db.session.execute(text("SELECT 1"))
+        except Exception:
+            db.session.rollback()
+            app.logger.warning("Database readiness check failed.")
+            return jsonify({"status": "unavailable", "service": "sales-dash-api"}), 503
         return jsonify({"status": "ok", "service": "sales-dash-api"})
 
     @app.get("/")
