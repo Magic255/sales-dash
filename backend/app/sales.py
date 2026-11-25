@@ -114,6 +114,55 @@ def _create_discount_approval_if_needed(sale, user, discount_percent, reason):
     return approval
 
 
+
+def _check_price_floor(prepared, order_discount, user, override_reason, sale_id):
+    """Check each line after its line discount and proportional order discount."""
+    remaining = [
+        (product, quantity, gross, discount, gross - discount)
+        for product, quantity, gross, discount in prepared
+    ]
+    remaining_total = sum((row[4] for row in remaining), Decimal("0.00"))
+    allocated = Decimal("0.00")
+    violations = []
+    for index, (product, quantity, gross, line_discount, remaining_line) in enumerate(remaining):
+        if index == len(remaining) - 1:
+            order_share = order_discount - allocated
+        elif remaining_total > 0:
+            order_share = (
+                order_discount * remaining_line / remaining_total
+            ).quantize(CENT, rounding=ROUND_HALF_UP)
+            allocated += order_share
+        else:
+            order_share = Decimal("0.00")
+        net_line = remaining_line - order_share
+        effective_unit = (net_line / quantity).quantize(
+            CENT, rounding=ROUND_HALF_UP
+        )
+        if effective_unit < product.minimum_selling_price:
+            violations.append({
+                "product_id": str(product.id),
+                "sku": product.sku,
+                "minimum_selling_price": str(product.minimum_selling_price),
+                "effective_unit_price": str(effective_unit),
+                "line_discount": str(line_discount),
+                "allocated_order_discount": str(order_share),
+            })
+    if not violations:
+        return
+    if user is None or getattr(user, "role", None) != "admin":
+        # The authoritative role is the active company membership, not a client field.
+        if getattr(getattr(g, "company_membership", None), "role", None) != "admin":
+            raise ValueError("The discount would take a product below its minimum selling price.")
+    reason = (override_reason or "").strip()
+    if not reason:
+        raise ValueError("An Admin price-floor override requires a reason.")
+    record_audit_event(
+        db.session, user.id, "price_floor_override", _company_id(),
+        {"sale_id": str(sale_id) if sale_id else None,
+         "reason": reason, "items": violations},
+    )
+
+
 def _json_object():
     data = request.get_json(silent=True)
     return data if isinstance(data, dict) else None
@@ -166,13 +215,17 @@ def _customer_json(item):
     }
 
 
-def _product_json(item):
-    return {
+def _product_json(item, *, include_cost=False):
+    result = {
         "id": str(item.id), "sku": item.sku, "name": item.name,
         "description": item.description, "unit_price": str(item.unit_price),
         "currency": item.currency, "is_active": item.is_active,
+        "minimum_selling_price": str(item.minimum_selling_price),
         "created_at": item.created_at.isoformat(),
     }
+    if include_cost:
+        result["cost_price"] = str(item.cost_price)
+    return result
 
 
 def _sale_json(item, customer_name=None, line_items=None):
@@ -298,7 +351,10 @@ def list_products(_user):
         pattern = f"%{search[:100]}%"
         query = query.where(Product.name.ilike(pattern) | Product.sku.ilike(pattern))
     items = db.session.scalars(query.order_by(Product.name).limit(100)).all()
-    return jsonify({"items": [_product_json(item) for item in items]})
+    return jsonify({"items": [
+        _product_json(item, include_cost=(g.company_membership.role == "admin"))
+        for item in items
+    ]})
 
 
 @sales_bp.post("/products")
@@ -317,6 +373,11 @@ def create_product(user):
             description=_text(data, "description", 2000),
             unit_price=_decimal(data.get("unit_price"), "unit_price"),
             currency=_text(data, "currency", 3, required=True, upper=True),
+            cost_price=_decimal(data.get("cost_price", "0"), "cost_price"),
+            minimum_selling_price=_decimal(
+                data.get("minimum_selling_price", data.get("cost_price", "0")),
+                "minimum_selling_price",
+            ),
         )
         if len(item.currency) != 3:
             raise ValueError("Currency must be a 3-letter code, such as TZS.")
@@ -325,7 +386,9 @@ def create_product(user):
         record_audit_event(
             db.session, user.id, "product_created", _company_id(),
             {"product_id": str(item.id), "sku": item.sku, "name": item.name,
-             "unit_price": str(item.unit_price), "currency": item.currency},
+             "unit_price": str(item.unit_price), "cost_price": str(item.cost_price),
+             "minimum_selling_price": str(item.minimum_selling_price),
+             "currency": item.currency},
         )
         result = _product_json(item)
         db.session.commit()
@@ -354,8 +417,9 @@ def update_product(user, product_id):
         return jsonify({"error": "Send a JSON object."}), 400
     before = {
         "sku": item.sku, "name": item.name, "description": item.description,
-        "unit_price": str(item.unit_price), "currency": item.currency,
-        "is_active": item.is_active,
+        "unit_price": str(item.unit_price), "cost_price": str(item.cost_price),
+        "minimum_selling_price": str(item.minimum_selling_price),
+        "currency": item.currency, "is_active": item.is_active,
     }
     try:
         if "sku" in data:
@@ -366,6 +430,14 @@ def update_product(user, product_id):
             item.description = _text(data, "description", 2000)
         if "unit_price" in data:
             item.unit_price = _decimal(data["unit_price"], "unit_price")
+        if "cost_price" in data:
+            item.cost_price = _decimal(data["cost_price"], "cost_price")
+        if "minimum_selling_price" in data:
+            item.minimum_selling_price = _decimal(
+                data["minimum_selling_price"], "minimum_selling_price"
+            )
+        if item.minimum_selling_price < item.cost_price:
+            raise ValueError("Minimum selling price cannot be below product cost.")
         if "currency" in data:
             item.currency = _text(data, "currency", 3, required=True, upper=True)
             if len(item.currency) != 3:
@@ -377,8 +449,9 @@ def update_product(user, product_id):
         db.session.flush()
         after = {
             "sku": item.sku, "name": item.name, "description": item.description,
-            "unit_price": str(item.unit_price), "currency": item.currency,
-            "is_active": item.is_active,
+            "unit_price": str(item.unit_price), "cost_price": str(item.cost_price),
+            "minimum_selling_price": str(item.minimum_selling_price),
+            "currency": item.currency, "is_active": item.is_active,
         }
         if before != after:
             record_audit_event(
