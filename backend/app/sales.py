@@ -3,7 +3,7 @@
 import csv
 import io
 from datetime import date, timedelta
-from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
+from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal, InvalidOperation
 from uuid import UUID, uuid4
 
 from flask import Blueprint, Response, g, jsonify, request, session
@@ -135,7 +135,7 @@ def _check_price_floor(prepared, order_discount, user, override_reason, sale_id)
         elif remaining_total > 0:
             order_share = (
                 order_discount * remaining_line / remaining_total
-            ).quantize(CENT, rounding=ROUND_HALF_UP)
+            ).quantize(CENT, rounding=ROUND_DOWN)
             allocated += order_share
         else:
             order_share = Decimal("0.00")
