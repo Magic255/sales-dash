@@ -6,7 +6,9 @@ from argon2 import PasswordHasher
 
 from app import create_app
 from app.extensions import db
-from app.models import Company, CompanyMembership, Customer, Product, Sale, User
+from app.models import (
+    Company, CompanyMembership, Customer, DiscountApprovalRequest, Product, Sale, User,
+)
 
 
 def make_client(role="admin"):
@@ -548,5 +550,98 @@ def test_salesperson_cannot_view_team_performance():
         assert client.get("/api/dashboard/salespeople").status_code == 403
     finally:
         with app.app_context():
+            db.session.remove()
+            db.drop_all()
+
+
+def test_salesperson_discount_above_limit_requires_admin_approval():
+    application, salesperson_client = make_client("salesperson")
+    try:
+        with application.app_context():
+            salesperson = db.session.query(User).filter_by(
+                email="salesperson@example.test"
+            ).one()
+            company = db.session.query(Company).filter_by(
+                slug="sales-api-salesperson"
+            ).one()
+            customer = Customer(
+                company_id=company.id, created_by_user_id=salesperson.id,
+                name="Approval Customer",
+            )
+            product = Product(
+                company_id=company.id, created_by_user_id=salesperson.id,
+                sku="APPROVAL-1", name="Approval Product",
+                unit_price=Decimal("100.00"), currency="TZS",
+            )
+            admin = User(
+                email="approval-admin@example.test",
+                password_hash=PasswordHasher().hash("a-very-strong-test-password"),
+                email_verified=True,
+            )
+            db.session.add_all([customer, product, admin])
+            db.session.flush()
+            db.session.add(CompanyMembership(
+                user_id=admin.id, company_id=company.id, role="admin", status="active"
+            ))
+            customer_id, product_id, company_id = customer.id, product.id, company.id
+            db.session.commit()
+
+        payload = {
+            "customer_id": str(customer_id),
+            "currency": "TZS",
+            "items": [{
+                "product_id": str(product_id), "quantity": "1",
+                "discount_amount": "10.00",
+            }],
+        }
+        missing_reason = salesperson_client.post("/api/sales", json=payload)
+        assert missing_reason.status_code == 400
+
+        payload["approval_reason"] = "Customer requested a strategic first-order discount."
+        requested = salesperson_client.post("/api/sales", json=payload)
+        assert requested.status_code == 201
+        sale_id = requested.json["item"]["id"]
+        assert salesperson_client.post(
+            f"/api/sales/{sale_id}/complete"
+        ).status_code == 409
+
+        admin_client = application.test_client()
+        assert admin_client.post("/api/auth/login", json={
+            "email": "approval-admin@example.test",
+            "password": "a-very-strong-test-password",
+        }).status_code == 200
+        assert admin_client.post(
+            "/api/auth/company", json={"company_id": str(company_id)}
+        ).status_code == 200
+        inbox = admin_client.get("/api/discount-approvals")
+        assert inbox.status_code == 200
+        assert len(inbox.json["items"]) == 1
+        approval_id = inbox.json["items"][0]["id"]
+        approved = admin_client.post(
+            f"/api/discount-approvals/{approval_id}/decision",
+            json={"decision": "approve"},
+        )
+        assert approved.status_code == 200
+        assert approved.json["item"]["status"] == "approved"
+        completed = salesperson_client.post(f"/api/sales/{sale_id}/complete")
+        assert completed.status_code == 200
+        assert completed.json["item"]["status"] == "completed"
+
+        with application.app_context():
+            approval = db.session.query(DiscountApprovalRequest).one()
+            assert approval.status == "approved"
+            assert approval.approver_user_id is not None
+    finally:
+        with application.app_context():
+            db.session.remove()
+            db.drop_all()
+
+
+def test_salesperson_cannot_view_admin_discount_approval_inbox():
+    application, client = make_client("salesperson")
+    try:
+        assert client.get("/api/discount-approvals").status_code == 403
+    finally:
+        with application.app_context():
             db.session.remove()
             db.drop_all()
