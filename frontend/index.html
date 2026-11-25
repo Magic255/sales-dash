@@ -277,6 +277,9 @@
             <label for="sale-discount">Additional sale discount (optional)</label><input id="sale-discount" type="number" min="0" step="0.01" value="0">
             <label for="sale-tax">Tax (optional)</label><input id="sale-tax" type="number" min="0" step="0.01" value="0">
             <label for="sale-approval-reason">Reason for discount approval (if above your limit)</label><textarea id="sale-approval-reason" maxlength="1000" rows="2"></textarea>
+            <div id="sale-floor-override" hidden>
+              <label for="sale-floor-override-reason">Admin price-floor override reason</label><textarea id="sale-floor-override-reason" maxlength="1000" rows="2"></textarea>
+            </div>
             <label for="sale-date">Sale date</label><input id="sale-date" type="date" required>
             <label for="sale-notes">Notes (optional)</label><input id="sale-notes" maxlength="2000">
             <button class="primary-button" type="submit">Save draft sale</button>
