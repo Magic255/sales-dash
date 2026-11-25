@@ -36,7 +36,7 @@ def get_company_settings(_user):
     company = db.session.get(Company, UUID(session["company_id"]))
     if company is None:
         return jsonify({"error": "The selected company is unavailable."}), 404
-    return jsonify({"item": item})
+    return jsonify({"item": _settings_json(company)})
 
 
 @company_settings_bp.patch("")
