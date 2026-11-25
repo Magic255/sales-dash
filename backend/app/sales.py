@@ -11,6 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
 from .auth import login_required
+from .audit import record_audit_event
 from .extensions import db
 from .models import CompanyMembership, Customer, Product, Sale, SaleItem, User
 from .permissions import company_permission_required
@@ -213,7 +214,7 @@ def list_products(_user):
 
 @sales_bp.post("/products")
 @login_required
-@company_permission_required("manage_products")
+@company_permission_required("manage_product_catalog")
 def create_product(user):
     data = _json_object()
     if data is None:
@@ -232,6 +233,11 @@ def create_product(user):
             raise ValueError("Currency must be a 3-letter code, such as TZS.")
         db.session.add(item)
         db.session.flush()
+        record_audit_event(
+            db.session, user.id, "product_created", _company_id(),
+            {"product_id": str(item.id), "sku": item.sku, "name": item.name,
+             "unit_price": str(item.unit_price), "currency": item.currency},
+        )
         result = _product_json(item)
         db.session.commit()
     except ValueError:
@@ -245,8 +251,8 @@ def create_product(user):
 
 @sales_bp.patch("/products/<uuid:product_id>")
 @login_required
-@company_permission_required("manage_products")
-def update_product(_user, product_id):
+@company_permission_required("manage_product_catalog")
+def update_product(user, product_id):
     item = db.session.scalar(
         select(Product).where(
             Product.id == product_id, Product.company_id == _company_id()
@@ -257,6 +263,11 @@ def update_product(_user, product_id):
     data = _json_object()
     if data is None:
         return jsonify({"error": "Send a JSON object."}), 400
+    before = {
+        "sku": item.sku, "name": item.name, "description": item.description,
+        "unit_price": str(item.unit_price), "currency": item.currency,
+        "is_active": item.is_active,
+    }
     try:
         if "sku" in data:
             item.sku = _text(data, "sku", 64, required=True, upper=True)
@@ -275,6 +286,16 @@ def update_product(_user, product_id):
                 raise ValueError("is_active must be true or false.")
             item.is_active = data["is_active"]
         db.session.flush()
+        after = {
+            "sku": item.sku, "name": item.name, "description": item.description,
+            "unit_price": str(item.unit_price), "currency": item.currency,
+            "is_active": item.is_active,
+        }
+        if before != after:
+            record_audit_event(
+                db.session, user.id, "product_updated", _company_id(),
+                {"product_id": str(item.id), "old": before, "new": after},
+            )
         result = _product_json(item)
         db.session.commit()
     except ValueError:
