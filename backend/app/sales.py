@@ -395,7 +395,7 @@ def create_product(user):
              "minimum_selling_price": str(item.minimum_selling_price),
              "currency": item.currency},
         )
-        result = _product_json(item)
+        result = _product_json(item, include_cost=True)
         db.session.commit()
     except ValueError:
         db.session.rollback()
@@ -463,7 +463,7 @@ def update_product(user, product_id):
                 db.session, user.id, "product_updated", _company_id(),
                 {"product_id": str(item.id), "old": before, "new": after},
             )
-        result = _product_json(item)
+        result = _product_json(item, include_cost=True)
         db.session.commit()
     except ValueError:
         db.session.rollback()
