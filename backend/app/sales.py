@@ -14,8 +14,14 @@ from .audit import record_audit_event
 from .auth import login_required
 from .extensions import db
 from .models import (
-    Company, CompanyMembership, Customer, DiscountApprovalRequest, Product,
-    Sale, SaleItem, User,
+    Company,
+    CompanyMembership,
+    Customer,
+    DiscountApprovalRequest,
+    Product,
+    Sale,
+    SaleItem,
+    User,
 )
 from .permissions import company_permission_required
 
@@ -896,11 +902,16 @@ def complete_sale(user, sale_id):
     if limit is not None and discount_percent > limit:
         approval = _latest_discount_approval(item.id, item.company_id)
         if approval is None or approval.requested_discount_percent != discount_percent:
-            return jsonify({"error": "A current discount approval is required before completion."}), 409
+            return jsonify({
+                "error": "A current discount approval is required before completion."
+            }), 409
         if approval.status == "pending":
             return jsonify({"error": "This sale is waiting for Admin approval."}), 409
         if approval.status != "approved":
-            return jsonify({"error": "The discount request was not approved. Update the sale or request approval again."}), 409
+            return jsonify({
+                "error": "The discount request was not approved. "
+                "Update the sale or request approval again."
+            }), 409
     item.status = "completed"
     db.session.flush()
     result = _sale_json(item)
