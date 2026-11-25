@@ -67,7 +67,15 @@ def _latest_discount_approval(sale_id, company_id):
 
 def _create_discount_approval_if_needed(sale, user, discount_percent, reason):
     company = db.session.get(Company, sale.company_id)
-    limit = _discount_limit(company, g.company_membership.role)
+    # Discount authority follows the credited salesperson, not the member
+    # editing the draft. Completion uses this same membership role.
+    salesperson_membership = db.session.get(
+        CompanyMembership, (sale.company_id, sale.salesperson_user_id)
+    )
+    salesperson_role = (
+        salesperson_membership.role if salesperson_membership else "viewer"
+    )
+    limit = _discount_limit(company, salesperson_role)
     previous = db.session.scalars(
         select(DiscountApprovalRequest)
         .where(
