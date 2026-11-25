@@ -64,6 +64,9 @@ async function loadAuditLogs(generation = workspaceGeneration) {
     const eventLabels = {
       product_created: "Product created",
       product_updated: "Product details or price changed",
+      discount_limits_updated: "Discount limits updated",
+      discount_approval_requested: "Discount approval requested",
+      discount_approval_decided: "Discount approval decided",
       login_succeeded: "Signed in",
       password_changed: "Password changed",
       company_selected: "Company selected",
@@ -106,6 +109,79 @@ async function loadAuditLogs(generation = workspaceGeneration) {
   } catch (error) {
     if (generation !== workspaceGeneration) return;
     emptyRow(body, 4, "Security activity could not be loaded.");
+    message.textContent = error.message;
+  }
+}
+
+async function loadDiscountApprovals() {
+  const panel = document.querySelector("#discount-approvals-tab");
+  const body = document.querySelector("#discount-approval-rows");
+  const message = document.querySelector("#discount-approvals-message");
+  if (workspaceRole !== "admin") {
+    panel.hidden = true;
+    return;
+  }
+  panel.hidden = false;
+  message.textContent = "";
+  emptyRow(body, 6, "Loading approval requests…");
+  try {
+    const data = await workspaceRequest("/api/discount-approvals");
+    if (workspaceRole !== "admin") return;
+    body.replaceChildren();
+    if (!data.items.length) {
+      emptyRow(body, 6, "No discount approvals are waiting.");
+      return;
+    }
+    for (const item of data.items) {
+      const row = document.createElement("tr");
+      textCell(row, item.sale_number);
+      textCell(row, item.requested_by);
+      textCell(row, Number(item.requested_discount_percent).toFixed(2) + "%");
+      textCell(row, item.reason);
+      const requestedAt = new Date(item.created_at);
+      textCell(row, Number.isNaN(requestedAt.getTime())
+        ? item.created_at : requestedAt.toLocaleString());
+      const actions = document.createElement("td");
+      const approve = document.createElement("button");
+      approve.type = "button";
+      approve.className = "table-action";
+      approve.textContent = "Approve";
+      const reject = document.createElement("button");
+      reject.type = "button";
+      reject.className = "table-action table-action-danger";
+      reject.textContent = "Reject";
+      for (const [button, decision] of [[approve, "approve"], [reject, "reject"]]) {
+        button.addEventListener("click", async () => {
+          let reason;
+          if (decision === "reject") {
+            reason = window.prompt("Reason for rejecting this discount request");
+            if (reason === null) return;
+            if (!reason.trim()) {
+              message.textContent = "A reason is required to reject a request.";
+              return;
+            }
+          }
+          button.disabled = true;
+          try {
+            await workspaceRequest(
+              "/api/discount-approvals/" + encodeURIComponent(item.id) + "/decision",
+              {method: "POST", body: JSON.stringify({decision, ...(reason ? {reason} : {})})},
+            );
+            message.textContent = decision === "approve"
+              ? "Discount approved." : "Discount request rejected.";
+            await loadDiscountApprovals();
+          } catch (error) {
+            message.textContent = error.message;
+            button.disabled = false;
+          }
+        });
+      }
+      actions.append(approve, reject);
+      row.append(actions);
+      body.append(row);
+    }
+  } catch (error) {
+    emptyRow(body, 6, "Approval requests could not be loaded.");
     message.textContent = error.message;
   }
 }
@@ -638,10 +714,12 @@ document.addEventListener("salesdash:company-selected", (event) => {
   document.querySelector("#sale-form").hidden = workspaceRole === "viewer";
   document.querySelector("#team-tab").hidden = workspaceRole !== "admin";
   document.querySelector("#company-settings-tab").hidden = workspaceRole !== "admin";
+  document.querySelector("#discount-approvals-tab").hidden = workspaceRole !== "admin";
   const auditPanel = document.querySelector("#audit-panel");
   auditPanel.hidden = workspaceRole !== "admin";
   if (workspaceRole === "admin") {
     loadAuditLogs(workspaceGeneration);
+    loadDiscountApprovals();
   } else {
     emptyRow(document.querySelector("#audit-rows"), 4, "Security activity is available to company admins only.");
   }
@@ -654,6 +732,8 @@ document.addEventListener("salesdash:signed-out", () => {
   customers = [];
   products = [];
   document.querySelector("#audit-panel").hidden = true;
+  document.querySelector("#discount-approvals-tab").hidden = true;
+  document.querySelector("#discount-approvals-message").textContent = "";
   document.querySelector("#audit-message").textContent = "";
   emptyRow(document.querySelector("#audit-rows"), 4, "Select a company to view activity.");
   workspace.hidden = true;
@@ -775,6 +855,7 @@ document.querySelector("#sale-form").addEventListener("submit", async (event) =>
         discount_amount: document.querySelector("#sale-discount").value || "0",
         tax_amount: document.querySelector("#sale-tax").value || "0",
         notes: document.querySelector("#sale-notes").value,
+        approval_reason: document.querySelector("#sale-approval-reason").value,
         items: [{
           product_id: product.id,
           quantity: document.querySelector("#sale-quantity").value,
@@ -1037,6 +1118,10 @@ async function loadCompanySettings() {
   try {
     const data = await workspaceRequest("/api/company/settings");
     document.querySelector("#company-settings-name").value = data.item.name;
+    document.querySelector("#company-settings-salesperson-limit").value =
+      data.item.discount_limits.salesperson_percent;
+    document.querySelector("#company-settings-manager-limit").value =
+      data.item.discount_limits.manager_percent;
     message.textContent = "";
   } catch (error) {
     message.textContent = error.message;
@@ -1044,6 +1129,10 @@ async function loadCompanySettings() {
 }
 
 document.querySelector("#company-settings-tab").addEventListener("click", loadCompanySettings);
+document.querySelector("#discount-approvals-tab").addEventListener("click", loadDiscountApprovals);
+document.querySelector("#discount-approvals-refresh").addEventListener(
+  "click", loadDiscountApprovals,
+);
 document.querySelector("#company-settings-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = event.currentTarget;
@@ -1053,10 +1142,20 @@ document.querySelector("#company-settings-form").addEventListener("submit", asyn
   try {
     const data = await workspaceRequest("/api/company/settings", {
       method: "PATCH",
-      body: JSON.stringify({name: document.querySelector("#company-settings-name").value}),
+      body: JSON.stringify({
+        name: document.querySelector("#company-settings-name").value,
+        salesperson_discount_limit:
+          document.querySelector("#company-settings-salesperson-limit").value,
+        manager_discount_limit:
+          document.querySelector("#company-settings-manager-limit").value,
+      }),
     });
     document.querySelector("#company-settings-name").value = data.item.name;
-    message.textContent = "Company name updated.";
+    document.querySelector("#company-settings-salesperson-limit").value =
+      data.item.discount_limits.salesperson_percent;
+    document.querySelector("#company-settings-manager-limit").value =
+      data.item.discount_limits.manager_percent;
+    message.textContent = "Company settings updated.";
     workspaceMessage("Company settings saved.");
   } catch (error) {
     message.textContent = error.message;
