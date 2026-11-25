@@ -84,7 +84,9 @@ def update_company_settings(user):
             setattr(company, field, company_value)
     except (ValueError, TypeError):
         db.session.rollback()
-        return jsonify({"error": "Use a company name and discount limits from 0 to 100 percent."}), 400
+        return jsonify({
+            "error": "Use a company name and discount limits from 0 to 100 percent."
+        }), 400
 
     new_values = {
         "name": company.name,
