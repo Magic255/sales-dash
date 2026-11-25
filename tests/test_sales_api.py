@@ -150,6 +150,62 @@ def test_salesperson_can_create_customer_and_complete_own_sale_but_not_products(
             db.drop_all()
 
 
+def test_manager_cannot_create_or_change_product_catalog():
+    application, client = make_client("manager")
+    try:
+        assert client.post("/api/products", json={
+            "sku": "SKU-1", "name": "Product", "unit_price": "10", "currency": "TZS",
+        }).status_code == 403
+        with application.app_context():
+            user = db.session.query(User).filter_by(email="manager@example.test").one()
+            company = db.session.query(Company).filter_by(slug="sales-api-manager").one()
+            product = Product(
+                company_id=company.id, created_by_user_id=user.id,
+                sku="LOCKED-1", name="Original name", unit_price=Decimal("10.00"), currency="TZS",
+            )
+            db.session.add(product)
+            db.session.commit()
+            product_id = str(product.id)
+        response = client.patch(f"/api/products/{product_id}", json={
+            "name": "Changed name", "unit_price": "1.00",
+        })
+        assert response.status_code == 403
+        with application.app_context():
+            saved = db.session.get(Product, UUID(product_id))
+            assert saved.name == "Original name"
+            assert saved.unit_price == Decimal("10.00")
+    finally:
+        with application.app_context():
+            db.session.remove()
+            db.drop_all()
+
+
+def test_admin_product_price_changes_are_audited_with_before_and_after_values():
+    application, client = make_client("admin")
+    try:
+        product = client.post("/api/products", json={
+            "sku": "AUDIT-1", "name": "Original", "unit_price": "10.00", "currency": "TZS",
+        })
+        assert product.status_code == 201
+        product_id = product.json["item"]["id"]
+        changed = client.patch(f"/api/products/{product_id}", json={
+            "name": "Updated", "unit_price": "12.50",
+        })
+        assert changed.status_code == 200
+        logs = client.get("/api/audit-logs?limit=20")
+        assert logs.status_code == 200
+        update = next(item for item in logs.json["items"] if item["event_type"] == "product_updated")
+        assert update["details"]["product_id"] == product_id
+        assert update["details"]["old"]["unit_price"] == "10.00"
+        assert update["details"]["new"]["unit_price"] == "12.50"
+        assert update["details"]["old"]["name"] == "Original"
+        assert update["details"]["new"]["name"] == "Updated"
+    finally:
+        with application.app_context():
+            db.session.remove()
+            db.drop_all()
+
+
 def test_viewer_can_read_but_cannot_create_sales_records():
     application, client = make_client("viewer")
     try:
