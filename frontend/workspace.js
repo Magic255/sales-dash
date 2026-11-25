@@ -267,12 +267,21 @@ async function editProduct(item) {
   if (description === null) return;
   const unitPrice = window.prompt("Unit price", item.unit_price);
   if (unitPrice === null) return;
+  const costPrice = window.prompt("Cost price", item.cost_price || "0.00");
+  if (costPrice === null) return;
+  const minimumSellingPrice = window.prompt(
+    "Minimum selling price", item.minimum_selling_price || "0.00"
+  );
+  if (minimumSellingPrice === null) return;
   const currency = window.prompt("Currency (3-letter code)", item.currency);
   if (currency === null) return;
   try {
     await workspaceRequest("/api/products/" + encodeURIComponent(item.id), {
       method: "PATCH",
-      body: JSON.stringify({sku, name, description, unit_price: unitPrice, currency}),
+      body: JSON.stringify({
+        sku, name, description, unit_price: unitPrice,
+        cost_price: costPrice, minimum_selling_price: minimumSellingPrice, currency,
+      }),
     });
     await loadWorkspace();
     workspaceMessage("Product updated. Existing sales retain their saved price snapshots.");
@@ -826,6 +835,8 @@ document.querySelector("#product-form").addEventListener("submit", async (event)
         sku: document.querySelector("#product-sku").value,
         name: document.querySelector("#product-name").value,
         unit_price: document.querySelector("#product-price").value,
+        cost_price: document.querySelector("#product-cost").value,
+        minimum_selling_price: document.querySelector("#product-minimum-price").value,
         currency: document.querySelector("#product-currency").value,
       }),
     });
