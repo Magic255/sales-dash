@@ -723,6 +723,7 @@ document.addEventListener("salesdash:company-selected", (event) => {
   document.querySelector("#customer-form").hidden = workspaceRole === "viewer";
   document.querySelector("#product-form").hidden = !canManageProducts();
   document.querySelector("#sale-form").hidden = workspaceRole === "viewer";
+  document.querySelector("#sale-floor-override").hidden = workspaceRole !== "admin";
   document.querySelector("#team-tab").hidden = workspaceRole !== "admin";
   document.querySelector("#company-settings-tab").hidden = workspaceRole !== "admin";
   document.querySelector("#discount-approvals-tab").hidden = workspaceRole !== "admin";
@@ -869,6 +870,7 @@ document.querySelector("#sale-form").addEventListener("submit", async (event) =>
         tax_amount: document.querySelector("#sale-tax").value || "0",
         notes: document.querySelector("#sale-notes").value,
         approval_reason: document.querySelector("#sale-approval-reason").value,
+        price_floor_override_reason: document.querySelector("#sale-floor-override-reason").value,
         items: [{
           product_id: product.id,
           quantity: document.querySelector("#sale-quantity").value,
@@ -882,6 +884,7 @@ document.querySelector("#sale-form").addEventListener("submit", async (event) =>
     document.querySelector("#sale-item-discount").value = "0";
     document.querySelector("#sale-discount").value = "0";
     document.querySelector("#sale-tax").value = "0";
+    document.querySelector("#sale-floor-override-reason").value = "";
     selectTab("sales");
     await loadWorkspace();
     workspaceMessage(saved.item.approval_status === "pending"
