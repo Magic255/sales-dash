@@ -123,7 +123,6 @@ async function loadDiscountApprovals() {
     document.querySelector("#discount-approvals-tab").hidden = true;
     return;
   }
-  panel.hidden = false;
   message.textContent = "";
   emptyRow(body, 6, "Loading approval requests…");
   try {
