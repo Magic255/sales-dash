@@ -64,6 +64,55 @@ jobs:
           psql "postgresql://sales_dash:sales_dash_dev@127.0.0.1:5432/sales_dash" -v ON_ERROR_STOP=1 -c "CREATE ROLE sales_dash_runtime LOGIN PASSWORD 'ci-runtime-password'"
           psql "postgresql://sales_dash:sales_dash_dev@127.0.0.1:5432/sales_dash" -v ON_ERROR_STOP=1 -c "GRANT sales_dash_app TO sales_dash_runtime"
 
+      - name: Verify restricted web runtime database login
+        run: |
+          set -euo pipefail
+          psql "$APP_DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          DO $
+          DECLARE
+              runtime_role pg_roles%ROWTYPE;
+          BEGIN
+              SELECT * INTO runtime_role
+              FROM pg_roles
+              WHERE rolname = current_user;
+
+              IF runtime_role.rolsuper OR runtime_role.rolbypassrls
+                 OR runtime_role.rolcreatedb OR runtime_role.rolcreaterole THEN
+                  RAISE EXCEPTION 'Runtime login has elevated PostgreSQL privileges';
+              END IF;
+
+              IF NOT pg_has_role(current_user, 'sales_dash_app', 'member') THEN
+                  RAISE EXCEPTION 'Runtime login is not a member of sales_dash_app';
+              END IF;
+
+              IF EXISTS (
+                  SELECT 1
+                  FROM pg_class AS c
+                  JOIN pg_namespace AS n ON n.oid = c.relnamespace
+                  WHERE n.nspname = 'public'
+                    AND c.relkind IN ('r', 'p')
+                    AND c.relrowsecurity
+                    AND pg_get_userbyid(c.relowner) = current_user
+              ) THEN
+                  RAISE EXCEPTION 'Runtime login owns an RLS-protected table';
+              END IF;
+
+              IF EXISTS (
+                  SELECT 1
+                  FROM pg_class AS c
+                  JOIN pg_namespace AS n ON n.oid = c.relnamespace
+                  WHERE n.nspname = 'public'
+                    AND c.relkind IN ('r', 'p')
+                    AND c.relrowsecurity
+                    AND NOT c.relforcerowsecurity
+              ) THEN
+                  RAISE EXCEPTION 'An RLS-enabled table is missing FORCE ROW LEVEL SECURITY';
+              END IF;
+          END
+          $;
+          SQL
+          echo "Runtime login verified: non-superuser, no BYPASSRLS, no elevated role administration, not an RLS table owner, and member of sales_dash_app."
+
       - name: Create isolated operator provisioning database login
         run: |
           psql "postgresql://sales_dash:sales_dash_dev@127.0.0.1:5432/sales_dash" -v ON_ERROR_STOP=1 -c "CREATE ROLE sales_dash_provisioner LOGIN PASSWORD 'ci-provisioner-password'"
