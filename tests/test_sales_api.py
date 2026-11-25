@@ -723,3 +723,33 @@ def test_manager_editing_salesperson_sale_uses_salesperson_discount_limit():
         with application.app_context():
             db.session.remove()
             db.drop_all()
+
+
+def test_product_minimum_price_requires_admin_override_reason():
+    application, client = make_client("admin")
+    try:
+        customer = client.post("/api/customers", json={"name": "Floor Customer"}).json["item"]
+        product = client.post("/api/products", json={
+            "sku": "FLOOR-1", "name": "Floor Product", "unit_price": "100.00",
+            "cost_price": "70.00", "minimum_selling_price": "90.00", "currency": "TZS",
+        })
+        assert product.status_code == 201
+        item = product.json["item"]
+        assert item["minimum_selling_price"] == "90.00"
+        assert item["cost_price"] == "70.00"
+        payload = {
+            "customer_id": customer["id"], "currency": "TZS",
+            "items": [{"product_id": item["id"], "quantity": "1", "discount_amount": "15.00"}],
+        }
+        assert client.post("/api/sales", json=payload).status_code == 400
+        payload["price_floor_override_reason"] = "Approved strategic account exception."
+        sale = client.post("/api/sales", json=payload)
+        assert sale.status_code == 201
+        logs = client.get("/api/audit-logs?limit=20")
+        event = next(x for x in logs.json["items"] if x["event_type"] == "price_floor_override")
+        assert event["details"]["items"][0]["effective_unit_price"] == "85.00"
+        assert event["details"]["items"][0]["minimum_selling_price"] == "90.00"
+    finally:
+        with application.app_context():
+            db.session.remove()
+            db.drop_all()
