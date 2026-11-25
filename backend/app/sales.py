@@ -682,9 +682,11 @@ def export_sales_report(_user):
 @company_permission_required("edit_sales")
 def update_draft_sale(user, sale_id):
     company_id = _company_id()
-    sale = db.session.scalar(select(Sale).where(
-        Sale.id == sale_id, Sale.company_id == company_id
-    ))
+    sale = db.session.scalar(
+        select(Sale)
+        .where(Sale.id == sale_id, Sale.company_id == company_id)
+        .with_for_update()
+    )
     if sale is None:
         return jsonify({"error": "Sale not found."}), 404
     if sale.status != "draft":
@@ -852,7 +854,9 @@ def decide_discount_approval(user, approval_id):
     if approval.requested_by_user_id == user.id:
         return jsonify({"error": "You cannot approve your own discount request."}), 403
     sale = db.session.scalar(
-        select(Sale).where(Sale.id == approval.sale_id, Sale.company_id == company_id)
+        select(Sale)
+        .where(Sale.id == approval.sale_id, Sale.company_id == company_id)
+        .with_for_update()
     )
     if sale is None or sale.status != "draft":
         return jsonify({"error": "Only requests for draft sales can be decided."}), 409
@@ -884,9 +888,11 @@ def decide_discount_approval(user, approval_id):
 @login_required
 @company_permission_required("create_sales")
 def complete_sale(user, sale_id):
-    item = db.session.scalar(select(Sale).where(
-        Sale.id == sale_id, Sale.company_id == _company_id()
-    ))
+    item = db.session.scalar(
+        select(Sale)
+        .where(Sale.id == sale_id, Sale.company_id == _company_id())
+        .with_for_update()
+    )
     if item is None:
         return jsonify({"error": "Sale not found."}), 404
     if item.status != "draft":
