@@ -13,7 +13,10 @@ from sqlalchemy.exc import IntegrityError
 from .audit import record_audit_event
 from .auth import login_required
 from .extensions import db
-from .models import CompanyMembership, Customer, Product, Sale, SaleItem, User
+from .models import (
+    Company, CompanyMembership, Customer, DiscountApprovalRequest, Product,
+    Sale, SaleItem, User,
+)
 from .permissions import company_permission_required
 
 sales_bp = Blueprint("sales", __name__, url_prefix="/api")
@@ -23,6 +26,78 @@ MILLI = Decimal("0.001")
 
 def _company_id():
     return UUID(session["company_id"])
+
+
+def _discount_limit(company, role):
+    if role == "admin":
+        return None
+    if role == "manager":
+        return company.manager_discount_limit
+    if role == "salesperson":
+        return company.salesperson_discount_limit
+    return Decimal("0.00")
+
+
+def _discount_percent(discount, subtotal):
+    if subtotal <= 0:
+        return Decimal("0.00")
+    return (discount * Decimal("100") / subtotal).quantize(CENT, rounding=ROUND_HALF_UP)
+
+
+def _latest_discount_approval(sale_id, company_id):
+    return db.session.scalar(
+        select(DiscountApprovalRequest)
+        .where(
+            DiscountApprovalRequest.sale_id == sale_id,
+            DiscountApprovalRequest.company_id == company_id,
+        )
+        .order_by(
+            DiscountApprovalRequest.created_at.desc(),
+            DiscountApprovalRequest.id.desc(),
+        )
+        .limit(1)
+    )
+
+
+def _create_discount_approval_if_needed(sale, user, discount_percent, reason):
+    company = db.session.get(Company, sale.company_id)
+    limit = _discount_limit(company, g.company_membership.role)
+    previous = db.session.scalars(
+        select(DiscountApprovalRequest)
+        .where(
+            DiscountApprovalRequest.sale_id == sale.id,
+            DiscountApprovalRequest.company_id == sale.company_id,
+            DiscountApprovalRequest.status.in_(("pending", "approved")),
+        )
+        .with_for_update()
+    ).all()
+    for approval in previous:
+        approval.status = "superseded"
+
+    if limit is None or discount_percent <= limit:
+        return None
+    if not reason:
+        raise ValueError(
+            "This discount is above your role limit. Add an approval reason."
+        )
+    approval = DiscountApprovalRequest(
+        company_id=sale.company_id,
+        sale_id=sale.id,
+        requested_by_user_id=user.id,
+        requested_discount_percent=discount_percent,
+        reason=reason,
+        status="pending",
+    )
+    db.session.add(approval)
+    record_audit_event(
+        db.session, user.id, "discount_approval_requested", sale.company_id,
+        {
+            "sale_id": str(sale.id),
+            "discount_percent": str(discount_percent),
+            "role_limit_percent": str(limit),
+        },
+    )
+    return approval
 
 
 def _json_object():
@@ -400,6 +475,8 @@ def create_sale(user):
         if order_discount > subtotal - line_discounts:
             raise ValueError("The sale discount is greater than the remaining amount.")
         total = subtotal - line_discounts - order_discount + tax
+        discount_percent = _discount_percent(line_discounts + order_discount, subtotal)
+        approval_reason = _text(data, "approval_reason", 1000)
         if total < 0:
             raise ValueError("The sale total cannot be negative.")
 
@@ -415,6 +492,9 @@ def create_sale(user):
         )
         db.session.add(sale)
         db.session.flush()
+        approval = _create_discount_approval_if_needed(
+            sale, user, discount_percent, approval_reason
+        )
         for product, quantity, unit_price, discount, line_total in prepared:
             db.session.add(SaleItem(
                 company_id=company_id, sale_id=sale.id, product_id=product.id,
@@ -594,7 +674,7 @@ def export_sales_report(_user):
 @sales_bp.patch("/sales/<uuid:sale_id>")
 @login_required
 @company_permission_required("edit_sales")
-def update_draft_sale(_user, sale_id):
+def update_draft_sale(user, sale_id):
     company_id = _company_id()
     sale = db.session.scalar(select(Sale).where(
         Sale.id == sale_id, Sale.company_id == company_id
@@ -651,6 +731,8 @@ def update_draft_sale(_user, sale_id):
         if order_discount > subtotal - line_discounts:
             raise ValueError("The sale discount is greater than the remaining amount.")
         total = subtotal - line_discounts - order_discount + tax
+        discount_percent = _discount_percent(line_discounts + order_discount, subtotal)
+        approval_reason = _text(data, "approval_reason", 1000)
         if total < 0:
             raise ValueError("The sale total cannot be negative.")
         sale_date = _parse_report_date(
@@ -670,6 +752,9 @@ def update_draft_sale(_user, sale_id):
         )).all():
             db.session.delete(old_item)
         db.session.flush()
+        _create_discount_approval_if_needed(
+            sale, user, discount_percent, approval_reason
+        )
         for product, quantity, discount, line_total in prepared:
             db.session.add(SaleItem(
                 company_id=company_id,
@@ -699,6 +784,96 @@ def update_draft_sale(_user, sale_id):
     return jsonify({"item": result})
 
 
+@sales_bp.get("/discount-approvals")
+@login_required
+@company_permission_required("manage_discount_approvals")
+def list_discount_approvals(_user):
+    company_id = _company_id()
+    rows = db.session.execute(
+        select(DiscountApprovalRequest, Sale.sale_number, User.display_name, User.email)
+        .join(
+            Sale,
+            (Sale.id == DiscountApprovalRequest.sale_id)
+            & (Sale.company_id == DiscountApprovalRequest.company_id),
+        )
+        .join(User, User.id == DiscountApprovalRequest.requested_by_user_id)
+        .where(
+            DiscountApprovalRequest.company_id == company_id,
+            DiscountApprovalRequest.status == "pending",
+        )
+        .order_by(DiscountApprovalRequest.created_at.asc())
+        .limit(100)
+    ).all()
+    return jsonify({"items": [{
+        "id": str(item.id),
+        "sale_id": str(item.sale_id),
+        "sale_number": sale_number,
+        "requested_by": display_name or email,
+        "requested_discount_percent": str(item.requested_discount_percent),
+        "reason": item.reason,
+        "created_at": item.created_at.isoformat(),
+    } for item, sale_number, display_name, email in rows]})
+
+
+@sales_bp.post("/discount-approvals/<uuid:approval_id>/decision")
+@login_required
+@company_permission_required("manage_discount_approvals")
+def decide_discount_approval(user, approval_id):
+    company_id = _company_id()
+    data = _json_object()
+    if data is None or set(data) - {"decision", "reason"}:
+        return jsonify({"error": "Provide an approval decision."}), 400
+    decision = data.get("decision")
+    if decision not in {"approve", "reject"}:
+        return jsonify({"error": "Choose approve or reject."}), 400
+    try:
+        decision_reason = _text(data, "reason", 1000, required=(decision == "reject"))
+    except ValueError:
+        return jsonify({"error": "A reason is required when rejecting a request."}), 400
+
+    approval = db.session.scalar(
+        select(DiscountApprovalRequest)
+        .where(
+            DiscountApprovalRequest.id == approval_id,
+            DiscountApprovalRequest.company_id == company_id,
+        )
+        .with_for_update()
+    )
+    if approval is None:
+        return jsonify({"error": "Approval request not found."}), 404
+    if approval.status != "pending":
+        return jsonify({"error": "This approval request has already been decided."}), 409
+    if approval.requested_by_user_id == user.id:
+        return jsonify({"error": "You cannot approve your own discount request."}), 403
+    sale = db.session.scalar(
+        select(Sale).where(Sale.id == approval.sale_id, Sale.company_id == company_id)
+    )
+    if sale is None or sale.status != "draft":
+        return jsonify({"error": "Only requests for draft sales can be decided."}), 409
+
+    approval.status = "approved" if decision == "approve" else "rejected"
+    approval.approver_user_id = user.id
+    approval.decision_reason = decision_reason
+    approval.decided_at = db.func.now()
+    record_audit_event(
+        db.session, user.id, "discount_approval_decided", company_id,
+        {
+            "approval_id": str(approval.id),
+            "sale_id": str(sale.id),
+            "decision": approval.status,
+            "requested_discount_percent": str(approval.requested_discount_percent),
+            "requester_user_id": str(approval.requested_by_user_id),
+        },
+    )
+    db.session.commit()
+    return jsonify({"item": {
+        "id": str(approval.id),
+        "status": approval.status,
+        "approver_user_id": str(approval.approver_user_id),
+        "decided_at": approval.decided_at.isoformat(),
+    }})
+
+
 @sales_bp.post("/sales/<uuid:sale_id>/complete")
 @login_required
 @company_permission_required("create_sales")
@@ -712,6 +887,20 @@ def complete_sale(user, sale_id):
         return jsonify({"error": "Only draft sales can be completed."}), 409
     if g.company_membership.role not in {"admin", "manager"} and item.created_by_user_id != user.id:
         return jsonify({"error": "You can only complete sales you created."}), 403
+    company = db.session.get(Company, item.company_id)
+    creator_membership = db.session.get(
+        CompanyMembership, (item.company_id, item.salesperson_user_id)
+    )
+    limit = _discount_limit(company, creator_membership.role if creator_membership else "viewer")
+    discount_percent = _discount_percent(item.discount_amount, item.subtotal)
+    if limit is not None and discount_percent > limit:
+        approval = _latest_discount_approval(item.id, item.company_id)
+        if approval is None or approval.requested_discount_percent != discount_percent:
+            return jsonify({"error": "A current discount approval is required before completion."}), 409
+        if approval.status == "pending":
+            return jsonify({"error": "This sale is waiting for Admin approval."}), 409
+        if approval.status != "approved":
+            return jsonify({"error": "The discount request was not approved. Update the sale or request approval again."}), 409
     item.status = "completed"
     db.session.flush()
     result = _sale_json(item)
