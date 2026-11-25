@@ -13,7 +13,9 @@ from .permissions import company_permission_required
 audit_bp = Blueprint("audit", __name__, url_prefix="/api")
 
 
-def record_audit_event(session, actor_user_id: UUID, event_type: str, company_id=None):
+def record_audit_event(
+    session, actor_user_id: UUID, event_type: str, company_id=None, details=None
+):
     """Queue a minimal allow-listed event in the caller's current transaction."""
     allowed_events = {
         "login_succeeded",
@@ -32,6 +34,8 @@ def record_audit_event(session, actor_user_id: UUID, event_type: str, company_id
         "team_member_role_changed",
         "team_member_suspended",
         "team_member_reactivated",
+        "product_created",
+        "product_updated",
     }
     if event_type not in allowed_events:
         raise ValueError("Unsupported audit event.")
@@ -40,6 +44,7 @@ def record_audit_event(session, actor_user_id: UUID, event_type: str, company_id
             actor_user_id=actor_user_id,
             company_id=company_id,
             event_type=event_type,
+            details=details,
         )
     )
 
@@ -82,6 +87,7 @@ def list_audit_logs(user):
                     "actor_user_id": str(item.actor_user_id) if item.actor_user_id else None,
                     "company_id": str(item.company_id) if item.company_id else None,
                     "occurred_at": item.occurred_at.isoformat(),
+                    "details": item.details,
                 }
                 for item in entries
             ],
