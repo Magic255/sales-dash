@@ -51,13 +51,13 @@ async function loadAuditLogs(generation = workspaceGeneration) {
   }
 
   message.textContent = "";
-  emptyRow(body, 3, "Loading security activity…");
+  emptyRow(body, 4, "Loading security activity…");
   try {
     const data = await workspaceRequest("/api/audit-logs?limit=50");
     if (generation !== workspaceGeneration || workspaceRole !== "admin") return;
     body.replaceChildren();
     if (!data.items.length) {
-      emptyRow(body, 3, "No security activity recorded yet.");
+      emptyRow(body, 4, "No security activity recorded yet.");
       return;
     }
 
@@ -99,12 +99,13 @@ async function loadAuditLogs(generation = workspaceGeneration) {
         row,
         item.actor_user_id ? "Account " + item.actor_user_id.slice(0, 8) : "System",
       );
+      textCell(row, item.details ? JSON.stringify(item.details) : "—");
       body.append(row);
     }
     message.textContent = "Showing the " + data.items.length + " most recent events.";
   } catch (error) {
     if (generation !== workspaceGeneration) return;
-    emptyRow(body, 3, "Security activity could not be loaded.");
+    emptyRow(body, 4, "Security activity could not be loaded.");
     message.textContent = error.message;
   }
 }
@@ -642,7 +643,7 @@ document.addEventListener("salesdash:company-selected", (event) => {
   if (workspaceRole === "admin") {
     loadAuditLogs(workspaceGeneration);
   } else {
-    emptyRow(document.querySelector("#audit-rows"), 3, "Security activity is available to company admins only.");
+    emptyRow(document.querySelector("#audit-rows"), 4, "Security activity is available to company admins only.");
   }
   if (workspaceRole !== "admin") selectTab("overview");
   loadWorkspace();
@@ -654,7 +655,7 @@ document.addEventListener("salesdash:signed-out", () => {
   products = [];
   document.querySelector("#audit-panel").hidden = true;
   document.querySelector("#audit-message").textContent = "";
-  emptyRow(document.querySelector("#audit-rows"), 3, "Select a company to view activity.");
+  emptyRow(document.querySelector("#audit-rows"), 4, "Select a company to view activity.");
   workspace.hidden = true;
 });
 
