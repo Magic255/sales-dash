@@ -651,3 +651,74 @@ def test_salesperson_cannot_view_admin_discount_approval_inbox():
         with application.app_context():
             db.session.remove()
             db.drop_all()
+
+
+def test_manager_editing_salesperson_sale_uses_salesperson_discount_limit():
+    application, manager_client = make_client("manager")
+    try:
+        with application.app_context():
+            manager = db.session.query(User).filter_by(
+                email="manager@example.test"
+            ).one()
+            company = db.session.query(Company).filter_by(
+                slug="sales-api-manager"
+            ).one()
+            salesperson = User(
+                email="credited-salesperson@example.test",
+                password_hash=PasswordHasher().hash("a-very-strong-test-password"),
+                email_verified=True,
+            )
+            customer = Customer(
+                company_id=company.id, created_by_user_id=manager.id,
+                name="Credited Seller Customer",
+            )
+            product = Product(
+                company_id=company.id, created_by_user_id=manager.id,
+                sku="CREDITED-SELLER-1", name="Credited Seller Product",
+                unit_price=Decimal("100.00"), currency="TZS",
+            )
+            db.session.add_all([salesperson, customer, product])
+            db.session.flush()
+            db.session.add(CompanyMembership(
+                user_id=salesperson.id, company_id=company.id,
+                role="salesperson", status="active",
+            ))
+            customer_id, product_id, salesperson_id = (
+                customer.id, product.id, salesperson.id
+            )
+            db.session.commit()
+
+        created = manager_client.post("/api/sales", json={
+            "customer_id": str(customer_id),
+            "currency": "TZS",
+            "items": [{"product_id": str(product_id), "quantity": "1"}],
+        })
+        assert created.status_code == 201
+        sale_id = created.json["item"]["id"]
+        with application.app_context():
+            sale = db.session.get(Sale, UUID(sale_id))
+            sale.salesperson_user_id = salesperson_id
+            db.session.commit()
+
+        edited = manager_client.patch(f"/api/sales/{sale_id}", json={
+            "customer_id": str(customer_id),
+            "currency": "TZS",
+            "discount_amount": "10.00",
+            "items": [{"product_id": str(product_id), "quantity": "1"}],
+            "approval_reason": "Customer requested a larger discount.",
+        })
+        assert edited.status_code == 200
+        with application.app_context():
+            approval = db.session.query(DiscountApprovalRequest).one()
+            assert approval.status == "pending"
+            assert approval.requested_discount_percent == Decimal("10.00")
+            assert approval.requested_by_user_id == db.session.get(
+                User, salesperson_id
+            ).id
+        assert manager_client.post(
+            f"/api/sales/{sale_id}/complete"
+        ).status_code == 409
+    finally:
+        with application.app_context():
+            db.session.remove()
+            db.drop_all()
