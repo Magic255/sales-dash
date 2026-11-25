@@ -194,7 +194,10 @@ def test_admin_product_price_changes_are_audited_with_before_and_after_values():
         assert changed.status_code == 200
         logs = client.get("/api/audit-logs?limit=20")
         assert logs.status_code == 200
-        update = next(item for item in logs.json["items"] if item["event_type"] == "product_updated")
+        update = next(
+            item for item in logs.json["items"]
+            if item["event_type"] == "product_updated"
+        )
         assert update["details"]["product_id"] == product_id
         assert update["details"]["old"]["unit_price"] == "10.00"
         assert update["details"]["new"]["unit_price"] == "12.50"
