@@ -6,6 +6,7 @@ Revises: 0017_product_price_audit
 
 # ruff: noqa: I001
 from alembic import op
+import sqlalchemy as sa
 
 
 revision = "0018_discount_approvals"
@@ -17,11 +18,17 @@ depends_on = None
 def upgrade():
     op.add_column(
         "companies",
-        op.inline_literal("salesperson_discount_limit NUMERIC(5, 2) NOT NULL DEFAULT 5.00"),
+        sa.Column(
+            "salesperson_discount_limit", sa.Numeric(5, 2),
+            nullable=False, server_default="5.00",
+        ),
     )
     op.add_column(
         "companies",
-        op.inline_literal("manager_discount_limit NUMERIC(5, 2) NOT NULL DEFAULT 15.00"),
+        sa.Column(
+            "manager_discount_limit", sa.Numeric(5, 2),
+            nullable=False, server_default="15.00",
+        ),
     )
     op.create_check_constraint(
         "salesperson_discount_limit_range", "companies",
