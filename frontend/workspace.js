@@ -62,6 +62,8 @@ async function loadAuditLogs(generation = workspaceGeneration) {
     }
 
     const eventLabels = {
+      product_created: "Product created",
+      product_updated: "Product details or price changed",
       login_succeeded: "Signed in",
       password_changed: "Password changed",
       company_selected: "Company selected",
@@ -126,6 +128,10 @@ function selectTab(name) {
 
 function canManageCatalog() {
   return ["admin", "manager"].includes(workspaceRole);
+}
+
+function canManageProducts() {
+  return workspaceRole === "admin";
 }
 
 function addCatalogAction(cell, label, callback, danger = false) {
@@ -247,7 +253,7 @@ function renderProducts() {
     textCell(row, item.currency);
     textCell(row, item.is_active ? "Active" : "Archived");
     const actions = document.createElement("td");
-    if (canManageCatalog()) {
+    if (canManageProducts()) {
       addCatalogAction(actions, "Edit", () => editProduct(item));
       addCatalogAction(
         actions, item.is_active ? "Archive" : "Restore",
@@ -627,7 +633,7 @@ document.addEventListener("salesdash:company-selected", (event) => {
   document.querySelector("#sales-target-message").textContent = "";
   workspace.hidden = false;
   document.querySelector("#customer-form").hidden = workspaceRole === "viewer";
-  document.querySelector("#product-form").hidden = !["admin", "manager"].includes(workspaceRole);
+  document.querySelector("#product-form").hidden = !canManageProducts();
   document.querySelector("#sale-form").hidden = workspaceRole === "viewer";
   document.querySelector("#team-tab").hidden = workspaceRole !== "admin";
   document.querySelector("#company-settings-tab").hidden = workspaceRole !== "admin";
