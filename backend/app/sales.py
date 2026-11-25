@@ -154,10 +154,9 @@ def _check_price_floor(prepared, order_discount, user, override_reason, sale_id)
             })
     if not violations:
         return
-    if user is None or getattr(user, "role", None) != "admin":
-        # The authoritative role is the active company membership, not a client field.
-        if getattr(getattr(g, "company_membership", None), "role", None) != "admin":
-            raise ValueError("The discount would take a product below its minimum selling price.")
+    # The authoritative role is the active company membership, not a client field.
+    if getattr(getattr(g, "company_membership", None), "role", None) != "admin":
+        raise ValueError("The discount would take a product below its minimum selling price.")
     reason = (override_reason or "").strip()
     if not reason:
         raise ValueError("An Admin price-floor override requires a reason.")
