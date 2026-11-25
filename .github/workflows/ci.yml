@@ -68,7 +68,7 @@ jobs:
         run: |
           set -euo pipefail
           psql "$APP_DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
-          DO $
+          DO $verify$
           DECLARE
               runtime_role pg_roles%ROWTYPE;
           BEGIN
@@ -109,7 +109,7 @@ jobs:
                   RAISE EXCEPTION 'An RLS-enabled table is missing FORCE ROW LEVEL SECURITY';
               END IF;
           END
-          $;
+          $verify$;
           SQL
           echo "Runtime login verified: non-superuser, no BYPASSRLS, no elevated role administration, not an RLS table owner, and member of sales_dash_app."
 
