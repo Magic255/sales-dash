@@ -120,4 +120,4 @@ def update_company_settings(user):
             )
         db.session.commit()
 
-    return jsonify({"item": _settings_json(company)})
+    return jsonify({"item": item})
