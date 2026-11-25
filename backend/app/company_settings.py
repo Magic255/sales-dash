@@ -36,7 +36,7 @@ def get_company_settings(_user):
     company = db.session.get(Company, UUID(session["company_id"]))
     if company is None:
         return jsonify({"error": "The selected company is unavailable."}), 404
-    return jsonify({"item": _settings_json(company)})
+    return jsonify({"item": item})
 
 
 @company_settings_bp.patch("")
@@ -93,6 +93,7 @@ def update_company_settings(user):
         "salesperson_discount_limit": str(company.salesperson_discount_limit),
         "manager_discount_limit": str(company.manager_discount_limit),
     }
+    item = _settings_json(company)
     if old_values != new_values:
         if old_values["name"] != new_values["name"]:
             record_audit_event(
