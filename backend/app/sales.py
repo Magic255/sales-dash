@@ -498,7 +498,7 @@ def create_sale(user):
         )
         db.session.add(sale)
         db.session.flush()
-        _create_discount_approval_if_needed(
+        approval_request = _create_discount_approval_if_needed(
             sale, user, discount_percent, approval_reason
         )
         for product, quantity, unit_price, discount, line_total in prepared:
@@ -515,6 +515,9 @@ def create_sale(user):
               "unit_price": str(price), "discount_amount": str(discount),
               "line_total": str(line_total)}
              for p, q, price, discount, line_total in prepared],
+        )
+        result["approval_status"] = (
+            approval_request.status if approval_request else None
         )
         db.session.commit()
     except ValueError:
@@ -760,7 +763,7 @@ def update_draft_sale(user, sale_id):
         )).all():
             db.session.delete(old_item)
         db.session.flush()
-        _create_discount_approval_if_needed(
+        approval_request = _create_discount_approval_if_needed(
             sale, user, discount_percent, approval_reason
         )
         for product, quantity, discount, line_total in prepared:
@@ -782,6 +785,9 @@ def update_draft_sale(user, sale_id):
              "line_total": str(line_total)}
             for p, q, discount, line_total in prepared
         ])
+        result["approval_status"] = (
+            approval_request.status if approval_request else None
+        )
         db.session.commit()
     except (ValueError, TypeError):
         db.session.rollback()
