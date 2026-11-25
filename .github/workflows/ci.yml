@@ -67,7 +67,8 @@ jobs:
       - name: Verify restricted web runtime database login
         run: |
           set -euo pipefail
-          psql "$APP_DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          PSQL_RUNTIME_DATABASE_URL="${APP_DATABASE_URL/postgresql+psycopg:/postgresql:}"
+          psql "$PSQL_RUNTIME_DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
           DO $verify$
           DECLARE
               runtime_role pg_roles%ROWTYPE;
