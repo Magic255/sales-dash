@@ -154,7 +154,7 @@ class AuditLog(db.Model):
             "'team_member_role_changed', 'team_member_suspended', "
             "'team_member_reactivated', 'product_created', 'product_updated', "
             "'discount_limits_updated', 'discount_approval_requested', "
-            "'discount_approval_decided')",
+            "'discount_approval_decided', 'price_floor_override')",
             name="event_type_is_supported",
         ),
         db.Index("ix_audit_logs_company_time", "company_id", "occurred_at"),
@@ -227,6 +227,8 @@ class Product(db.Model):
         CheckConstraint("length(trim(name)) > 0", name="name_not_empty"),
         CheckConstraint("length(trim(sku)) > 0", name="sku_not_empty"),
         CheckConstraint("unit_price >= 0", name="unit_price_nonnegative"),
+        CheckConstraint("cost_price >= 0", name="cost_price_nonnegative"),
+        CheckConstraint("minimum_selling_price >= cost_price", name="minimum_price_covers_cost"),
         CheckConstraint(
             "currency = upper(currency) AND length(currency) = 3",
             name="currency_iso_code",
@@ -242,6 +244,12 @@ class Product(db.Model):
     name: Mapped[str] = mapped_column(String(160), nullable=False)
     description: Mapped[str | None] = mapped_column(String(2000))
     unit_price: Mapped[Decimal] = mapped_column(db.Numeric(12, 2), nullable=False)
+    cost_price: Mapped[Decimal] = mapped_column(
+        db.Numeric(12, 2), nullable=False, default=0, server_default="0"
+    )
+    minimum_selling_price: Mapped[Decimal] = mapped_column(
+        db.Numeric(12, 2), nullable=False, default=0, server_default="0"
+    )
     currency: Mapped[str] = mapped_column(
         String(3), nullable=False, default="TZS", server_default="TZS"
     )
