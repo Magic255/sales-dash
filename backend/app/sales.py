@@ -147,6 +147,7 @@ def _check_price_floor(prepared, order_discount, user, override_reason, sale_id)
             violations.append({
                 "product_id": str(product.id),
                 "sku": product.sku,
+                "base_unit_price": str(product.unit_price),
                 "minimum_selling_price": str(product.minimum_selling_price),
                 "effective_unit_price": str(effective_unit),
                 "line_discount": str(line_discount),
@@ -385,6 +386,8 @@ def create_product(user):
         )
         if len(item.currency) != 3:
             raise ValueError("Currency must be a 3-letter code, such as TZS.")
+        if item.minimum_selling_price < item.cost_price:
+            raise ValueError("Minimum selling price cannot be below product cost.")
         db.session.add(item)
         db.session.flush()
         record_audit_event(
