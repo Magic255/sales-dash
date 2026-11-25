@@ -66,15 +66,27 @@ class Company(db.Model):
         CheckConstraint("length(trim(name)) > 0", name="name_not_empty"),
         CheckConstraint("length(slug) > 0", name="slug_not_empty"),
         CheckConstraint("slug = lower(trim(slug))", name="slug_normalized"),
-        CheckConstraint("salesperson_discount_limit >= 0 AND salesperson_discount_limit <= 100", name="salesperson_discount_limit_range"),
-        CheckConstraint("manager_discount_limit >= 0 AND manager_discount_limit <= 100", name="manager_discount_limit_range"),
+        CheckConstraint(
+            "salesperson_discount_limit >= 0 AND salesperson_discount_limit <= 100",
+            name="salesperson_discount_limit_range",
+        ),
+        CheckConstraint(
+            "manager_discount_limit >= 0 AND manager_discount_limit <= 100",
+            name="manager_discount_limit_range",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
     name: Mapped[str] = mapped_column(String(160), nullable=False)
     slug: Mapped[str] = mapped_column(String(80), nullable=False)
-    salesperson_discount_limit: Mapped[Decimal] = mapped_column(db.Numeric(5, 2), nullable=False, default=Decimal("5.00"), server_default="5.00")
-    manager_discount_limit: Mapped[Decimal] = mapped_column(db.Numeric(5, 2), nullable=False, default=Decimal("15.00"), server_default="15.00")
+    salesperson_discount_limit: Mapped[Decimal] = mapped_column(
+        db.Numeric(5, 2), nullable=False,
+        default=Decimal("5.00"), server_default="5.00",
+    )
+    manager_discount_limit: Mapped[Decimal] = mapped_column(
+        db.Numeric(5, 2), nullable=False,
+        default=Decimal("15.00"), server_default="15.00",
+    )
     is_active: Mapped[bool] = mapped_column(nullable=False, default=True, server_default="true")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -140,7 +152,9 @@ class AuditLog(db.Model):
             "'company_invitation_revoked', 'mfa_enabled', 'mfa_disabled', "
             "'mfa_recovery_code_used', 'company_settings_updated', "
             "'team_member_role_changed', 'team_member_suspended', "
-            "'team_member_reactivated', 'product_created', 'product_updated', 'discount_limits_updated', 'discount_approval_requested', 'discount_approval_decided')",
+            "'team_member_reactivated', 'product_created', 'product_updated', "
+            "'discount_limits_updated', 'discount_approval_requested', "
+            "'discount_approval_decided')",
             name="event_type_is_supported",
         ),
         db.Index("ix_audit_logs_company_time", "company_id", "occurred_at"),
@@ -339,23 +353,36 @@ class DiscountApprovalRequest(db.Model):
             ["company_memberships.company_id", "company_memberships.user_id"],
             ondelete="NO ACTION", name="fk_discount_approval_approver_membership",
         ),
-        CheckConstraint("status IN ('pending', 'approved', 'rejected', 'superseded')", name="status_is_supported"),
-        CheckConstraint("requested_discount_percent > 0 AND requested_discount_percent <= 100", name="discount_percent_range"),
+        CheckConstraint(
+            "status IN ('pending', 'approved', 'rejected', 'superseded')",
+            name="status_is_supported",
+        ),
+        CheckConstraint(
+            "requested_discount_percent > 0 AND requested_discount_percent <= 100",
+            name="discount_percent_range",
+        ),
         CheckConstraint("length(trim(reason)) > 0", name="reason_not_empty"),
         db.Index("ix_discount_approvals_company_status", "company_id", "status", "created_at"),
         db.Index("ix_discount_approvals_sale_created", "company_id", "sale_id", "created_at"),
     )
 
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
-    company_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False)
+    company_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE"),
+        nullable=False,
+    )
     sale_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
     requested_by_user_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
     approver_user_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True))
-    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending", server_default="pending")
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="pending", server_default="pending"
+    )
     requested_discount_percent: Mapped[Decimal] = mapped_column(db.Numeric(5, 2), nullable=False)
     reason: Mapped[str] = mapped_column(String(1000), nullable=False)
     decision_reason: Mapped[str | None] = mapped_column(String(1000))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
