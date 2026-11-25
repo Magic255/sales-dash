@@ -492,7 +492,7 @@ def create_sale(user):
         )
         db.session.add(sale)
         db.session.flush()
-        approval = _create_discount_approval_if_needed(
+        _create_discount_approval_if_needed(
             sale, user, discount_percent, approval_reason
         )
         for product, quantity, unit_price, discount, line_total in prepared:
