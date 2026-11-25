@@ -114,11 +114,13 @@ async function loadAuditLogs(generation = workspaceGeneration) {
 }
 
 async function loadDiscountApprovals() {
-  const panel = document.querySelector("#discount-approvals-tab");
+  const generation = workspaceGeneration;
+  const panel = document.querySelector('[data-workspace-panel="discount-approvals"]');
   const body = document.querySelector("#discount-approval-rows");
   const message = document.querySelector("#discount-approvals-message");
   if (workspaceRole !== "admin") {
     panel.hidden = true;
+    document.querySelector("#discount-approvals-tab").hidden = true;
     return;
   }
   panel.hidden = false;
@@ -126,7 +128,7 @@ async function loadDiscountApprovals() {
   emptyRow(body, 6, "Loading approval requests…");
   try {
     const data = await workspaceRequest("/api/discount-approvals");
-    if (workspaceRole !== "admin") return;
+    if (generation !== workspaceGeneration || workspaceRole !== "admin") return;
     body.replaceChildren();
     if (!data.items.length) {
       emptyRow(body, 6, "No discount approvals are waiting.");
@@ -181,6 +183,7 @@ async function loadDiscountApprovals() {
       body.append(row);
     }
   } catch (error) {
+    if (generation !== workspaceGeneration) return;
     emptyRow(body, 6, "Approval requests could not be loaded.");
     message.textContent = error.message;
   }
@@ -870,8 +873,10 @@ document.querySelector("#sale-form").addEventListener("submit", async (event) =>
     document.querySelector("#sale-discount").value = "0";
     document.querySelector("#sale-tax").value = "0";
     selectTab("sales");
-    workspaceMessage("Draft " + saved.item.sale_number + " saved.");
     await loadWorkspace();
+    workspaceMessage(saved.item.approval_status === "pending"
+      ? "Draft saved. Your discount approval request is waiting for an Admin."
+      : "Draft " + saved.item.sale_number + " saved.");
   } catch (error) {
     workspaceMessage(error.message);
   } finally {
