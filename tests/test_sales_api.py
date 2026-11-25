@@ -712,9 +712,10 @@ def test_manager_editing_salesperson_sale_uses_salesperson_discount_limit():
             approval = db.session.query(DiscountApprovalRequest).one()
             assert approval.status == "pending"
             assert approval.requested_discount_percent == Decimal("10.00")
-            assert approval.requested_by_user_id == db.session.get(
-                User, salesperson_id
-            ).id
+            manager = db.session.query(User).filter_by(
+                email="manager@example.test"
+            ).one()
+            assert approval.requested_by_user_id == manager.id
         assert manager_client.post(
             f"/api/sales/{sale_id}/complete"
         ).status_code == 409
