@@ -136,7 +136,7 @@ class AuditLog(db.Model):
             "'company_invitation_revoked', 'mfa_enabled', 'mfa_disabled', "
             "'mfa_recovery_code_used', 'company_settings_updated', "
             "'team_member_role_changed', 'team_member_suspended', "
-            "'team_member_reactivated')",
+            "'team_member_reactivated', 'product_created', 'product_updated')",
             name="event_type_is_supported",
         ),
         db.Index("ix_audit_logs_company_time", "company_id", "occurred_at"),
