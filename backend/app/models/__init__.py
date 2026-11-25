@@ -147,6 +147,7 @@ class AuditLog(db.Model):
     actor_user_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
     company_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
     event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    details: Mapped[dict | None] = mapped_column(db.JSON, nullable=True)
     occurred_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
