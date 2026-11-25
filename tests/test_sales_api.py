@@ -753,3 +753,42 @@ def test_product_minimum_price_requires_admin_override_reason():
         with application.app_context():
             db.session.remove()
             db.drop_all()
+
+
+def test_salesperson_is_rejected_when_discount_crosses_product_floor():
+    application, client = make_client("salesperson")
+    try:
+        with application.app_context():
+            seller = db.session.query(User).filter_by(
+                email="salesperson@example.test"
+            ).one()
+            company = db.session.query(Company).filter_by(
+                slug="sales-api-salesperson"
+            ).one()
+            customer = Customer(
+                company_id=company.id, created_by_user_id=seller.id,
+                name="Floor Guard Customer",
+            )
+            product = Product(
+                company_id=company.id, created_by_user_id=seller.id,
+                sku="FLOOR-GUARD-1", name="Floor Guard Product",
+                unit_price=Decimal("100.00"), cost_price=Decimal("70.00"),
+                minimum_selling_price=Decimal("90.00"), currency="TZS",
+            )
+            db.session.add_all([customer, product])
+            db.session.commit()
+            customer_id, product_id = str(customer.id), str(product.id)
+        response = client.post("/api/sales", json={
+            "customer_id": customer_id,
+            "currency": "TZS",
+            "price_floor_override_reason": "Approved exception",
+            "items": [{
+                "product_id": product_id, "quantity": "1",
+                "discount_amount": "15.00",
+            }],
+        })
+        assert response.status_code == 400
+    finally:
+        with application.app_context():
+            db.session.remove()
+            db.drop_all()
