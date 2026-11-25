@@ -854,7 +854,7 @@ def decide_discount_approval(user, approval_id):
     approval.status = "approved" if decision == "approve" else "rejected"
     approval.approver_user_id = user.id
     approval.decision_reason = decision_reason
-    approval.decided_at = db.func.now()
+    approval.decided_at = func.now()
     record_audit_event(
         db.session, user.id, "discount_approval_decided", company_id,
         {
