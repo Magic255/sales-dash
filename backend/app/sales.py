@@ -117,10 +117,15 @@ def _create_discount_approval_if_needed(sale, user, discount_percent, reason):
 
 def _check_price_floor(prepared, order_discount, user, override_reason, sale_id):
     """Check each line after its line discount and proportional order discount."""
-    remaining = [
-        (product, quantity, gross, discount, gross - discount)
-        for product, quantity, gross, discount in prepared
-    ]
+    remaining = []
+    for row in prepared:
+        if len(row) == 5:
+            product, quantity, unit_price, discount, _line_total = row
+            gross = (quantity * unit_price).quantize(CENT, rounding=ROUND_HALF_UP)
+        else:
+            product, quantity, discount, line_total = row
+            gross = line_total + discount
+        remaining.append((product, quantity, gross, discount, gross - discount))
     remaining_total = sum((row[4] for row in remaining), Decimal("0.00"))
     allocated = Decimal("0.00")
     violations = []
@@ -564,6 +569,9 @@ def create_sale(user):
         total = subtotal - line_discounts - order_discount + tax
         discount_percent = _discount_percent(line_discounts + order_discount, subtotal)
         approval_reason = _text(data, "approval_reason", 1000)
+        price_floor_override_reason = _text(
+            data, "price_floor_override_reason", 1000
+        )
         if total < 0:
             raise ValueError("The sale total cannot be negative.")
 
@@ -579,6 +587,9 @@ def create_sale(user):
         )
         db.session.add(sale)
         db.session.flush()
+        _check_price_floor(
+            prepared, order_discount, user, price_floor_override_reason, sale.id
+        )
         approval_request = _create_discount_approval_if_needed(
             sale, user, discount_percent, approval_reason
         )
