@@ -10,8 +10,8 @@ from flask import Blueprint, Response, g, jsonify, request, session
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
-from .auth import login_required
 from .audit import record_audit_event
+from .auth import login_required
 from .extensions import db
 from .models import CompanyMembership, Customer, Product, Sale, SaleItem, User
 from .permissions import company_permission_required
