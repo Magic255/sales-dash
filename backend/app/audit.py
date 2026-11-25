@@ -36,6 +36,9 @@ def record_audit_event(
         "team_member_reactivated",
         "product_created",
         "product_updated",
+        "discount_limits_updated",
+        "discount_approval_requested",
+        "discount_approval_decided",
     }
     if event_type not in allowed_events:
         raise ValueError("Unsupported audit event.")
