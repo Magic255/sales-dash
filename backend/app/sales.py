@@ -682,7 +682,7 @@ def inventory_summary(_user):
         available = sum(
             (
                 row["available"] for row in balances
-                if not row["expired"]
+                if not row["expired"] and not row["compliance_blocked"]
             ),
             Decimal("0.000"),
         )
@@ -693,12 +693,20 @@ def inventory_summary(_user):
             ),
             Decimal("0.000"),
         )
+        quarantine_quantity = sum(
+            (
+                max(row["on_hand"], Decimal("0.000"))
+                for row in balances if row["compliance_blocked"]
+            ),
+            Decimal("0.000"),
+        )
         sold_total = sum((row["sold"] for row in balances), Decimal("0.000"))
         inflows_total = sum((row["inflows"] for row in balances), Decimal("0.000"))
         writeoffs_total = sum((row["writeoffs"] for row in balances), Decimal("0.000"))
         status = (
             "discontinued" if not product.is_active
             else "expired" if available <= 0 and expired_quantity > 0
+            else "pending_verification" if available <= 0 and quarantine_quantity > 0
             else "reserved" if available <= 0 and reserved > 0 and on_hand > 0
             else "sold" if (
                 on_hand <= 0 and sold_total > 0
@@ -717,6 +725,7 @@ def inventory_summary(_user):
             "reserved_quantity": str(reserved),
             "available_quantity": str(available),
             "expired_quantity": str(expired_quantity),
+            "quarantine_quantity": str(quarantine_quantity),
             "expiring_soon_quantity": str(expiring_soon_quantity),
             "low_stock_threshold": str(product.low_stock_threshold),
             "status": status,
@@ -755,7 +764,7 @@ def list_stock_batches(_user, product_id):
             "stock_on_hand": str(row["on_hand"]),
             "reserved_quantity": str(row["reserved"]),
             "available_quantity": str(
-                Decimal("0.000") if row["expired"] else row["available"]
+                Decimal("0.000") if row["expired"] or row["compliance_blocked"] else row["available"]
             ),
             "expired_quantity": str(
                 max(row["on_hand"], Decimal("0.000")) if row["expired"]
