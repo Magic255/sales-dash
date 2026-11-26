@@ -829,7 +829,7 @@ def test_weekly_discount_report_groups_completed_sales_by_seller_and_currency():
             "subtotal": "100.00",
             "discount_total": "10.00",
             "discount_rate_percent": "10.00",
-            "revenue_after_discount": "90.00",
+            "net_sales_after_discount": "90.00",
         }]
         assert "does not yet track leads" in report.json["note"]
         invalid = client.get(
