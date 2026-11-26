@@ -339,14 +339,41 @@ def test_inventory_batches_and_movements_are_company_isolated(postgres_app):
             with db.session.begin():
                 db.session.execute(text("SET LOCAL ROLE sales_dash_app"))
                 set_tenant_context(db.session, user_a_id, company_a_id)
+                app_batch = ProductBatch(
+                    company_id=company_a_id,
+                    product_id=product_a.id,
+                    batch_code="TENANT-BATCH-A-APP",
+                    created_by_user_id=user_a_id,
+                )
+                db.session.add(app_batch)
+                db.session.flush()
+                db.session.add(StockMovement(
+                    company_id=company_a_id,
+                    product_id=product_a.id,
+                    batch_id=app_batch.id,
+                    actor_user_id=user_a_id,
+                    actor_label="Company A app actor",
+                    movement_type="received",
+                    quantity_delta=Decimal("2.000"),
+                    reserved_delta=Decimal("0.000"),
+                    reason="Company A app-role stock receipt.",
+                ))
+                db.session.flush()
+
+            with db.session.begin():
+                db.session.execute(text("SET LOCAL ROLE sales_dash_app"))
+                set_tenant_context(db.session, user_a_id, company_a_id)
                 visible_batches = db.session.scalars(
-                    db.select(ProductBatch.batch_code)
+                    db.select(ProductBatch.batch_code).order_by(ProductBatch.batch_code)
                 ).all()
                 visible_movements = db.session.scalars(
-                    db.select(StockMovement.reason)
+                    db.select(StockMovement.reason).order_by(StockMovement.reason)
                 ).all()
-                assert visible_batches == ["TENANT-BATCH-A"]
-                assert visible_movements == ["Company A opening stock."]
+                assert visible_batches == ["TENANT-BATCH-A", "TENANT-BATCH-A-APP"]
+                assert visible_movements == [
+                    "Company A app-role stock receipt.",
+                    "Company A opening stock.",
+                ]
 
             db.session.execute(text("SET LOCAL ROLE sales_dash_app"))
             set_tenant_context(db.session, user_a_id, company_a_id)
