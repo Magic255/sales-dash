@@ -1039,6 +1039,7 @@ def test_inventory_batches_ledger_sale_consumption_and_void_restoration():
         assert {
             row["movement_type"] for row in movements.json["items"]
         } == {"returned", "sold", "received"}
+        assert all(row["actor"] for row in movements.json["items"])
     finally:
         with application.app_context():
             db.session.remove()
