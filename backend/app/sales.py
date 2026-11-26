@@ -812,7 +812,10 @@ def weekly_discount_report(_user):
         "week_start": week_start.isoformat(),
         "week_end": week_end.isoformat(),
         "salespeople": list(salespeople.values()),
-        "note": "Conversion rate is not included because this workspace does not yet track leads or opportunities.",
+        "note": (
+            "Conversion rate is not included because this workspace does not yet "
+            "track leads or opportunities."
+        ),
     })
 
 
@@ -1110,7 +1113,9 @@ def complete_sale(user, sale_id):
     ).all() if product_ids else []
     products_by_id = {product.id: product for product in current_products}
     if len(products_by_id) != len(product_ids):
-        return jsonify({"error": "A product on this sale is no longer available for price validation."}), 409
+        return jsonify({
+            "error": "A product on this sale is no longer available for price validation."
+        }), 409
     line_discount_total = sum(
         (line.discount_amount for line in sale_lines), Decimal("0.00")
     )
