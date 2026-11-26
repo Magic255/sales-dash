@@ -5,6 +5,7 @@ import hashlib
 import io
 from datetime import date, datetime, timedelta, timezone
 from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal, InvalidOperation
+from urllib.parse import urlsplit
 from uuid import UUID, uuid4
 
 from cryptography.fernet import Fernet, InvalidToken
@@ -812,7 +813,14 @@ def list_stock_batches(_user, product_id):
             "compliance_status": batch.compliance_status,
             "qr_code_present": bool(batch.qr_code),
             "authority_name": batch.authority_name,
+            "authority_role": batch.authority_role,
             "certificate_reference": batch.certificate_reference,
+            "verification_method": batch.verification_method,
+            "verification_source_url": batch.verification_source_url,
+            "verification_reference": batch.verification_reference,
+            "verified_product_identifier": batch.verified_product_identifier,
+            "verified_scope": batch.verified_scope,
+            "accreditation_body_name": batch.accreditation_body_name,
             "verified_at": batch.verified_at.isoformat() if batch.verified_at else None,
             "stock_on_hand": str(row["on_hand"]),
             "reserved_quantity": str(row["reserved"]),
@@ -1075,9 +1083,45 @@ def verify_stock_batch_compliance(user, batch_id):
             qr_code = _text(data, "qr_code", 500, required=True)
             authority_name = _text(data, "authority_name", 160, required=True)
             authority_country = _country_code(data.get("authority_country"), required=True)
+            authority_role = _text(data, "authority_role", 32, required=True, lower=True)
+            if authority_role not in {
+                "standards_body", "regulator", "certification_body",
+                "accreditation_body", "testing_lab", "inspection_body", "other",
+            }:
+                raise ValueError("Unsupported issuing authority role.")
             certificate_reference = _text(
                 data, "certificate_reference", 160, required=True
             )
+            verification_method = _text(
+                data, "verification_method", 32, required=True, lower=True
+            )
+            if verification_method not in {
+                "official_registry", "accreditation_scope",
+                "issuer_confirmation", "document_review",
+            }:
+                raise ValueError("Unsupported verification method.")
+            verification_source_url = _text(data, "verification_source_url", 500)
+            verification_reference = _text(data, "verification_reference", 200)
+            verified_product_identifier = _text(
+                data, "verified_product_identifier", 200, required=True
+            )
+            verified_scope = _text(data, "verified_scope", 300, required=True)
+            accreditation_body_name = _text(data, "accreditation_body_name", 160)
+            if verification_method in {"official_registry", "accreditation_scope"}:
+                if not verification_source_url:
+                    raise ValueError("An official HTTPS source URL is required.")
+                parsed_source = urlsplit(verification_source_url)
+                if (
+                    parsed_source.scheme != "https"
+                    or not parsed_source.hostname
+                    or parsed_source.username
+                    or parsed_source.password
+                ):
+                    raise ValueError("The verification source must be an HTTPS URL.")
+            if verification_method == "issuer_confirmation" and not verification_reference:
+                raise ValueError("Record the issuer confirmation reference.")
+            if verification_method == "accreditation_scope" and not accreditation_body_name:
+                raise ValueError("Record the accreditation body checked.")
             evidence_file_id = UUID(_text(data, "evidence_file_id", 36, required=True))
             evidence_file = db.session.scalar(
                 select(ComplianceEvidenceFile).where(
@@ -1100,9 +1144,16 @@ def verify_stock_batch_compliance(user, batch_id):
             batch.qr_code = qr_code
             batch.authority_name = authority_name
             batch.authority_country = authority_country
+            batch.authority_role = authority_role
             batch.certificate_reference = certificate_reference
             batch.evidence_reference = f"private-evidence:{evidence_file.id}"
             batch.standard_reference = standard_reference
+            batch.verification_method = verification_method
+            batch.verification_source_url = verification_source_url
+            batch.verification_reference = verification_reference
+            batch.verified_product_identifier = verified_product_identifier
+            batch.verified_scope = verified_scope
+            batch.accreditation_body_name = accreditation_body_name
             batch.compliance_status = "approved"
             event_type = "product_compliance_verified"
         elif decision in {"reject", "recall"}:
@@ -1123,7 +1174,14 @@ def verify_stock_batch_compliance(user, batch_id):
                 "decision": decision,
                 "authority_name": batch.authority_name,
                 "authority_country": batch.authority_country,
+                "authority_role": batch.authority_role,
                 "certificate_reference": batch.certificate_reference,
+                "verification_method": batch.verification_method,
+                "verification_source_url": batch.verification_source_url,
+                "verification_reference": batch.verification_reference,
+                "verified_product_identifier": batch.verified_product_identifier,
+                "verified_scope": batch.verified_scope,
+                "accreditation_body_name": batch.accreditation_body_name,
                 "qr_code_present": bool(batch.qr_code),
                 "evidence_reference_present": bool(batch.evidence_reference),
                 "evidence_file_id": str(evidence_file.id) if decision == "approve" else None,
@@ -1136,7 +1194,14 @@ def verify_stock_batch_compliance(user, batch_id):
             "compliance_status": batch.compliance_status,
             "authority_name": batch.authority_name,
             "authority_country": batch.authority_country,
+            "authority_role": batch.authority_role,
             "certificate_reference": batch.certificate_reference,
+            "verification_method": batch.verification_method,
+            "verification_source_url": batch.verification_source_url,
+            "verification_reference": batch.verification_reference,
+            "verified_product_identifier": batch.verified_product_identifier,
+            "verified_scope": batch.verified_scope,
+            "accreditation_body_name": batch.accreditation_body_name,
             "verified_at": batch.verified_at.isoformat(),
             "evidence_file_id": str(evidence_file.id) if decision == "approve" else None,
         }
