@@ -496,7 +496,7 @@ def update_product(user, product_id):
     item = db.session.scalar(
         select(Product).where(
             Product.id == product_id, Product.company_id == _company_id()
-        )
+        ).with_for_update()
     )
     if item is None:
         return jsonify({"error": "Product not found."}), 404
