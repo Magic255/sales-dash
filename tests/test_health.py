@@ -60,6 +60,7 @@ def test_production_requires_mfa_encryption_key():
                 "SECRET_KEY": "production-test-secret",
                 "RATELIMIT_STORAGE_URI": "redis://localhost:6379/0",
                 "MFA_ENCRYPTION_KEY": None,
+                "COMPLIANCE_EVIDENCE_ENCRYPTION_KEY": Fernet.generate_key().decode(),
                 "SQLALCHEMY_DATABASE_URI": "sqlite://",
             }
         )
@@ -74,6 +75,7 @@ def test_production_rejects_invalid_mfa_encryption_key():
                 "SECRET_KEY": "production-test-secret",
                 "RATELIMIT_STORAGE_URI": "redis://localhost:6379/0",
                 "MFA_ENCRYPTION_KEY": "not-a-valid-fernet-key",
+                "COMPLIANCE_EVIDENCE_ENCRYPTION_KEY": Fernet.generate_key().decode(),
                 "SQLALCHEMY_DATABASE_URI": "sqlite://",
             }
         )
@@ -87,11 +89,58 @@ def test_production_accepts_valid_mfa_encryption_key():
             "SECRET_KEY": "production-test-secret",
             "RATELIMIT_STORAGE_URI": "redis://localhost:6379/0",
             "MFA_ENCRYPTION_KEY": Fernet.generate_key().decode(),
+            "COMPLIANCE_EVIDENCE_ENCRYPTION_KEY": Fernet.generate_key().decode(),
             "SQLALCHEMY_DATABASE_URI": "sqlite://",
         }
     )
 
     assert app.config["APP_ENV"] == "production"
+
+
+def test_production_requires_compliance_evidence_encryption_key():
+    with pytest.raises(RuntimeError, match="COMPLIANCE_EVIDENCE_ENCRYPTION_KEY must be set"):
+        create_app(
+            {
+                "TESTING": True,
+                "APP_ENV": "production",
+                "SECRET_KEY": "production-test-secret",
+                "RATELIMIT_STORAGE_URI": "redis://localhost:6379/0",
+                "MFA_ENCRYPTION_KEY": Fernet.generate_key().decode(),
+                "COMPLIANCE_EVIDENCE_ENCRYPTION_KEY": None,
+                "SQLALCHEMY_DATABASE_URI": "sqlite://",
+            }
+        )
+
+
+def test_production_rejects_invalid_compliance_evidence_encryption_key():
+    with pytest.raises(RuntimeError, match="COMPLIANCE_EVIDENCE_ENCRYPTION_KEY must be a valid Fernet key"):
+        create_app(
+            {
+                "TESTING": True,
+                "APP_ENV": "production",
+                "SECRET_KEY": "production-test-secret",
+                "RATELIMIT_STORAGE_URI": "redis://localhost:6379/0",
+                "MFA_ENCRYPTION_KEY": Fernet.generate_key().decode(),
+                "COMPLIANCE_EVIDENCE_ENCRYPTION_KEY": "invalid-evidence-key",
+                "SQLALCHEMY_DATABASE_URI": "sqlite://",
+            }
+        )
+
+
+def test_production_requires_distinct_mfa_and_evidence_keys():
+    shared_key = Fernet.generate_key().decode()
+    with pytest.raises(RuntimeError, match="must be distinct"):
+        create_app(
+            {
+                "TESTING": True,
+                "APP_ENV": "production",
+                "SECRET_KEY": "production-test-secret",
+                "RATELIMIT_STORAGE_URI": "redis://localhost:6379/0",
+                "MFA_ENCRYPTION_KEY": shared_key,
+                "COMPLIANCE_EVIDENCE_ENCRYPTION_KEY": shared_key,
+                "SQLALCHEMY_DATABASE_URI": "sqlite://",
+            }
+        )
 
 
 def test_production_requires_explicit_app_database_url(monkeypatch):
