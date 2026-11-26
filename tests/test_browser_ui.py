@@ -283,6 +283,10 @@ def test_admin_sales_reporting_invitation_and_audit_flows_work_in_browser(browse
                 "limited": False,
                 "count": len(state["sales"]),
             }
+        elif path == "/api/inventory":
+            data = {"items": []}
+        elif path == "/api/inventory/movements":
+            data = {"items": []}
         elif path == "/api/sales-targets":
             data = {"company_targets": [], "salesperson_targets": [], "salespeople": []}
         elif path == "/api/dashboard/analytics":
