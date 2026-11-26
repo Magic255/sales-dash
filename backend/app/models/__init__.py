@@ -271,6 +271,36 @@ class Product(db.Model):
     )
 
 
+class StockBatch(db.Model):
+    """A traceable stock receipt batch with an optional expiry date."""
+
+    __tablename__ = "stock_batches"
+    __table_args__ = (
+        db.UniqueConstraint(
+            "company_id", "product_id", "batch_code",
+            name="uq_stock_batches_company_product_code",
+        ),
+        db.ForeignKeyConstraint(
+            ["company_id", "product_id"],
+            ["products.company_id", "products.id"],
+            ondelete="NO ACTION",
+            name="fk_stock_batches_product_same_company",
+        ),
+        CheckConstraint("length(trim(batch_code)) > 0", name="batch_code_not_empty"),
+        db.Index("ix_stock_batches_company_product_expiry",
+                 "company_id", "product_id", "expiry_date"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    company_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    product_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    batch_code: Mapped[str] = mapped_column(String(80), nullable=False)
+    expiry_date: Mapped[date | None] = mapped_column(db.Date)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 class StockMovement(db.Model):
     """Append-only, company-scoped inventory movement ledger."""
 
@@ -281,6 +311,12 @@ class StockMovement(db.Model):
             ["products.company_id", "products.id"],
             ondelete="NO ACTION",
             name="fk_stock_movements_product_same_company",
+        ),
+        db.ForeignKeyConstraint(
+            ["company_id", "batch_id"],
+            ["stock_batches.company_id", "stock_batches.id"],
+            ondelete="NO ACTION",
+            name="fk_stock_movements_batch_same_company",
         ),
         db.ForeignKeyConstraint(
             ["company_id", "actor_user_id"],
@@ -304,6 +340,7 @@ class StockMovement(db.Model):
         Uuid(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False
     )
     product_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    batch_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
     actor_user_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
     movement_type: Mapped[str] = mapped_column(String(24), nullable=False)
     quantity: Mapped[Decimal] = mapped_column(db.Numeric(12, 3), nullable=False)
