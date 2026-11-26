@@ -648,10 +648,14 @@ async function loadInventory(generation = workspaceGeneration) {
   );
   fillSaleBatchChoices();
 
-  const movementData = await workspaceRequest("/api/inventory/movements");
-  if (generation !== workspaceGeneration) return;
   const movementBody = document.querySelector("#inventory-movement-rows");
   movementBody.replaceChildren();
+  if (!["admin", "manager"].includes(workspaceRole)) {
+    emptyRow(movementBody, 7, "Movement history is available to inventory managers.");
+    return;
+  }
+  const movementData = await workspaceRequest("/api/inventory/movements");
+  if (generation !== workspaceGeneration) return;
   if (!movementData.items.length) {
     emptyRow(movementBody, 7, "No stock movements have been recorded yet.");
   } else {
