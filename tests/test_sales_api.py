@@ -936,3 +936,43 @@ def test_order_level_discount_cannot_bypass_product_minimum_price():
         with application.app_context():
             db.session.remove()
             db.drop_all()
+
+
+def test_editing_draft_discount_writes_before_and_after_price_audit():
+    application, client = make_client("admin")
+    try:
+        customer = client.post("/api/customers", json={"name": "Discount Edit Customer"})
+        product = client.post("/api/products", json={
+            "sku": "DISCOUNT-EDIT-1", "name": "Discount Edit Product",
+            "unit_price": "100.00", "currency": "TZS",
+        })
+        sale = client.post("/api/sales", json={
+            "customer_id": customer.json["item"]["id"],
+            "currency": "TZS",
+            "items": [{"product_id": product.json["item"]["id"], "quantity": "1"}],
+        })
+        assert sale.status_code == 201
+        updated = client.patch(f"/api/sales/{sale.json['item']['id']}", json={
+            "customer_id": customer.json["item"]["id"],
+            "currency": "TZS",
+            "discount_amount": "5.00",
+            "items": [{
+                "product_id": product.json["item"]["id"],
+                "quantity": "1",
+                "discount_amount": "0.00",
+            }],
+        })
+        assert updated.status_code == 200
+        logs = client.get("/api/audit-logs?limit=20")
+        event = next(
+            item for item in logs.json["items"]
+            if item["event_type"] == "discount_applied"
+        )
+        assert event["details"]["old_discount_amount"] == "0.00"
+        assert event["details"]["new_discount_amount"] == "5.00"
+        assert event["details"]["items"][0]["base_unit_price"] == "100.00"
+        assert event["details"]["items"][0]["effective_unit_price"] == "95.00"
+    finally:
+        with application.app_context():
+            db.session.remove()
+            db.drop_all()
