@@ -7,7 +7,14 @@ from cryptography.fernet import Fernet
 
 from app import create_app
 from app.extensions import db
-from app.models import (Company, CompanyMembership, ComplianceEvidenceFile, Customer, Product, User)
+from app.models import (
+    Company,
+    CompanyMembership,
+    ComplianceEvidenceFile,
+    Customer,
+    Product,
+    User,
+)
 
 
 TEST_EVIDENCE_KEY = Fernet.generate_key().decode("ascii")
@@ -198,6 +205,7 @@ def test_category_market_policy_enforces_quarantine_authorities_and_admin_except
         "SQLALCHEMY_DATABASE_URI": "sqlite://",
         "WTF_CSRF_ENABLED": False,
         "RATELIMIT_ENABLED": False,
+        "COMPLIANCE_EVIDENCE_ENCRYPTION_KEY": TEST_EVIDENCE_KEY,
     })
     try:
         with app.app_context():
