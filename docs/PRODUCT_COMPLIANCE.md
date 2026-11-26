@@ -26,6 +26,14 @@ TBS (Tanzania Bureau of Standards) is one authority name a company may configure
 
 The accepted-authority list is maintained by the company Admin. It is a tenant-managed allow-list, not a global recognition registry. It does not prove that an authority or certificate is legally recognised in every jurisdiction, and it does not validate a certificate's scope, product identity or current status.
 
+**Standards body and accreditation body are not interchangeable.** A national standards body or regulator may issue product approvals under its own legal mandate. An accreditation body assesses the competence of testing, inspection or certification bodies. The authority, scheme, jurisdiction and exact scope all matter.
+
+TBS is Tanzania's national standards body and an ISO member. TBS publishes its own product-certification scheme, which refers to ISO/IEC 17065 and ISO/IEC 17067. This supports listing TBS where it is the competent authority for the relevant product and market; it does not mean every TBS certificate is automatically accepted worldwide.
+
+For internationally accredited conformity-assessment results, the current international reference is Global Accreditation Cooperation Incorporated (Global ACI), which became operational on 1 January 2026 and assumed the former IAF/ILAC recognition activities. Verification must check the accreditation body's current MRA status **and the relevant scope** (for example product certification under ISO/IEC 17065 versus testing under ISO/IEC 17025). A general membership listing without the required scope is insufficient. The issuing authority's own register or regulator source must still be checked for the specific certificate, product, scope and current validity.
+
+IAF CertSearch is limited to accredited management-system certificates; it must not be treated as a product-certificate verification service. Legacy IAF/ILAC pages may be useful for transition history, but new integrations should use Global ACI's current information and the relevant regulator/issuer registers.
+
 A QR value is currently required as a traceability input for approval, but this version does not decode QR images or resolve QR destinations against official registries. A QR code alone is not proof of approval. Certificate and evidence references are metadata only in this phase; private document upload/storage and official authority integrations are not included. Do not paste public or sensitive document URLs into the evidence-reference field.
 
 The receiver cannot verify their own batch. Admins and Managers can record approve, reject or recall decisions. An Admin exception is separate from a standards approval and requires an enabled policy plus a reason.
