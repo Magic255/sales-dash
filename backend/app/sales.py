@@ -522,11 +522,13 @@ def _allocate_fifo_movements(
     return created
 
 
-def _stock_movement_json(item):
+def _stock_movement_json(item, batch=None):
     return {
         "id": str(item.id),
         "product_id": str(item.product_id),
         "batch_id": str(item.batch_id) if item.batch_id else None,
+        "batch_code": batch.batch_code if batch else None,
+        "expiry_date": batch.expiry_date.isoformat() if batch and batch.expiry_date else None,
         "movement_type": item.movement_type,
         "quantity": str(item.quantity),
         "reason": item.reason,
@@ -651,8 +653,19 @@ def list_stock_movements(_user, product_id):
         .limit(200)
     ).all()
     on_hand, reserved, available = _stock_balance(company_id, product_id)
+    batch_ids = {item.batch_id for item in rows if item.batch_id}
+    batches = db.session.scalars(
+        select(StockBatch).where(
+            StockBatch.company_id == company_id,
+            StockBatch.id.in_(batch_ids),
+        )
+    ).all() if batch_ids else []
+    batch_by_id = {batch.id: batch for batch in batches}
     return jsonify({
-        "items": [_stock_movement_json(item) for item in rows],
+        "items": [
+            _stock_movement_json(item, batch_by_id.get(item.batch_id))
+            for item in rows
+        ],
         "balance": {
             "stock_on_hand": str(on_hand),
             "reserved_quantity": str(reserved),
