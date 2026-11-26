@@ -41,6 +41,10 @@ def upgrade():
             server_default=sa.func.now(), nullable=False,
         ),
         sa.PrimaryKeyConstraint("id"),
+        sa.ForeignKeyConstraint(
+            ["company_id"], ["companies.id"],
+            ondelete="CASCADE", name="fk_product_batches_company",
+        ),
         sa.UniqueConstraint(
             "company_id", "id", name="uq_product_batches_company_id_id"
         ),
@@ -103,6 +107,10 @@ def upgrade():
             server_default=sa.func.now(), nullable=False,
         ),
         sa.PrimaryKeyConstraint("id"),
+        sa.ForeignKeyConstraint(
+            ["company_id"], ["companies.id"],
+            ondelete="CASCADE", name="fk_stock_movements_company",
+        ),
         sa.UniqueConstraint(
             "company_id", "id", name="uq_stock_movements_company_id_id"
         ),
