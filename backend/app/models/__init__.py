@@ -290,6 +290,18 @@ class StockBatch(db.Model):
             ondelete="NO ACTION",
             name="fk_stock_batches_product_same_company",
         ),
+        db.ForeignKeyConstraint(
+            ["company_id", "received_by_user_id"],
+            ["company_memberships.company_id", "company_memberships.user_id"],
+            ondelete="NO ACTION",
+            name="fk_stock_batches_receiver_membership",
+        ),
+        db.ForeignKeyConstraint(
+            ["company_id", "verified_by_user_id"],
+            ["company_memberships.company_id", "company_memberships.user_id"],
+            ondelete="NO ACTION",
+            name="fk_stock_batches_verifier_membership",
+        ),
         CheckConstraint("length(trim(batch_code)) > 0", name="batch_code_not_empty"),
         CheckConstraint(
             "compliance_status IN ('approved', 'pending_verification', 'rejected', 'recalled')",
