@@ -187,6 +187,7 @@
         </div>
         <nav class="module-nav" aria-label="Sales workspace sections">
           <button type="button" class="module-tab is-active" data-workspace-tab="overview">Overview</button>
+          <button id="notifications-tab" type="button" class="module-tab" data-workspace-tab="notifications">Notifications</button>
           <button type="button" class="module-tab" data-workspace-tab="customers">Customers</button>
           <button type="button" class="module-tab" data-workspace-tab="products">Products</button>
           <button id="inventory-tab" type="button" class="module-tab" data-workspace-tab="inventory" hidden>Inventory</button>
@@ -243,6 +244,16 @@
               <tbody id="dashboard-salespeople-rows"><tr><td colspan="6">Loading team performance…</td></tr></tbody>
             </table></div>
           </div>
+        </section>
+        <section class="module-panel" data-workspace-panel="notifications" hidden>
+          <h3>Notifications</h3>
+          <p class="panel-copy">Private in-app updates for discount approval requests and decisions in this company.</p>
+          <button id="notifications-refresh" type="button" class="secondary-button">Refresh notifications</button>
+          <p id="notifications-message" class="form-message" role="status" aria-live="polite"></p>
+          <div class="table-wrap"><table class="data-table">
+            <thead><tr><th>Received</th><th>Notification</th><th>Details</th><th>Status</th><th>Action</th></tr></thead>
+            <tbody id="notification-rows"><tr><td colspan="5">Select a company to load notifications.</td></tr></tbody>
+          </table></div>
         </section>
         <section class="module-panel" data-workspace-panel="customers" hidden>
           <h3>Customers</h3><p class="panel-copy">Add and search customers for this company.</p>

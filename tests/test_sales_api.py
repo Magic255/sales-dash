@@ -1467,3 +1467,108 @@ def test_discontinued_inventory_is_labelled_and_cannot_be_sold():
         with application.app_context():
             db.session.remove()
             db.drop_all()
+
+
+def test_discount_approval_notifications_are_recipient_scoped_and_readable():
+    application, salesperson_client = make_client("salesperson")
+    try:
+        password = "a-very-strong-test-password"
+        with application.app_context():
+            company = db.session.query(Company).filter_by(
+                slug="sales-api-salesperson"
+            ).one()
+            admin = User(
+                email="notifications-admin@example.test",
+                password_hash=PasswordHasher().hash(password),
+                email_verified=True,
+            )
+            db.session.add(admin)
+            db.session.flush()
+            db.session.add(CompanyMembership(
+                user_id=admin.id,
+                company_id=company.id,
+                role="admin",
+                status="active",
+            ))
+            customer = Customer(
+                company_id=company.id,
+                created_by_user_id=admin.id,
+                name="Notification Customer",
+            )
+            product = Product(
+                company_id=company.id,
+                created_by_user_id=admin.id,
+                sku="NOTIFY-DISCOUNT-1",
+                name="Notification Product",
+                unit_price=Decimal("100.00"),
+                currency="TZS",
+            )
+            db.session.add_all([customer, product])
+            db.session.commit()
+            company_id = str(company.id)
+            customer_id = str(customer.id)
+            product_id = str(product.id)
+
+        admin_client = application.test_client()
+        login = admin_client.post("/api/auth/login", json={
+            "email": "notifications-admin@example.test",
+            "password": password,
+        })
+        assert login.status_code == 200
+        selected = admin_client.post(
+            "/api/auth/company", json={"company_id": company_id}
+        )
+        assert selected.status_code == 200
+
+        sale = salesperson_client.post("/api/sales", json={
+            "customer_id": customer_id,
+            "currency": "TZS",
+            "discount_amount": "10.00",
+            "approval_reason": "Customer volume discount request.",
+            "items": [{"product_id": product_id, "quantity": "1"}],
+        })
+        assert sale.status_code == 201
+
+        admin_notifications = admin_client.get("/api/notifications")
+        assert admin_notifications.status_code == 200
+        assert admin_notifications.json["unread_count"] == 1
+        request_notification = admin_notifications.json["items"][0]
+        assert request_notification["notification_type"] == (
+            "discount_approval_requested"
+        )
+        assert "Notification Customer" not in request_notification["message"]
+        assert "10.00%" in request_notification["message"]
+
+        approvals = admin_client.get("/api/discount-approvals")
+        assert approvals.status_code == 200
+        approval_id = approvals.json["items"][0]["id"]
+        decided = admin_client.post(
+            f"/api/discount-approvals/{approval_id}/decision",
+            json={"decision": "approve"},
+        )
+        assert decided.status_code == 200
+
+        salesperson_notifications = salesperson_client.get("/api/notifications")
+        assert salesperson_notifications.status_code == 200
+        assert salesperson_notifications.json["unread_count"] == 1
+        decision_notification = salesperson_notifications.json["items"][0]
+        assert decision_notification["notification_type"] == (
+            "discount_approval_decided"
+        )
+        assert "approved" in decision_notification["message"]
+
+        forbidden_read = admin_client.post(
+            f"/api/notifications/{decision_notification['id']}/read"
+        )
+        assert forbidden_read.status_code == 404
+        marked = salesperson_client.post(
+            f"/api/notifications/{decision_notification['id']}/read"
+        )
+        assert marked.status_code == 200
+        refreshed = salesperson_client.get("/api/notifications")
+        assert refreshed.json["unread_count"] == 0
+        assert refreshed.json["items"][0]["read_at"] is not None
+    finally:
+        with application.app_context():
+            db.session.remove()
+            db.drop_all()
