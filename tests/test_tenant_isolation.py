@@ -340,22 +340,21 @@ def test_inventory_batches_and_movements_are_company_isolated(postgres_app):
                 assert visible_batches == ["TENANT-BATCH-A"]
                 assert visible_movements == ["Company A opening stock."]
 
-            with db.session.begin():
-                db.session.execute(text("SET LOCAL ROLE sales_dash_app"))
-                set_tenant_context(db.session, user_a_id, company_a_id)
-                db.session.add(StockMovement(
-                    company_id=company_b_id,
-                    product_id=product_b_id,
-                    batch_id=batch_b_id,
-                    actor_user_id=user_b_id,
-                    movement_type="received",
-                    quantity_delta=Decimal("1.000"),
-                    reserved_delta=Decimal("0.000"),
-                    reason="Cross-company insert attempt.",
-                ))
-                with pytest.raises(DBAPIError):
-                    db.session.flush()
-                db.session.rollback()
+            db.session.execute(text("SET LOCAL ROLE sales_dash_app"))
+            set_tenant_context(db.session, user_a_id, company_a_id)
+            db.session.add(StockMovement(
+                company_id=company_b_id,
+                product_id=product_b_id,
+                batch_id=batch_b_id,
+                actor_user_id=user_b_id,
+                movement_type="received",
+                quantity_delta=Decimal("1.000"),
+                reserved_delta=Decimal("0.000"),
+                reason="Cross-company insert attempt.",
+            ))
+            with pytest.raises(DBAPIError):
+                db.session.flush()
+            db.session.rollback()
         finally:
             db.session.rollback()
             db.session.execute(
