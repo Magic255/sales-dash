@@ -851,3 +851,51 @@ def test_salesperson_cannot_view_weekly_team_discount_report():
         with application.app_context():
             db.session.remove()
             db.drop_all()
+
+
+def test_completion_rechecks_current_product_floor_and_audits_admin_override():
+    application, client = make_client("admin")
+    try:
+        customer = client.post("/api/customers", json={"name": "Recheck Floor Customer"})
+        product = client.post("/api/products", json={
+            "sku": "RECHECK-FLOOR-1", "name": "Recheck Floor Product",
+            "unit_price": "100.00", "cost_price": "70.00",
+            "minimum_selling_price": "80.00", "currency": "TZS",
+        })
+        assert customer.status_code == 201
+        assert product.status_code == 201
+        sale = client.post("/api/sales", json={
+            "customer_id": customer.json["item"]["id"],
+            "currency": "TZS",
+            "discount_amount": "10.00",
+            "items": [{"product_id": product.json["item"]["id"], "quantity": "1"}],
+        })
+        assert sale.status_code == 201
+        changed = client.patch(
+            f"/api/products/{product.json['item']['id']}",
+            json={"minimum_selling_price": "95.00"},
+        )
+        assert changed.status_code == 200
+
+        sale_id = sale.json["item"]["id"]
+        blocked = client.post(f"/api/sales/{sale_id}/complete", json={})
+        assert blocked.status_code == 400
+        assert "override requires a reason" in blocked.json["error"]
+
+        completed = client.post(f"/api/sales/{sale_id}/complete", json={
+            "price_floor_override_reason": "Existing quote honoured after floor update.",
+        })
+        assert completed.status_code == 200
+        assert completed.json["item"]["status"] == "completed"
+        logs = client.get("/api/audit-logs?limit=20")
+        override = next(
+            event for event in logs.json["items"]
+            if event["event_type"] == "price_floor_override"
+        )
+        assert override["details"]["reason"] == (
+            "Existing quote honoured after floor update."
+        )
+    finally:
+        with application.app_context():
+            db.session.remove()
+            db.drop_all()
