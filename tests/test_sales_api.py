@@ -13,7 +13,6 @@ from app.models import (
     DiscountApprovalRequest,
     Product,
     Sale,
-    StockMovement,
     User,
 )
 
