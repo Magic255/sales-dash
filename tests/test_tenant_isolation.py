@@ -9,7 +9,13 @@ from sqlalchemy.exc import DBAPIError
 from app import create_app
 from app.extensions import db
 from app.models import (
-    Company, CompanyMembership, Customer, Product, ProductBatch, StockMovement, User,
+    Company,
+    CompanyMembership,
+    Customer,
+    Product,
+    ProductBatch,
+    StockMovement,
+    User,
 )
 from app.tenancy import TenantAccessDenied, set_tenant_context
 
