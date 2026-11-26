@@ -347,7 +347,7 @@ function renderCustomers() {
 function renderProducts() {
   const body = document.querySelector("#product-rows");
   body.replaceChildren();
-  if (!products.length) return emptyRow(body, 7, "No products yet. Add the first product above.");
+  if (!products.length) return emptyRow(body, 8, "No products yet. Add the first product above.");
   for (const item of products) {
     const row = document.createElement("tr");
     textCell(row, item.sku);
@@ -355,6 +355,7 @@ function renderProducts() {
     textCell(row, amount(item.currency, item.unit_price));
     textCell(row, amount(item.currency, item.minimum_selling_price));
     textCell(row, item.currency);
+    textCell(row, item.track_inventory ? "Tracked" : "Not tracked");
     textCell(row, item.is_active ? "Active" : "Archived");
     const actions = document.createElement("td");
     if (canManageProducts()) {
