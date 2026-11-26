@@ -10,7 +10,7 @@ from sqlalchemy.exc import IntegrityError
 
 from .auth import login_required
 from .extensions import db
-from .models import Product, ProductBatch, StockMovement, User
+from .models import Product, ProductBatch, StockMovement
 from .permissions import company_permission_required
 
 inventory_bp = Blueprint("inventory", __name__, url_prefix="/api/inventory")
@@ -159,6 +159,7 @@ def record_sale_stock_movements(session_company_id, sale, user, *, returning=Fal
             batch_id=batch.id,
             sale_id=sale.id,
             actor_user_id=user.id,
+            actor_label=(user.display_name or user.email)[:255],
             movement_type=movement_type,
             quantity_delta=quantity_delta,
             reserved_delta=Decimal("0.000"),
@@ -288,13 +289,11 @@ def inventory_movements(_user):
     rows = db.session.execute(
         select(
             StockMovement, Product.name, Product.sku, ProductBatch.batch_code,
-            User.display_name, User.email,
         )
         .join(Product, (Product.id == StockMovement.product_id)
               & (Product.company_id == StockMovement.company_id))
         .join(ProductBatch, (ProductBatch.id == StockMovement.batch_id)
               & (ProductBatch.company_id == StockMovement.company_id))
-        .join(User, User.id == StockMovement.actor_user_id)
         .where(StockMovement.company_id == company_id)
         .order_by(StockMovement.created_at.desc())
         .limit(200)
@@ -308,9 +307,9 @@ def inventory_movements(_user):
         "quantity_delta": str(movement.quantity_delta),
         "reserved_delta": str(movement.reserved_delta),
         "reason": movement.reason,
-        "actor": display_name or email,
+        "actor": movement.actor_label,
         "created_at": movement.created_at.isoformat(),
-    } for movement, product_name, sku, batch_code, display_name, email in rows]})
+    } for movement, product_name, sku, batch_code in rows]})
 
 
 @inventory_bp.post("/batches")
@@ -433,6 +432,7 @@ def create_inventory_movement(user):
             product_id=product_id,
             batch_id=batch_id,
             actor_user_id=user.id,
+            actor_label=(user.display_name or user.email)[:255],
             movement_type=movement_type,
             quantity_delta=quantity_delta,
             reserved_delta=reserved_delta,
