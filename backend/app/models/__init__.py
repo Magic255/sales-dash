@@ -381,6 +381,7 @@ class StockMovement(db.Model):
     batch_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
     sale_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
     actor_user_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    actor_label: Mapped[str] = mapped_column(String(255), nullable=False)
     movement_type: Mapped[str] = mapped_column(String(20), nullable=False)
     quantity_delta: Mapped[Decimal] = mapped_column(
         db.Numeric(12, 3), nullable=False, default=0, server_default="0"
