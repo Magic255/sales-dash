@@ -3,6 +3,7 @@ let workspaceRole = "";
 let workspaceUserId = "";
 let customers = [];
 let products = [];
+let inventorySummary = [];
 let workspaceGeneration = 0;
 let salespersonTargets = [];
 
@@ -275,6 +276,14 @@ async function editProduct(item) {
     "Minimum selling price", item.minimum_selling_price || "0.00"
   );
   if (minimumSellingPrice === null) return;
+  const trackInventory = window.confirm(
+    "Track stock and batches for this product? Current setting: " +
+    (item.track_inventory ? "enabled" : "disabled")
+  );
+  const reorderLevel = window.prompt(
+    "Low-stock alert level", item.reorder_level || "0.000"
+  );
+  if (reorderLevel === null) return;
   const currency = window.prompt("Currency (3-letter code)", item.currency);
   if (currency === null) return;
   try {
@@ -282,7 +291,8 @@ async function editProduct(item) {
       method: "PATCH",
       body: JSON.stringify({
         sku, name, description, unit_price: unitPrice,
-        cost_price: costPrice, minimum_selling_price: minimumSellingPrice, currency,
+        cost_price: costPrice, minimum_selling_price: minimumSellingPrice,
+        track_inventory: trackInventory, reorder_level: reorderLevel, currency,
       }),
     });
     await loadWorkspace();
@@ -881,6 +891,8 @@ document.querySelector("#product-form").addEventListener("submit", async (event)
         unit_price: document.querySelector("#product-price").value,
         cost_price: document.querySelector("#product-cost").value,
         minimum_selling_price: document.querySelector("#product-minimum-price").value,
+        track_inventory: document.querySelector("#product-track-inventory").checked,
+        reorder_level: document.querySelector("#product-reorder-level").value,
         currency: document.querySelector("#product-currency").value,
       }),
     });
@@ -918,6 +930,7 @@ document.querySelector("#sale-form").addEventListener("submit", async (event) =>
           product_id: product.id,
           quantity: document.querySelector("#sale-quantity").value,
           discount_amount: document.querySelector("#sale-item-discount").value || "0",
+          batch_id: document.querySelector("#sale-batch").value || null,
         }],
       }),
     });
