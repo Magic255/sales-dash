@@ -164,6 +164,10 @@ def upgrade():
         "ix_stock_movements_company_product",
         "stock_movements", ["company_id", "product_id"],
     )
+    op.create_index(
+        "ix_stock_movements_company_created",
+        "stock_movements", ["company_id", "created_at"],
+    )
 
     for table in ("product_batches", "stock_movements"):
         op.execute(f"GRANT SELECT, INSERT ON {table} TO sales_dash_app")
@@ -193,6 +197,7 @@ def downgrade():
         op.execute(f"ALTER TABLE {table} DISABLE ROW LEVEL SECURITY")
         op.execute(f"REVOKE SELECT, INSERT ON {table} FROM sales_dash_app")
 
+    op.drop_index("ix_stock_movements_company_created", table_name="stock_movements")
     op.drop_index("ix_stock_movements_company_product", table_name="stock_movements")
     op.drop_index("ix_stock_movements_company_batch", table_name="stock_movements")
     op.drop_table("stock_movements")
