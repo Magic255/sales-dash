@@ -350,6 +350,9 @@ class StockMovement(db.Model):
             name="stock_movement_nonzero",
         ),
         CheckConstraint(
+            "length(trim(reason)) > 0", name="stock_movement_reason_not_empty"
+        ),
+        CheckConstraint(
             "(movement_type IN ('received', 'returned') AND quantity_delta > 0 "
             "AND reserved_delta = 0) OR "
             "(movement_type IN ('sold', 'damaged') AND quantity_delta < 0 "
