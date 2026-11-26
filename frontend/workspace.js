@@ -569,6 +569,30 @@ async function loadInventory(generation = workspaceGeneration) {
       body.append(row);
     }
   }
+  const batchBody = document.querySelector("#inventory-batch-rows");
+  batchBody.replaceChildren();
+  const batchRows = inventorySummary.flatMap((product) =>
+    product.batches.map((batch) => ({product, batch}))
+  );
+  if (!batchRows.length) {
+    emptyRow(batchBody, 7, "No product batches have been created yet.");
+  } else {
+    for (const {product, batch} of batchRows) {
+      const row = document.createElement("tr");
+      const expired = batch.expiry_date && batch.expiry_date < localDate();
+      const available = Math.max(
+        0, Number(batch.on_hand) - Number(batch.reserved)
+      );
+      textCell(row, product.sku);
+      textCell(row, product.name);
+      textCell(row, batch.batch_code);
+      textCell(row, batch.expiry_date || "No expiry date");
+      textCell(row, batch.on_hand);
+      textCell(row, available.toFixed(3));
+      textCell(row, expired ? "Expired" : available > 0 ? "Available" : "Out of stock");
+      batchBody.append(row);
+    }
+  }
   const trackedProducts = products.filter((item) => item.track_inventory && item.is_active);
   for (const id of ["inventory-batch-product", "inventory-movement-product"]) {
     const select = document.querySelector("#" + id);
