@@ -327,6 +327,7 @@ def test_inventory_batches_and_movements_are_company_isolated(postgres_app):
         db.session.add_all([movement_a, movement_b])
         user_a_id, user_b_id = user_a.id, user_b.id
         company_a_id, company_b_id = company_a.id, company_b.id
+        product_a_id = product_a.id
         product_b_id, batch_b_id = product_b.id, batch_b.id
         db.session.commit()
 
@@ -341,7 +342,7 @@ def test_inventory_batches_and_movements_are_company_isolated(postgres_app):
                 set_tenant_context(db.session, user_a_id, company_a_id)
                 app_batch = ProductBatch(
                     company_id=company_a_id,
-                    product_id=product_a.id,
+                    product_id=product_a_id,
                     batch_code="TENANT-BATCH-A-APP",
                     created_by_user_id=user_a_id,
                 )
@@ -349,7 +350,7 @@ def test_inventory_batches_and_movements_are_company_isolated(postgres_app):
                 db.session.flush()
                 db.session.add(StockMovement(
                     company_id=company_a_id,
-                    product_id=product_a.id,
+                    product_id=product_a_id,
                     batch_id=app_batch.id,
                     actor_user_id=user_a_id,
                     actor_label="Company A app actor",
