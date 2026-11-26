@@ -120,6 +120,8 @@ def record_sale_stock_movements(session_company_id, sale, user, *, returning=Fal
             raise ValueError("A product on this sale could not be checked for stock.")
         if not product.track_inventory:
             continue
+        if not product.is_active and not returning:
+            raise ValueError(f"Product {product.sku} has been discontinued.")
         if line.batch_id is None:
             if returning:
                 continue
