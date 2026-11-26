@@ -34,11 +34,21 @@ For internationally accredited conformity-assessment results, the current intern
 
 IAF CertSearch is limited to accredited management-system certificates; it must not be treated as a product-certificate verification service. Legacy IAF/ILAC pages may be useful for transition history, but new integrations should use Global ACI's current information and the relevant regulator/issuer registers.
 
-A QR value is currently required as a traceability input for approval, but this version does not decode QR images or resolve QR destinations against official registries. A QR code alone is not proof of approval. Certificate and evidence references are metadata only in this phase; private document upload/storage and official authority integrations are not included. Do not paste public or sensitive document URLs into the evidence-reference field.
+A QR value is currently required as a traceability input for approval, but this version does not decode QR images or resolve QR destinations against official registries. A QR code alone is not proof of approval. Approval now requires an actual evidence file uploaded against that exact batch; a typed URL or arbitrary evidence reference is not accepted.
 
 The receiver cannot verify their own batch. Admins and Managers can record approve, reject or recall decisions. An Admin exception is separate from a standards approval and requires an enabled policy plus a reason.
 
 SALES DASH records the business's evidence and staff verification decision. It does not issue legal certification, independently establish regulatory recognition, or replace a competent authority's determination.
+
+## Private evidence file handling
+
+Authorised Admins and Managers can upload evidence against a specific stock batch. The current implementation accepts PDF, JPEG, PNG and WebP files up to 8 MB, validates the file signature as well as the filename extension, encrypts the bytes with a dedicated Fernet key before storing them in PostgreSQL, and records a SHA-256 integrity digest. Evidence is not placed in a public bucket or exposed through a public URL.
+
+Evidence records are company- and batch-scoped with composite foreign keys and forced PostgreSQL RLS. The restricted runtime database role has SELECT and INSERT only on the evidence table; it has no UPDATE or DELETE grant. The upload and download actions are recorded in the audit log. Downloads require an authenticated Admin or Manager, are returned as attachments with `Cache-Control: no-store`, and verify the digest after decryption. A verifier can only approve a batch using an evidence file uploaded for that same batch.
+
+Production requires a separate `COMPLIANCE_EVIDENCE_ENCRYPTION_KEY` environment secret. It must be a valid Fernet key, distinct from the MFA encryption key, backed up in the approved secrets vault, and never committed to Git or shared in chat. Losing the key makes stored evidence unreadable; rotation needs a controlled re-encryption plan. Database backups contain encrypted evidence and the key must be recovered separately.
+
+This phase does not scan uploads for malware, parse certificate contents, validate a certificate's legal scope or status, or verify QR destinations against official registries. Files are downloaded as attachments rather than rendered inline. There is not yet a retention/deletion workflow. Upload only trusted documents while these controls are pending.
 
 ## Expiry
 
@@ -48,7 +58,7 @@ The existing 30-day indicator is only a warning lead-time for a supplied expiry 
 
 ## Remaining work
 
-- Private evidence document upload and access-controlled storage; current evidence references are metadata only.
+- Official QR decoding and trusted certificate/authority verification integrations, where suitable sources and permissions exist.
 - Trusted QR decoding and official certificate/authority verification integrations, where suitable sources and permissions exist.
 - Evidence scope and product/manufacturer identity checks, certificate validity/revocation handling, and batch-level inspection reporting.
 - Configurable expiry warning lead-times and recall traceability reporting.
