@@ -1267,6 +1267,11 @@ def complete_sale(user, sale_id):
         )
     except ValueError as error:
         return jsonify({"error": str(error)}), 400
+    try:
+        record_sale_stock_movements(item.company_id, item, user)
+    except ValueError as error:
+        db.session.rollback()
+        return jsonify({"error": str(error)}), 400
     item.status = "completed"
     db.session.flush()
     result = _sale_json(item)
@@ -1277,14 +1282,20 @@ def complete_sale(user, sale_id):
 @sales_bp.post("/sales/<uuid:sale_id>/void")
 @login_required
 @company_permission_required("delete_sales")
-def void_sale(_user, sale_id):
+def void_sale(user, sale_id):
     item = db.session.scalar(select(Sale).where(
         Sale.id == sale_id, Sale.company_id == _company_id()
-    ))
+    ).with_for_update())
     if item is None:
         return jsonify({"error": "Sale not found."}), 404
     if item.status == "void":
         return jsonify({"error": "This sale is already void."}), 409
+    if item.status == "completed":
+        try:
+            record_sale_stock_movements(item.company_id, item, user, returning=True)
+        except ValueError as error:
+            db.session.rollback()
+            return jsonify({"error": str(error)}), 400
     item.status = "void"
     db.session.flush()
     result = _sale_json(item)
