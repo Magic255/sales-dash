@@ -1128,7 +1128,7 @@ def complete_sale(user, sale_id):
         _check_price_floor(
             [
                 (products_by_id[line.product_id], line.quantity,
-                 line.discount_amount, line.line_total)
+                 line.unit_price, line.discount_amount, line.line_total)
                 for line in sale_lines
             ],
             max(order_discount, Decimal("0.00")),
