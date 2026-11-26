@@ -581,10 +581,6 @@ async function loadInventory(generation = workspaceGeneration) {
     document.querySelector("#inventory-movement-batch"),
     document.querySelector("#inventory-movement-product").value,
   );
-  fillInventoryBatchOptions(
-    document.querySelector("#inventory-batch-product"),
-    document.querySelector("#inventory-batch-product").value,
-  );
   fillSaleBatchChoices();
 
   const movementData = await workspaceRequest("/api/inventory/movements");
