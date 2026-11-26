@@ -127,7 +127,7 @@ def record_sale_stock_movements(session_company_id, sale, user, *, returning=Fal
                 ProductBatch.company_id == session_company_id,
                 ProductBatch.id == line.batch_id,
                 ProductBatch.product_id == product.id,
-            ).with_for_update()
+            )
         )
         if batch is None:
             raise ValueError("The selected product batch could not be found.")
@@ -377,7 +377,7 @@ def create_inventory_movement(user):
                 ProductBatch.company_id == company_id,
                 ProductBatch.id == batch_id,
                 ProductBatch.product_id == product_id,
-            ).with_for_update()
+            )
         )
         if product is None or not product.track_inventory or batch is None:
             raise ValueError("Choose a valid tracked product and one of its batches.")
