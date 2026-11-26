@@ -67,6 +67,7 @@ async function loadAuditLogs(generation = workspaceGeneration) {
       discount_limits_updated: "Discount limits updated",
       discount_approval_requested: "Discount approval requested",
       discount_approval_decided: "Discount approval decided",
+      discount_applied: "Sale discount applied or changed",
       login_succeeded: "Signed in",
       password_changed: "Password changed",
       company_selected: "Company selected",
