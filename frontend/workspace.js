@@ -619,12 +619,13 @@ async function loadInventory(generation = workspaceGeneration) {
     textCell(row, item.reserved_quantity);
     textCell(row, item.available_quantity);
     textCell(row, item.expired_quantity || "0.000");
+    textCell(row, item.expiring_soon_quantity || "0.000");
     textCell(row, item.low_stock_threshold);
     textCell(row, item.status.replaceAll("_", " "));
     body.append(row);
   }
   if (!data.items.length) {
-    emptyRow(body, 8, "No products currently have inventory tracking enabled.");
+    emptyRow(body, 9, "No products currently have inventory tracking enabled.");
   }
   const current = trackedProducts.some((product) => product.id === previousProductId)
     ? previousProductId : (trackedProducts[0] ? trackedProducts[0].id : "");
