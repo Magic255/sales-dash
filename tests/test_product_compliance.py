@@ -169,7 +169,12 @@ def test_compliance_required_stock_is_received_to_quarantine_until_independent_v
 
         uploaded = verifier_client.post(
             f"/api/stock-batches/{batch_id}/evidence",
-            data={"file": (BytesIO(b"%PDF-1.7\\nsynthetic certificate evidence\\n"), "certificate.pdf")},
+            data={
+                "file": (
+                    BytesIO(b"%PDF-1.7\\nsynthetic certificate evidence\\n"),
+                    "certificate.pdf",
+                )
+            },
             content_type="multipart/form-data",
         )
         assert uploaded.status_code == 201
@@ -332,7 +337,12 @@ def test_category_market_policy_enforces_quarantine_authorities_and_admin_except
 
         uploaded = admin_client.post(
             f"/api/stock-batches/{batch_id}/evidence",
-            data={"file": (BytesIO(b"%PDF-1.7\\nsynthetic policy evidence\\n"), "policy-certificate.pdf")},
+            data={
+                "file": (
+                    BytesIO(b"%PDF-1.7\\nsynthetic policy evidence\\n"),
+                    "policy-certificate.pdf",
+                )
+            },
             content_type="multipart/form-data",
         )
         assert uploaded.status_code == 201
