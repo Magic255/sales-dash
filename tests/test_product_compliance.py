@@ -242,6 +242,23 @@ def test_compliance_required_stock_is_received_to_quarantine_until_independent_v
         )
         assert invalid_source.status_code == 400
 
+        missing_accreditation_body = verifier_client.post(
+            f"/api/stock-batches/{batch_id}/compliance",
+            json={
+                "decision": "approve",
+                "qr_code": "QR-SYNTHETIC-001",
+                "authority_name": "Tanzania Bureau of Standards",
+                "authority_country": "TZ",
+                "certificate_reference": "TBS-SYNTHETIC-123",
+                **_verification_details(
+                    "https://www.sadcas.org/accredited-organisations/product-certification-bodies"
+                ),
+                "verification_method": "accreditation_scope",
+                "evidence_file_id": evidence_file_id,
+            },
+        )
+        assert missing_accreditation_body.status_code == 400
+
         approved = verifier_client.post(
             f"/api/stock-batches/{batch_id}/compliance",
             json={
@@ -393,7 +410,11 @@ def test_category_market_policy_enforces_quarantine_authorities_and_admin_except
                 "decision": "approve", "qr_code": "SYNTHETIC-QR-FOOD",
                 "authority_name": "Tanzania Bureau of Standards", "authority_country": "TZ",
                 "certificate_reference": "SYNTHETIC-CERT-1",
-                **_verification_details(),
+                **_verification_details(
+                    "https://www.sadcas.org/accredited-organisations/product-certification-bodies"
+                ),
+                "verification_method": "accreditation_scope",
+                "accreditation_body_name": "SADCAS",
                 "evidence_file_id": uploaded.json["item"]["id"],
             },
         )
