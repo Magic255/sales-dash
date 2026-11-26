@@ -65,6 +65,21 @@ def upgrade():
     op.execute("GRANT UPDATE (read_at) ON app_notifications TO sales_dash_app")
     op.execute("ALTER TABLE app_notifications ENABLE ROW LEVEL SECURITY")
     op.execute("ALTER TABLE app_notifications FORCE ROW LEVEL SECURITY")
+    # The runtime can discover only active Admin membership IDs in the
+    # currently selected company; it cannot read other members' rows.
+    op.execute(
+        """
+        CREATE POLICY memberships_read_company_admins
+        ON company_memberships
+        FOR SELECT TO sales_dash_app
+        USING (
+            role = 'admin'
+            AND status = 'active'
+            AND company_id =
+                NULLIF(current_setting('app.current_company_id', true), '')::uuid
+        )
+        """
+    )
     op.execute(
         """
         CREATE POLICY app_notifications_recipient_select
@@ -119,6 +134,9 @@ def downgrade():
     )
     op.execute(
         "DROP POLICY IF EXISTS app_notifications_recipient_select ON app_notifications"
+    )
+    op.execute(
+        "DROP POLICY IF EXISTS memberships_read_company_admins ON company_memberships"
     )
     op.execute("ALTER TABLE app_notifications NO FORCE ROW LEVEL SECURITY")
     op.execute("ALTER TABLE app_notifications DISABLE ROW LEVEL SECURITY")
