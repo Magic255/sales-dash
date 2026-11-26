@@ -868,6 +868,9 @@ document.addEventListener("salesdash:company-selected", (event) => {
   document.querySelector("#discount-approvals-tab").hidden = workspaceRole !== "admin";
   document.querySelector("#inventory-tab").hidden =
     !["admin", "manager"].includes(workspaceRole);
+  document.querySelectorAll("[data-admin-only]").forEach((option) => {
+    option.hidden = workspaceRole !== "admin";
+  });
   document.querySelector("#weekly-discount-report").hidden =
     !["admin", "manager"].includes(workspaceRole);
   const auditPanel = document.querySelector("#audit-panel");
@@ -963,6 +966,83 @@ document.querySelector("#customer-form").addEventListener("submit", async (event
     form.reset();
     selectTab("customers");
     await loadWorkspace();
+  } catch (error) {
+    workspaceMessage(error.message);
+  } finally {
+    button.disabled = false;
+  }
+});
+
+document.querySelector("#inventory-tab").addEventListener("click", async () => {
+  try {
+    await loadInventory();
+  } catch (error) {
+    workspaceMessage(error.message);
+  }
+});
+
+document.querySelector("#inventory-movement-product").addEventListener("change", (event) => {
+  fillInventoryBatchOptions(
+    document.querySelector("#inventory-movement-batch"), event.currentTarget.value
+  );
+});
+
+document.querySelector("#sale-product").addEventListener("change", fillSaleBatchChoices);
+
+document.querySelector("#inventory-movement-type").addEventListener("change", (event) => {
+  const adjusted = event.currentTarget.value === "adjusted";
+  document.querySelector("#inventory-quantity-label").textContent =
+    adjusted ? "Quantity delta (+ or -)" : "Quantity";
+  const input = document.querySelector("#inventory-movement-quantity");
+  input.min = adjusted ? "-999999999" : "0.001";
+});
+
+document.querySelector("#inventory-batch-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const button = form.querySelector("button");
+  button.disabled = true;
+  try {
+    await workspaceRequest("/api/inventory/batches", {
+      method: "POST",
+      body: JSON.stringify({
+        product_id: document.querySelector("#inventory-batch-product").value,
+        batch_code: document.querySelector("#inventory-batch-code").value,
+        expiry_date: document.querySelector("#inventory-batch-expiry").value || null,
+      }),
+    });
+    form.reset();
+    await loadWorkspace();
+    workspaceMessage("Product batch created.");
+  } catch (error) {
+    workspaceMessage(error.message);
+  } finally {
+    button.disabled = false;
+  }
+});
+
+document.querySelector("#inventory-movement-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const button = form.querySelector("button");
+  const movementType = document.querySelector("#inventory-movement-type").value;
+  const quantity = document.querySelector("#inventory-movement-quantity").value;
+  const payload = {
+    product_id: document.querySelector("#inventory-movement-product").value,
+    batch_id: document.querySelector("#inventory-movement-batch").value,
+    movement_type: movementType,
+    reason: document.querySelector("#inventory-movement-reason").value,
+  };
+  if (movementType === "adjusted") payload.quantity_delta = quantity;
+  else payload.quantity = quantity;
+  button.disabled = true;
+  try {
+    await workspaceRequest("/api/inventory/movements", {
+      method: "POST", body: JSON.stringify(payload),
+    });
+    form.reset();
+    await loadWorkspace();
+    workspaceMessage("Stock movement recorded in the immutable ledger.");
   } catch (error) {
     workspaceMessage(error.message);
   } finally {
