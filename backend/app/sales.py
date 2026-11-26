@@ -15,6 +15,7 @@ from .auth import login_required
 from .extensions import db
 from .models import (
     AppNotification,
+    CategoryCompliancePolicy,
     Company,
     CompanyMembership,
     Customer,
@@ -35,6 +36,40 @@ MILLI = Decimal("0.001")
 
 def _company_id():
     return UUID(session["company_id"])
+
+
+def _country_code(value, *, required=False):
+    if value in (None, ""):
+        if required:
+            raise ValueError("A market country code is required.")
+        return None
+    if not isinstance(value, str):
+        raise ValueError("Country must be a two-letter ISO country code.")
+    result = value.strip().upper()
+    if len(result) != 2 or not result.isascii() or not result.isalpha():
+        raise ValueError("Country must be a two-letter ISO country code.")
+    return result
+
+
+def _category_compliance_policy(company_id, category_key, market_country):
+    if not market_country:
+        return None
+    return db.session.scalar(
+        select(CategoryCompliancePolicy).where(
+            CategoryCompliancePolicy.company_id == company_id,
+            CategoryCompliancePolicy.category_key == category_key,
+            CategoryCompliancePolicy.market_country == market_country,
+        )
+    )
+
+
+def _apply_category_compliance_policy(product):
+    policy = _category_compliance_policy(
+        product.company_id, product.category_key, product.market_country
+    )
+    if policy and policy.approval_mode in {"required", "admin_exception"}:
+        product.compliance_required = True
+    return policy
 
 
 def _discount_limit(company, role):
