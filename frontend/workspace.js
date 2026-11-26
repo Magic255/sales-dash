@@ -654,6 +654,7 @@ async function loadInventoryBatches(productId, generation = workspaceGeneration)
     "/api/products/" + encodeURIComponent(productId) + "/stock-batches"
   );
   if (generation !== workspaceGeneration) return;
+  const batchProduct = products.find((entry) => entry.id === productId);
   if (!data.items.length) {
     emptyRow(body, 8, "No batches have been recorded for this product.");
     return;
@@ -668,6 +669,24 @@ async function loadInventoryBatches(productId, generation = workspaceGeneration)
     textCell(row, batch.compliance_status.replaceAll("_", " "));
     textCell(row, batch.status.replaceAll("_", " "));
     const actions = document.createElement("td");
+    if (batchProduct && batchProduct.market_country === "TZ") {
+      const tbsLink = document.createElement("a");
+      tbsLink.href = "https://tbs.go.tz/certified-product-companies";
+      tbsLink.target = "_blank";
+      tbsLink.rel = "noopener noreferrer";
+      tbsLink.textContent = "TBS product register";
+      tbsLink.className = "table-action";
+      tbsLink.style.display = "block";
+      actions.append(tbsLink);
+      const sadcasLink = document.createElement("a");
+      sadcasLink.href = "https://www.sadcas.org/accredited-organisations/product-certification-bodies";
+      sadcasLink.target = "_blank";
+      sadcasLink.rel = "noopener noreferrer";
+      sadcasLink.textContent = "SADCAS accreditation scope";
+      sadcasLink.className = "table-action";
+      sadcasLink.style.display = "block";
+      actions.append(sadcasLink);
+    }
     if (["pending_verification", "approved", "exception_approved"].includes(batch.compliance_status)) {
       const review = document.createElement("button");
       review.type = "button";
@@ -700,6 +719,45 @@ async function loadInventoryBatches(productId, generation = workspaceGeneration)
           if (payload.authority_country === null) return;
           payload.certificate_reference = window.prompt("Certificate reference", "");
           if (payload.certificate_reference === null) return;
+          payload.authority_role = window.prompt(
+            "Issuer role: standards_body, regulator, certification_body, accreditation_body, testing_lab, inspection_body, other",
+            /tbs|tanzania bureau/i.test(payload.authority_name) ? "standards_body" : "regulator",
+          );
+          if (payload.authority_role === null) return;
+          payload.verification_method = window.prompt(
+            "How did you check it? official_registry, accreditation_scope, issuer_confirmation, document_review",
+            "official_registry",
+          );
+          if (payload.verification_method === null) return;
+          const isTbs = /tbs|tanzania bureau/i.test(payload.authority_name);
+          const defaultSource = payload.verification_method === "accreditation_scope" && isTbs
+            ? "https://www.sadcas.org/accredited-organisations/product-certification-bodies"
+            : isTbs ? "https://tbs.go.tz/certified-product-companies" : "";
+          payload.verification_source_url = window.prompt(
+            "HTTPS official registry / accreditation source URL (required for registry or scope checks)",
+            defaultSource,
+          ) || "";
+          payload.verification_reference = window.prompt(
+            "Registry licence, accreditation number, or issuer case reference",
+            payload.certificate_reference,
+          ) || "";
+          payload.verified_product_identifier = window.prompt(
+            "Exact product, brand, model or batch identity you matched",
+            batchProduct ? batchProduct.name + (batchProduct.sku ? " / " + batchProduct.sku : "") : "",
+          );
+          if (payload.verified_product_identifier === null) return;
+          payload.verified_scope = window.prompt(
+            "Exact product category, standard and market scope confirmed",
+            "",
+          );
+          if (payload.verified_scope === null) return;
+          if (payload.verification_method === "accreditation_scope") {
+            payload.accreditation_body_name = window.prompt(
+              "Accreditation body whose scope you checked",
+              isTbs ? "SADCAS" : "",
+            );
+            if (payload.accreditation_body_name === null) return;
+          }
           payload.standard_reference = window.prompt("Standard / regulation reference (optional)", "") || "";
           const fileInput = document.createElement("input");
           fileInput.type = "file";
