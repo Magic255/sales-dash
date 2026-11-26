@@ -612,7 +612,7 @@ async function loadInventory(generation = workspaceGeneration) {
   const movementBody = document.querySelector("#inventory-movement-rows");
   movementBody.replaceChildren();
   if (!movementData.items.length) {
-    emptyRow(movementBody, 6, "No stock movements have been recorded yet.");
+    emptyRow(movementBody, 7, "No stock movements have been recorded yet.");
   } else {
     for (const movement of movementData.items) {
       const row = document.createElement("tr");
@@ -623,6 +623,7 @@ async function loadInventory(generation = workspaceGeneration) {
       textCell(row, movement.quantity_delta !== "0.000"
         ? movement.quantity_delta
         : "Reserved " + movement.reserved_delta);
+      textCell(row, movement.actor);
       textCell(row, movement.reason);
       movementBody.append(row);
     }
