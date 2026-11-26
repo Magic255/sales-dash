@@ -138,6 +138,19 @@ def upgrade():
             "quantity_delta <> 0 OR reserved_delta <> 0",
             name="stock_movement_nonzero",
         ),
+        sa.CheckConstraint(
+            "(movement_type IN ('received', 'returned') AND quantity_delta > 0 "
+            "AND reserved_delta = 0) OR "
+            "(movement_type IN ('sold', 'damaged') AND quantity_delta < 0 "
+            "AND reserved_delta = 0) OR "
+            "(movement_type = 'adjusted' AND quantity_delta <> 0 "
+            "AND reserved_delta = 0) OR "
+            "(movement_type = 'reserved' AND quantity_delta = 0 "
+            "AND reserved_delta > 0) OR "
+            "(movement_type = 'released' AND quantity_delta = 0 "
+            "AND reserved_delta < 0)",
+            name="stock_movement_delta_matches_type",
+        ),
     )
     op.create_index(
         "ix_stock_movements_company_batch",
