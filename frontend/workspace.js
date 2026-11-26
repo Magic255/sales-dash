@@ -64,6 +64,9 @@ async function loadAuditLogs(generation = workspaceGeneration) {
     const eventLabels = {
       product_created: "Product created",
       product_updated: "Product details or price changed",
+      product_compliance_verified: "Product compliance verified",
+      product_compliance_rejected: "Product compliance rejected",
+      product_compliance_recalled: "Product compliance recalled",
       discount_limits_updated: "Discount limits updated",
       discount_approval_requested: "Discount approval requested",
       discount_approval_decided: "Discount approval decided",
@@ -345,6 +348,14 @@ async function editProduct(item) {
     "Low-stock threshold", item.low_stock_threshold || "0.000"
   );
   if (lowStockThreshold === null) return;
+  const complianceRequired = window.prompt(
+    "Require standards approval before sale? Enter yes or no",
+    item.compliance_required ? "yes" : "no"
+  );
+  if (complianceRequired === null) return;
+  if (!["yes", "no"].includes(complianceRequired.trim().toLowerCase())) {
+    return workspaceMessage("Enter yes or no for standards approval.");
+  }
   const currency = window.prompt("Currency (3-letter code)", item.currency);
   if (currency === null) return;
   try {
@@ -354,6 +365,7 @@ async function editProduct(item) {
         sku, name, description, unit_price: unitPrice,
         cost_price: costPrice, minimum_selling_price: minimumSellingPrice,
         track_inventory: trackInventory.trim().toLowerCase() === "yes",
+        compliance_required: complianceRequired.trim().toLowerCase() === "yes",
         low_stock_threshold: lowStockThreshold, currency,
       }),
     });
@@ -406,7 +418,7 @@ function renderCustomers() {
 function renderProducts() {
   const body = document.querySelector("#product-rows");
   body.replaceChildren();
-  if (!products.length) return emptyRow(body, 8, "No products yet. Add the first product above.");
+  if (!products.length) return emptyRow(body, 9, "No products yet. Add the first product above.");
   for (const item of products) {
     const row = document.createElement("tr");
     textCell(row, item.sku);
@@ -415,6 +427,7 @@ function renderProducts() {
     textCell(row, amount(item.currency, item.minimum_selling_price));
     textCell(row, item.currency);
     textCell(row, item.track_inventory ? "Tracked" : "Not tracked");
+    textCell(row, item.compliance_required ? "Approval required" : "Not required");
     textCell(row, item.is_active ? "Active" : "Archived");
     const actions = document.createElement("td");
     if (canManageProducts()) {
@@ -645,7 +658,55 @@ async function loadInventoryBatches(productId, generation = workspaceGeneration)
     textCell(row, batch.stock_on_hand);
     textCell(row, batch.reserved_quantity);
     textCell(row, batch.available_quantity);
+    textCell(row, batch.compliance_status.replaceAll("_", " "));
     textCell(row, batch.status.replaceAll("_", " "));
+    const actions = document.createElement("td");
+    if (["pending_verification", "approved"].includes(batch.compliance_status)) {
+      const review = document.createElement("button");
+      review.type = "button";
+      review.className = "table-action";
+      review.textContent = batch.compliance_status === "approved" ? "Recall" : "Verify";
+      review.addEventListener("click", async () => {
+        const decision = batch.compliance_status === "approved"
+          ? "recall" : window.prompt("Decision: enter approve or reject", "approve");
+        if (!decision) return;
+        const normalized = decision.trim().toLowerCase();
+        if (!["approve", "reject", "recall"].includes(normalized)) {
+          return workspaceMessage("Choose approve, reject or recall.");
+        }
+        const payload = {decision: normalized};
+        if (normalized === "approve") {
+          payload.qr_code = window.prompt("QR / traceability value (required)", "");
+          if (payload.qr_code === null) return;
+          payload.authority_name = window.prompt("Issuing standards authority (for example TBS)", batch.authority_name || "");
+          if (payload.authority_name === null) return;
+          payload.authority_country = window.prompt("Issuing country code (2 letters)", "TZ");
+          if (payload.authority_country === null) return;
+          payload.certificate_reference = window.prompt("Certificate reference", "");
+          if (payload.certificate_reference === null) return;
+          payload.evidence_reference = window.prompt("Internal evidence reference (do not use a public document URL)", "");
+          if (payload.evidence_reference === null) return;
+          payload.standard_reference = window.prompt("Standard / regulation reference (optional)", "") || "";
+        } else {
+          payload.notes = window.prompt("Reason for " + normalized + " (required)", "");
+          if (payload.notes === null || !payload.notes.trim()) return;
+        }
+        review.disabled = true;
+        try {
+          await workspaceRequest("/api/stock-batches/" + encodeURIComponent(batch.id) + "/compliance", {
+            method: "POST", body: JSON.stringify(payload),
+          });
+          await loadInventory();
+          workspaceMessage("Batch compliance decision recorded. QR values are traceability inputs; verify evidence with the issuing authority before approval.");
+        } catch (error) {
+          workspaceMessage(error.message);
+          review.disabled = false;
+        }
+      });
+      actions.append(review);
+    }
+    if (!actions.childElementCount) actions.textContent = "—";
+    row.append(actions);
     body.append(row);
   }
 }
@@ -1161,6 +1222,7 @@ document.querySelector("#product-form").addEventListener("submit", async (event)
         cost_price: document.querySelector("#product-cost").value,
         minimum_selling_price: document.querySelector("#product-minimum-price").value,
         track_inventory: document.querySelector("#product-track-inventory").checked,
+        compliance_required: document.querySelector("#product-compliance-required").checked,
         low_stock_threshold: document.querySelector("#product-low-stock-threshold").value,
         currency: document.querySelector("#product-currency").value,
       }),
