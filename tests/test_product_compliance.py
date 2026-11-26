@@ -1,4 +1,5 @@
 from decimal import Decimal
+from uuid import UUID
 
 from argon2 import PasswordHasher
 
@@ -34,7 +35,6 @@ def test_compliance_required_stock_is_received_to_quarantine_until_independent_v
                 email_verified=True,
             )
             company = Company(name="Compliance Test", slug="compliance-test")
-            customer = None
             db.session.add_all([admin, company])
             db.session.flush()
             db.session.add(CompanyMembership(
@@ -158,7 +158,7 @@ def test_compliance_required_stock_is_received_to_quarantine_until_independent_v
 
         with app.app_context():
             from app.models import StockBatch
-            saved_batch = db.session.get(StockBatch, __import__("uuid").UUID(batch_id))
+            saved_batch = db.session.get(StockBatch, UUID(batch_id))
             assert saved_batch.compliance_status == "approved"
             assert saved_batch.received_by_user_id != saved_batch.verified_by_user_id
     finally:
