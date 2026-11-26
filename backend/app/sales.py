@@ -2,7 +2,7 @@
 
 import csv
 import io
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal, InvalidOperation
 from uuid import UUID, uuid4
 
@@ -725,6 +725,7 @@ def create_stock_movement(user, product_id):
                 product_id=product_id,
                 batch_code=batch_code,
                 expiry_date=expiry_date,
+                created_at=datetime.now(timezone.utc),
             )
             db.session.add(batch)
             db.session.flush()
