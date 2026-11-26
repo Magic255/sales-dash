@@ -123,7 +123,6 @@ async function loadDiscountApprovals() {
   if (workspaceRole !== "admin") {
     panel.hidden = true;
     document.querySelector("#discount-approvals-tab").hidden = true;
-  document.querySelector("#weekly-discount-report").hidden = true;
     return;
   }
   message.textContent = "";
@@ -867,6 +866,8 @@ document.addEventListener("salesdash:company-selected", (event) => {
   document.querySelector("#team-tab").hidden = workspaceRole !== "admin";
   document.querySelector("#company-settings-tab").hidden = workspaceRole !== "admin";
   document.querySelector("#discount-approvals-tab").hidden = workspaceRole !== "admin";
+  document.querySelector("#inventory-tab").hidden =
+    !["admin", "manager"].includes(workspaceRole);
   document.querySelector("#weekly-discount-report").hidden =
     !["admin", "manager"].includes(workspaceRole);
   const auditPanel = document.querySelector("#audit-panel");
@@ -885,8 +886,11 @@ document.addEventListener("salesdash:signed-out", () => {
   workspaceGeneration += 1;
   customers = [];
   products = [];
+  inventorySummary = [];
   document.querySelector("#audit-panel").hidden = true;
   document.querySelector("#discount-approvals-tab").hidden = true;
+  document.querySelector("#inventory-tab").hidden = true;
+  document.querySelector("#weekly-discount-report").hidden = true;
   document.querySelector("#discount-approvals-message").textContent = "";
   document.querySelector("#audit-message").textContent = "";
   emptyRow(document.querySelector("#audit-rows"), 4, "Select a company to view activity.");
