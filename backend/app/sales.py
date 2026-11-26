@@ -19,9 +19,9 @@ from .extensions import db
 from .models import (
     AppNotification,
     CategoryCompliancePolicy,
-    ComplianceEvidenceFile,
     Company,
     CompanyMembership,
+    ComplianceEvidenceFile,
     Customer,
     DiscountApprovalRequest,
     Product,
@@ -902,7 +902,9 @@ def upload_stock_batch_compliance_evidence(user, batch_id):
     }
     extension = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
     if not content_type or extension not in expected_extensions.get(content_type, set()):
-        return jsonify({"error": "Upload a genuine PDF, JPEG, PNG or WebP file with a matching extension."}), 400
+        return jsonify({
+            "error": "Upload a genuine PDF, JPEG, PNG or WebP file with a matching extension."
+        }), 400
 
     evidence = ComplianceEvidenceFile(
         company_id=company_id,
@@ -979,7 +981,9 @@ def list_stock_batch_compliance_evidence(_user, batch_id):
 def download_stock_batch_compliance_evidence(user, batch_id, evidence_id):
     company_id = _company_id()
     if g.company_membership.role not in {"admin", "manager"}:
-        return jsonify({"error": "Only authorised compliance verifiers can download evidence."}), 403
+        return jsonify({
+            "error": "Only authorised compliance verifiers can download evidence."
+        }), 403
     evidence = db.session.scalar(
         select(ComplianceEvidenceFile).where(
             ComplianceEvidenceFile.id == evidence_id,
@@ -995,10 +999,14 @@ def download_stock_batch_compliance_evidence(user, batch_id, evidence_id):
     try:
         content = cipher.decrypt(evidence.encrypted_content)
     except InvalidToken:
-        current_app.logger.error("Compliance evidence decryption failed for an authorised tenant record.")
+        current_app.logger.error(
+            "Compliance evidence decryption failed for an authorised tenant record."
+        )
         return jsonify({"error": "Evidence file is unavailable."}), 500
     if hashlib.sha256(content).hexdigest() != evidence.sha256:
-        current_app.logger.error("Compliance evidence integrity check failed for an authorised tenant record.")
+        current_app.logger.error(
+            "Compliance evidence integrity check failed for an authorised tenant record."
+        )
         return jsonify({"error": "Evidence file is unavailable."}), 500
     record_audit_event(
         db.session, user.id, "product_compliance_evidence_downloaded", company_id,
