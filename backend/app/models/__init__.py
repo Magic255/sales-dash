@@ -156,7 +156,7 @@ class AuditLog(db.Model):
             "'discount_limits_updated', 'discount_approval_requested', "
             "'discount_approval_decided', 'price_floor_override', 'discount_applied', "
             "'product_compliance_verified', 'product_compliance_rejected', "
-            "'product_compliance_recalled')",
+            "'product_compliance_recalled', 'product_compliance_exception')",
             name="event_type_is_supported",
         ),
         db.Index("ix_audit_logs_company_time", "company_id", "occurred_at"),
@@ -260,6 +260,10 @@ class Product(db.Model):
     compliance_required: Mapped[bool] = mapped_column(
         nullable=False, default=False, server_default="false"
     )
+    category_key: Mapped[str] = mapped_column(
+        String(80), nullable=False, default="general", server_default="general"
+    )
+    market_country: Mapped[str | None] = mapped_column(String(2))
     low_stock_threshold: Mapped[Decimal] = mapped_column(
         db.Numeric(12, 3), nullable=False, default=0, server_default="0"
     )
@@ -271,6 +275,44 @@ class Product(db.Model):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=utc_now
+    )
+
+
+
+class CategoryCompliancePolicy(db.Model):
+    """Company-specific compliance rules for a product category and market."""
+
+    __tablename__ = "category_compliance_policies"
+    __table_args__ = (
+        db.UniqueConstraint(
+            "company_id", "category_key", "market_country",
+            name="uq_compliance_policy_company_category_country",
+        ),
+        CheckConstraint(
+            "approval_mode IN ('required', 'admin_exception', 'not_required')",
+            name="approval_mode_supported",
+        ),
+        CheckConstraint(
+            "category_key = lower(trim(category_key)) AND length(category_key) > 0",
+            name="category_key_normalized",
+        ),
+        CheckConstraint(
+            "market_country = upper(market_country) AND length(market_country) = 2",
+            name="market_country_iso_code",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    company_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False
+    )
+    category_key: Mapped[str] = mapped_column(String(80), nullable=False)
+    market_country: Mapped[str] = mapped_column(String(2), nullable=False)
+    approval_mode: Mapped[str] = mapped_column(String(24), nullable=False)
+    accepted_authorities: Mapped[list] = mapped_column(db.JSON, nullable=False, default=list)
+    updated_by_user_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=utc_now
     )
@@ -306,7 +348,7 @@ class StockBatch(db.Model):
         ),
         CheckConstraint("length(trim(batch_code)) > 0", name="batch_code_not_empty"),
         CheckConstraint(
-            "compliance_status IN ('approved', 'pending_verification', 'rejected', 'recalled')",
+            "compliance_status IN ('approved', 'exception_approved', 'pending_verification', 'rejected', 'recalled')",
             name="compliance_status_supported",
         ),
         db.Index("ix_stock_batches_company_product_expiry",
