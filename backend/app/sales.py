@@ -713,10 +713,15 @@ def update_product(user, product_id):
     if data is None:
         return jsonify({"error": "Send a JSON object."}), 400
     if data.get("track_inventory") is False and item.track_inventory:
-        on_hand, reserved, _available = _stock_balance(_company_id(), item.id)
-        if on_hand != 0 or reserved != 0:
+        movement_count = db.session.scalar(
+            select(func.count()).select_from(StockMovement).where(
+                StockMovement.company_id == _company_id(),
+                StockMovement.product_id == item.id,
+            )
+        )
+        if movement_count:
             return jsonify({
-                "error": "Inventory tracking cannot be disabled while stock or reservations remain."
+                "error": "Inventory tracking cannot be disabled after stock movements are recorded."
             }), 409
     before = {
         "sku": item.sku, "name": item.name, "description": item.description,
@@ -1499,7 +1504,7 @@ def complete_sale(user, sale_id):
 def void_sale(user, sale_id):
     item = db.session.scalar(select(Sale).where(
         Sale.id == sale_id, Sale.company_id == _company_id()
-    ))
+    ).with_for_update())
     if item is None:
         return jsonify({"error": "Sale not found."}), 404
     if item.status == "void":
