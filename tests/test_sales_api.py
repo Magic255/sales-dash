@@ -899,3 +899,26 @@ def test_completion_rechecks_current_product_floor_and_audits_admin_override():
         with application.app_context():
             db.session.remove()
             db.drop_all()
+
+
+def test_order_level_discount_cannot_bypass_product_minimum_price():
+    application, client = make_client("admin")
+    try:
+        customer = client.post("/api/customers", json={"name": "Order Floor Customer"})
+        product = client.post("/api/products", json={
+            "sku": "ORDER-FLOOR-1", "name": "Order Floor Product",
+            "unit_price": "100.00", "cost_price": "70.00",
+            "minimum_selling_price": "90.00", "currency": "TZS",
+        })
+        response = client.post("/api/sales", json={
+            "customer_id": customer.json["item"]["id"],
+            "currency": "TZS",
+            "discount_amount": "15.00",
+            "items": [{"product_id": product.json["item"]["id"], "quantity": "1"}],
+        })
+        assert response.status_code == 400
+        assert "below its minimum selling price" in response.json["error"]
+    finally:
+        with application.app_context():
+            db.session.remove()
+            db.drop_all()
