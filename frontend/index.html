@@ -189,6 +189,7 @@
           <button type="button" class="module-tab is-active" data-workspace-tab="overview">Overview</button>
           <button type="button" class="module-tab" data-workspace-tab="customers">Customers</button>
           <button type="button" class="module-tab" data-workspace-tab="products">Products</button>
+          <button id="inventory-tab" type="button" class="module-tab" data-workspace-tab="inventory" hidden>Inventory</button>
           <button type="button" class="module-tab" data-workspace-tab="sales">Sales</button>
           <button type="button" class="module-tab" data-workspace-tab="reports">Reports</button>
           <button id="team-tab" type="button" class="module-tab" data-workspace-tab="team" hidden>Team</button>
@@ -262,16 +263,59 @@
             <label for="product-price">Unit price</label><input id="product-price" type="number" min="0" step="0.01" required>
             <label for="product-cost">Cost price</label><input id="product-cost" type="number" min="0" step="0.01" value="0" required>
             <label for="product-minimum-price">Minimum selling price</label><input id="product-minimum-price" type="number" min="0" step="0.01" value="0" required>
+            <label><input id="product-track-inventory" type="checkbox"> Track stock and batches</label>
+            <label for="product-reorder-level">Low-stock alert level</label><input id="product-reorder-level" type="number" min="0" step="0.001" value="0" required>
             <label for="product-currency">Currency</label><input id="product-currency" value="TZS" minlength="3" maxlength="3" required>
             <button class="primary-button" type="submit">Add product</button>
           </form>
           <div class="table-wrap"><table class="data-table"><thead><tr><th>SKU</th><th>Product</th><th>Unit price</th><th>Minimum price</th><th>Currency</th><th>Status</th><th>Actions</th></tr></thead><tbody id="product-rows"><tr><td colspan="7">No products loaded.</td></tr></tbody></table></div>
+        </section>
+        <section class="module-panel" data-workspace-panel="inventory" hidden>
+          <h3>Inventory and batches</h3>
+          <p class="panel-copy">Stock is calculated from the movement ledger. Movements are recorded rather than overwriting a stock balance.</p>
+          <div class="record-grid">
+            <form id="inventory-batch-form" class="record-form">
+              <h4>Create product batch</h4>
+              <label for="inventory-batch-product">Tracked product</label><select id="inventory-batch-product" required></select>
+              <label for="inventory-batch-code">Batch / lot code</label><input id="inventory-batch-code" maxlength="80" required>
+              <label for="inventory-batch-expiry">Expiry date (optional)</label><input id="inventory-batch-expiry" type="date">
+              <button class="primary-button" type="submit">Create batch</button>
+            </form>
+            <form id="inventory-movement-form" class="record-form">
+              <h4>Record stock movement</h4>
+              <label for="inventory-movement-product">Product</label><select id="inventory-movement-product" required></select>
+              <label for="inventory-movement-batch">Batch / lot</label><select id="inventory-movement-batch" required></select>
+              <label for="inventory-movement-type">Movement</label>
+              <select id="inventory-movement-type">
+                <option value="received">Received</option><option value="returned">Returned</option>
+                <option value="damaged">Damaged</option><option value="reserved">Reserved</option>
+                <option value="released">Released</option><option value="adjusted" data-admin-only>Adjustment (Admin)</option>
+              </select>
+              <label id="inventory-quantity-label" for="inventory-movement-quantity">Quantity</label>
+              <input id="inventory-movement-quantity" type="number" min="0.001" step="0.001" required>
+              <label for="inventory-movement-reason">Reason</label><textarea id="inventory-movement-reason" maxlength="1000" rows="2" required></textarea>
+              <button class="primary-button" type="submit">Record movement</button>
+            </form>
+          </div>
+          <h4>Current stock</h4>
+          <div class="table-wrap"><table class="data-table">
+            <thead><tr><th>SKU</th><th>Product</th><th>On hand</th><th>Reserved</th><th>Available</th><th>Reorder level</th><th>Status</th></tr></thead>
+            <tbody id="inventory-rows"><tr><td colspan="7">Loading inventory…</td></tr></tbody>
+          </table></div>
+          <h4>Recent stock movements</h4>
+          <div class="table-wrap"><table class="data-table">
+            <thead><tr><th>Date</th><th>Product</th><th>Batch</th><th>Movement</th><th>Quantity change</th><th>Reason</th></tr></thead>
+            <tbody id="inventory-movement-rows"><tr><td colspan="6">No stock movements yet.</td></tr></tbody>
+          </table></div>
         </section>
         <section class="module-panel" data-workspace-panel="sales" hidden>
           <h3>Record a sale</h3><p class="panel-copy">The server calculates totals from the saved product price.</p>
           <form id="sale-form" class="record-form sale-form">
             <label for="sale-customer">Customer</label><select id="sale-customer" required><option value="">Add a customer first</option></select>
             <label for="sale-product">Product / service</label><select id="sale-product" required><option value="">Add a product first</option></select>
+            <div id="sale-batch-field" hidden>
+              <label for="sale-batch">Inventory batch / lot</label><select id="sale-batch"></select>
+            </div>
             <label for="sale-quantity">Quantity</label><input id="sale-quantity" type="number" min="0.001" step="0.001" value="1" required>
             <label for="sale-item-discount">Item discount (optional)</label><input id="sale-item-discount" type="number" min="0" step="0.01" value="0">
             <label for="sale-discount">Additional sale discount (optional)</label><input id="sale-discount" type="number" min="0" step="0.01" value="0">
