@@ -271,11 +271,15 @@ def inventory_summary(_user):
 def inventory_movements(_user):
     company_id = _company_id()
     rows = db.session.execute(
-        select(StockMovement, Product.name, Product.sku, ProductBatch.batch_code)
+        select(
+            StockMovement, Product.name, Product.sku, ProductBatch.batch_code,
+            User.display_name, User.email,
+        )
         .join(Product, (Product.id == StockMovement.product_id)
               & (Product.company_id == StockMovement.company_id))
         .join(ProductBatch, (ProductBatch.id == StockMovement.batch_id)
               & (ProductBatch.company_id == StockMovement.company_id))
+        .join(User, User.id == StockMovement.actor_user_id)
         .where(StockMovement.company_id == company_id)
         .order_by(StockMovement.created_at.desc())
         .limit(200)
@@ -289,8 +293,9 @@ def inventory_movements(_user):
         "quantity_delta": str(movement.quantity_delta),
         "reserved_delta": str(movement.reserved_delta),
         "reason": movement.reason,
+        "actor": display_name or email,
         "created_at": movement.created_at.isoformat(),
-    } for movement, product_name, sku, batch_code in rows]})
+    } for movement, product_name, sku, batch_code, display_name, email in rows]})
 
 
 @inventory_bp.post("/batches")
