@@ -378,6 +378,22 @@ class StockBatch(db.Model):
             "'pending_verification', 'rejected', 'recalled')",
             name="compliance_status_supported",
         ),
+        CheckConstraint(
+            "authority_role IS NULL OR authority_role IN "
+            "('standards_body', 'regulator', 'certification_body', "
+            "'accreditation_body', 'testing_lab', 'inspection_body', 'other')",
+            name="authority_role_supported",
+        ),
+        CheckConstraint(
+            "verification_method IS NULL OR verification_method IN "
+            "('official_registry', 'accreditation_scope', "
+            "'issuer_confirmation', 'document_review')",
+            name="verification_method_supported",
+        ),
+        CheckConstraint(
+            "verification_source_url IS NULL OR verification_source_url LIKE 'https://%'",
+            name="verification_source_https",
+        ),
         db.Index("ix_stock_batches_company_product_expiry",
                  "company_id", "product_id", "expiry_date"),
     )
