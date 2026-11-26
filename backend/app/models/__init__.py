@@ -156,7 +156,7 @@ class AuditLog(db.Model):
             "'discount_limits_updated', 'discount_approval_requested', "
             "'discount_approval_decided', 'price_floor_override', 'discount_applied', "
             "'product_compliance_verified', 'product_compliance_rejected', "
-            "'product_compliance_recalled', 'product_compliance_exception')",
+            "'product_compliance_recalled', 'product_compliance_exception', 'product_compliance_policy_updated')",
             name="event_type_is_supported",
         ),
         db.Index("ix_audit_logs_company_time", "company_id", "occurred_at"),
