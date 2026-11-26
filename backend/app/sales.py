@@ -390,8 +390,6 @@ def create_product(user):
             raise ValueError("Minimum selling price cannot be below product cost.")
         if item.unit_price < item.minimum_selling_price:
             raise ValueError("Unit price cannot be below the minimum selling price.")
-        if item.unit_price < item.minimum_selling_price:
-            raise ValueError("Unit price cannot be below the minimum selling price.")
         db.session.add(item)
         db.session.flush()
         record_audit_event(
@@ -449,6 +447,8 @@ def update_product(user, product_id):
             )
         if item.minimum_selling_price < item.cost_price:
             raise ValueError("Minimum selling price cannot be below product cost.")
+        if item.unit_price < item.minimum_selling_price:
+            raise ValueError("Unit price cannot be below the minimum selling price.")
         if "currency" in data:
             item.currency = _text(data, "currency", 3, required=True, upper=True)
             if len(item.currency) != 3:
