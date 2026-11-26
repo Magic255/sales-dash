@@ -1,6 +1,6 @@
 """Add deduplicated inventory batch expiry notifications.
 
-Revision ID: 0023_inventory_expiry_notifications
+Revision ID: 0023_expiry_alerts
 Revises: 0022_app_notifications
 """
 
@@ -9,7 +9,7 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = "0023_inventory_expiry_notifications"
+revision = "0023_expiry_alerts"
 down_revision = "0022_app_notifications"
 branch_labels = None
 depends_on = None
