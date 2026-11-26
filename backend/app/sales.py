@@ -433,7 +433,13 @@ def _batch_balances(company_id, product_id):
     if not batches:
         return []
     totals = {
-        batch.id: {"on_hand": Decimal("0.000"), "reserved": Decimal("0.000")}
+        batch.id: {
+            "on_hand": Decimal("0.000"),
+            "reserved": Decimal("0.000"),
+            "sold": Decimal("0.000"),
+            "inflows": Decimal("0.000"),
+            "writeoffs": Decimal("0.000"),
+        }
         for batch in batches
     }
     rows = db.session.execute(
@@ -453,8 +459,13 @@ def _batch_balances(company_id, product_id):
         quantity = Decimal(str(total or 0))
         if movement_type in {"received", "returned", "adjustment_increase"}:
             totals[batch_id]["on_hand"] += quantity
-        elif movement_type in {"sold", "damaged", "adjustment_decrease"}:
+            totals[batch_id]["inflows"] += quantity
+        elif movement_type == "sold":
             totals[batch_id]["on_hand"] -= quantity
+            totals[batch_id]["sold"] += quantity
+        elif movement_type in {"damaged", "adjustment_decrease"}:
+            totals[batch_id]["on_hand"] -= quantity
+            totals[batch_id]["writeoffs"] += quantity
         elif movement_type == "reserved":
             totals[batch_id]["reserved"] += quantity
         elif movement_type == "released":
@@ -465,6 +476,9 @@ def _batch_balances(company_id, product_id):
             "batch": batch,
             "on_hand": totals[batch.id]["on_hand"],
             "reserved": totals[batch.id]["reserved"],
+            "sold": totals[batch.id]["sold"],
+            "inflows": totals[batch.id]["inflows"],
+            "writeoffs": totals[batch.id]["writeoffs"],
             "available": totals[batch.id]["on_hand"] - totals[batch.id]["reserved"],
             "expired": batch.expiry_date is not None and batch.expiry_date < today,
             "expiring_soon": (
@@ -579,8 +593,17 @@ def inventory_summary(_user):
             ),
             Decimal("0.000"),
         )
+        sold_total = sum((row["sold"] for row in balances), Decimal("0.000"))
+        inflows_total = sum((row["inflows"] for row in balances), Decimal("0.000"))
+        writeoffs_total = sum((row["writeoffs"] for row in balances), Decimal("0.000"))
         status = (
-            "expired" if available <= 0 and expired_quantity > 0
+            "discontinued" if not product.is_active
+            else "expired" if available <= 0 and expired_quantity > 0
+            else "reserved" if available <= 0 and reserved > 0 and on_hand > 0
+            else "sold" if (
+                on_hand <= 0 and sold_total > 0
+                and sold_total >= inflows_total and writeoffs_total == 0
+            )
             else "out_of_stock" if available <= 0
             else "low_stock" if available <= product.low_stock_threshold
             else "available"
@@ -633,6 +656,11 @@ def list_stock_batches(_user, product_id):
             ),
             "status": (
                 "expired" if row["expired"] and row["on_hand"] > 0
+                else "reserved" if row["available"] <= 0 and row["reserved"] > 0
+                else "sold" if (
+                    row["on_hand"] <= 0 and row["sold"] > 0
+                    and row["sold"] >= row["inflows"] and row["writeoffs"] == 0
+                )
                 else "out_of_stock" if row["available"] <= 0
                 else "expiring_soon" if row["expiring_soon"]
                 else "available"
@@ -1612,6 +1640,8 @@ def complete_sale(user, sale_id):
         return jsonify({
             "error": "A product on this sale is no longer available for price validation."
         }), 409
+    if any(not product.is_active for product in current_products):
+        return jsonify({"error": "Discontinued products cannot be sold."}), 409
     line_discount_total = sum(
         (line.discount_amount for line in sale_lines), Decimal("0.00")
     )
