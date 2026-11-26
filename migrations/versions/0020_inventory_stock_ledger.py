@@ -68,6 +68,9 @@ def upgrade():
         "ON stock_movements (company_id, product_id, created_at)"
     )
     op.execute(
+        "REVOKE UPDATE, DELETE, TRUNCATE ON stock_movements FROM sales_dash_app"
+    )
+    op.execute(
         "GRANT SELECT, INSERT ON stock_movements TO sales_dash_app"
     )
     op.execute("ALTER TABLE stock_movements ENABLE ROW LEVEL SECURITY")
