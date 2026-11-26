@@ -792,3 +792,62 @@ def test_salesperson_is_rejected_when_discount_crosses_product_floor():
         with application.app_context():
             db.session.remove()
             db.drop_all()
+
+
+def test_weekly_discount_report_groups_completed_sales_by_seller_and_currency():
+    application, client = make_client("admin")
+    try:
+        customer = client.post("/api/customers", json={"name": "Weekly Discount Customer"})
+        product = client.post("/api/products", json={
+            "sku": "WEEKLY-DISC-1", "name": "Weekly Discount Product",
+            "unit_price": "100.00", "currency": "TZS",
+        })
+        assert customer.status_code == 201
+        assert product.status_code == 201
+        sale = client.post("/api/sales", json={
+            "customer_id": customer.json["item"]["id"],
+            "currency": "TZS",
+            "sale_date": "2026-11-11",
+            "discount_amount": "10.00",
+            "items": [{"product_id": product.json["item"]["id"], "quantity": "1"}],
+        })
+        assert sale.status_code == 201
+        completed = client.post(f"/api/sales/{sale.json['item']['id']}/complete")
+        assert completed.status_code == 200
+
+        report = client.get(
+            "/api/reports/discounts/weekly?week_start=2026-11-09"
+        )
+        assert report.status_code == 200
+        assert report.json["week_start"] == "2026-11-09"
+        assert report.json["week_end"] == "2026-11-15"
+        seller = report.json["salespeople"][0]
+        assert seller["email"] == "admin@example.test"
+        assert seller["by_currency"] == [{
+            "currency": "TZS",
+            "completed_sales": 1,
+            "subtotal": "100.00",
+            "discount_total": "10.00",
+            "discount_rate_percent": "10.00",
+            "revenue_after_discount": "90.00",
+        }]
+        assert "does not yet track leads" in report.json["note"]
+        invalid = client.get(
+            "/api/reports/discounts/weekly?week_start=2026-11-11"
+        )
+        assert invalid.status_code == 400
+    finally:
+        with application.app_context():
+            db.session.remove()
+            db.drop_all()
+
+
+def test_salesperson_cannot_view_weekly_team_discount_report():
+    application, client = make_client("salesperson")
+    try:
+        response = client.get("/api/reports/discounts/weekly")
+        assert response.status_code == 403
+    finally:
+        with application.app_context():
+            db.session.remove()
+            db.drop_all()
