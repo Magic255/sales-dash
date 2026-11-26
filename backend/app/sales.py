@@ -705,13 +705,19 @@ def update_product(user, product_id):
     item = db.session.scalar(
         select(Product).where(
             Product.id == product_id, Product.company_id == _company_id()
-        )
+        ).with_for_update()
     )
     if item is None:
         return jsonify({"error": "Product not found."}), 404
     data = _json_object()
     if data is None:
         return jsonify({"error": "Send a JSON object."}), 400
+    if data.get("track_inventory") is False and item.track_inventory:
+        on_hand, reserved, _available = _stock_balance(_company_id(), item.id)
+        if on_hand != 0 or reserved != 0:
+            return jsonify({
+                "error": "Inventory tracking cannot be disabled while stock or reservations remain."
+            }), 409
     before = {
         "sku": item.sku, "name": item.name, "description": item.description,
         "unit_price": str(item.unit_price), "cost_price": str(item.cost_price),
