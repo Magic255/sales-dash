@@ -992,7 +992,7 @@ async function loadWeeklyDiscountReport() {
     textCell(row, String(summary.completed_sales));
     textCell(row, amount(summary.currency, summary.discount_total));
     textCell(row, summary.discount_rate_percent + "%");
-    textCell(row, amount(summary.currency, summary.revenue_after_discount));
+    textCell(row, amount(summary.currency, summary.net_sales_after_discount));
     body.append(row);
   }
 }
