@@ -147,6 +147,66 @@ def _queue_notification(
     ))
 
 
+def _queue_inventory_expiry_notifications(company_id, product, balances):
+    """Create one private expiry alert per recipient and batch lifecycle event."""
+    if not product.is_active:
+        return False
+    recipients = db.session.scalars(
+        select(CompanyMembership).where(
+            CompanyMembership.company_id == company_id,
+            CompanyMembership.role.in_({"admin", "manager"}),
+            CompanyMembership.status == "active",
+        )
+    ).all()
+    if not recipients:
+        return False
+
+    created = False
+    for row in balances:
+        batch = row["batch"]
+        quantity = max(row["on_hand"], Decimal("0.000"))
+        if batch.expiry_date is None or quantity <= 0:
+            continue
+        if row["expired"]:
+            notification_type = "inventory_batch_expired"
+            title = "Inventory batch expired"
+            message = (
+                f"{product.name} ({product.sku}), batch {batch.batch_code}, "
+                f"expired on {batch.expiry_date.isoformat()}; "
+                f"{quantity} units remain and are excluded from sales."
+            )
+        elif row["expiring_soon"]:
+            notification_type = "inventory_batch_expiring"
+            title = "Inventory batch expiring soon"
+            message = (
+                f"{product.name} ({product.sku}), batch {batch.batch_code}, "
+                f"has {quantity} units remaining and expires on "
+                f"{batch.expiry_date.isoformat()}."
+            )
+        else:
+            continue
+
+        dedupe_key = f"batch:{batch.id}:{notification_type}"
+        for recipient in recipients:
+            try:
+                with db.session.begin_nested():
+                    db.session.add(AppNotification(
+                        company_id=company_id,
+                        recipient_user_id=recipient.user_id,
+                        related_batch_id=batch.id,
+                        dedupe_key=dedupe_key,
+                        notification_type=notification_type,
+                        title=title,
+                        message=message[:500],
+                    ))
+                    db.session.flush()
+                created = True
+            except IntegrityError:
+                # The unique recipient/dedupe key also handles concurrent refreshes.
+                continue
+    return created
+
+
 def _create_discount_approval_if_needed(sale, user, discount_percent, reason):
     company = db.session.get(Company, sale.company_id)
     # Discount authority follows the credited salesperson, not the member
@@ -601,8 +661,13 @@ def inventory_summary(_user):
         ).order_by(Product.name)
     ).all()
     items = []
+    notifications_created = False
     for product in products:
         balances = _batch_balances(company_id, product.id)
+        notifications_created = (
+            _queue_inventory_expiry_notifications(company_id, product, balances)
+            or notifications_created
+        )
         on_hand = sum((row["on_hand"] for row in balances), Decimal("0.000"))
         reserved = sum((row["reserved"] for row in balances), Decimal("0.000"))
         expired_quantity = sum(
@@ -654,6 +719,8 @@ def inventory_summary(_user):
             "low_stock_threshold": str(product.low_stock_threshold),
             "status": status,
         })
+    if notifications_created:
+        db.session.commit()
     return jsonify({"items": items})
 
 
@@ -1639,6 +1706,7 @@ def _notification_json(item):
         "title": item.title,
         "message": item.message,
         "related_sale_id": str(item.related_sale_id) if item.related_sale_id else None,
+        "related_batch_id": str(item.related_batch_id) if item.related_batch_id else None,
         "read_at": item.read_at.isoformat() if item.read_at else None,
         "created_at": item.created_at.isoformat(),
     }
