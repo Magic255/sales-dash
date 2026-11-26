@@ -160,3 +160,47 @@ def test_postgres_restricted_runtime_role_can_update_company_name():
             db.session.execute(db.delete(Company).where(Company.id == company_id))
             db.session.execute(db.delete(User).where(User.id == user_id))
             db.session.commit()
+
+
+def test_admin_can_configure_company_discount_limits_and_audit_them():
+    application, client = make_company_client()
+    try:
+        defaults = client.get("/api/company/settings").json["item"]["discount_limits"]
+        assert defaults == {"salesperson_percent": "5.00", "manager_percent": "15.00"}
+        response = client.patch("/api/company/settings", json={
+            "salesperson_discount_limit": "3.50",
+            "manager_discount_limit": "12.00",
+        })
+        assert response.status_code == 200
+        assert response.json["item"]["discount_limits"] == {
+            "salesperson_percent": "3.50",
+            "manager_percent": "12.00",
+        }
+        with application.app_context():
+            events = db.session.query(AuditLog).filter_by(
+                event_type="discount_limits_updated"
+            ).all()
+            assert len(events) == 1
+            assert events[0].details["old"]["salesperson_discount_limit"] == "5.00"
+            assert events[0].details["new"]["manager_discount_limit"] == "12.00"
+    finally:
+        with application.app_context():
+            db.session.remove()
+            db.drop_all()
+
+
+def test_company_discount_limits_reject_values_outside_percentage_range():
+    application, client = make_company_client()
+    try:
+        for value in ("-0.01", "100.01", "NaN", "Infinity", True, None):
+            response = client.patch(
+                "/api/company/settings",
+                json={"salesperson_discount_limit": value},
+            )
+            assert response.status_code == 400
+        current = client.get("/api/company/settings").json["item"]["discount_limits"]
+        assert current["salesperson_percent"] == "5.00"
+    finally:
+        with application.app_context():
+            db.session.remove()
+            db.drop_all()

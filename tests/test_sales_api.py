@@ -6,7 +6,15 @@ from argon2 import PasswordHasher
 
 from app import create_app
 from app.extensions import db
-from app.models import Company, CompanyMembership, Customer, Product, Sale, User
+from app.models import (
+    Company,
+    CompanyMembership,
+    Customer,
+    DiscountApprovalRequest,
+    Product,
+    Sale,
+    User,
+)
 
 
 def make_client(role="admin"):
@@ -144,6 +152,65 @@ def test_salesperson_can_create_customer_and_complete_own_sale_but_not_products(
         completed = client.post(f"/api/sales/{sale.json['item']['id']}/complete")
         assert completed.status_code == 200
         assert completed.json["item"]["status"] == "completed"
+    finally:
+        with application.app_context():
+            db.session.remove()
+            db.drop_all()
+
+
+def test_manager_cannot_create_or_change_product_catalog():
+    application, client = make_client("manager")
+    try:
+        assert client.post("/api/products", json={
+            "sku": "SKU-1", "name": "Product", "unit_price": "10", "currency": "TZS",
+        }).status_code == 403
+        with application.app_context():
+            user = db.session.query(User).filter_by(email="manager@example.test").one()
+            company = db.session.query(Company).filter_by(slug="sales-api-manager").one()
+            product = Product(
+                company_id=company.id, created_by_user_id=user.id,
+                sku="LOCKED-1", name="Original name", unit_price=Decimal("10.00"), currency="TZS",
+            )
+            db.session.add(product)
+            db.session.commit()
+            product_id = str(product.id)
+        response = client.patch(f"/api/products/{product_id}", json={
+            "name": "Changed name", "unit_price": "1.00",
+        })
+        assert response.status_code == 403
+        with application.app_context():
+            saved = db.session.get(Product, UUID(product_id))
+            assert saved.name == "Original name"
+            assert saved.unit_price == Decimal("10.00")
+    finally:
+        with application.app_context():
+            db.session.remove()
+            db.drop_all()
+
+
+def test_admin_product_price_changes_are_audited_with_before_and_after_values():
+    application, client = make_client("admin")
+    try:
+        product = client.post("/api/products", json={
+            "sku": "AUDIT-1", "name": "Original", "unit_price": "10.00", "currency": "TZS",
+        })
+        assert product.status_code == 201
+        product_id = product.json["item"]["id"]
+        changed = client.patch(f"/api/products/{product_id}", json={
+            "name": "Updated", "unit_price": "12.50",
+        })
+        assert changed.status_code == 200
+        logs = client.get("/api/audit-logs?limit=20")
+        assert logs.status_code == 200
+        update = next(
+            item for item in logs.json["items"]
+            if item["event_type"] == "product_updated"
+        )
+        assert update["details"]["product_id"] == product_id
+        assert update["details"]["old"]["unit_price"] == "10.00"
+        assert update["details"]["new"]["unit_price"] == "12.50"
+        assert update["details"]["old"]["name"] == "Original"
+        assert update["details"]["new"]["name"] == "Updated"
     finally:
         with application.app_context():
             db.session.remove()
@@ -359,48 +426,49 @@ def test_sales_report_rejects_invalid_date_range():
             db.session.remove()
             db.drop_all()
 
-def test_manager_can_edit_archive_and_restore_catalog_records():
+def test_manager_can_archive_customers_but_cannot_change_product_catalog():
     application, client = make_client("manager")
     try:
         customer = client.post(
             "/api/customers",
             json={"name": "Archive Customer", "email": "archive@example.test"},
         ).json["item"]
-        product = client.post(
-            "/api/products",
-            json={
-                "sku": "ARCHIVE-1", "name": "Archive Product",
-                "unit_price": "25.00", "currency": "TZS",
-            },
-        ).json["item"]
+        with application.app_context():
+            user = db.session.query(User).filter_by(email="manager@example.test").one()
+            company = db.session.query(Company).filter_by(slug="sales-api-manager").one()
+            product = Product(
+                company_id=company.id, created_by_user_id=user.id,
+                sku="ARCHIVE-1", name="Archive Product",
+                unit_price=Decimal("25.00"), currency="TZS",
+            )
+            db.session.add(product)
+            db.session.commit()
+            product_id = str(product.id)
 
         archived_customer = client.patch(
             f"/api/customers/{customer['id']}", json={"is_active": False}
         )
-        archived_product = client.patch(
-            f"/api/products/{product['id']}", json={"is_active": False}
+        forbidden_product_update = client.patch(
+            f"/api/products/{product_id}", json={"is_active": False}
         )
-        assert archived_customer.status_code == archived_product.status_code == 200
+        assert archived_customer.status_code == 200
+        assert forbidden_product_update.status_code == 403
         assert client.get("/api/customers").json["items"] == []
-        assert client.get("/api/products").json["items"] == []
         inactive_customers = client.get("/api/customers?include_inactive=true").json["items"]
         assert inactive_customers[0]["is_active"] is False
-        inactive_products = client.get("/api/products?include_inactive=true").json["items"]
-        assert inactive_products[0]["is_active"] is False
+        assert len(client.get("/api/products").json["items"]) == 1
 
         restored_customer = client.patch(
             f"/api/customers/{customer['id']}",
             json={"name": "Updated Customer", "is_active": True},
         )
-        restored_product = client.patch(
-            f"/api/products/{product['id']}",
-            json={"name": "Updated Product", "is_active": True},
-        )
-        assert restored_customer.status_code == restored_product.status_code == 200
+        assert restored_customer.status_code == 200
         active_customers = client.get("/api/customers").json["items"]
         assert active_customers[0]["name"] == "Updated Customer"
-        active_products = client.get("/api/products").json["items"]
-        assert active_products[0]["name"] == "Updated Product"
+        with application.app_context():
+            saved_product = db.session.get(Product, UUID(product_id))
+            assert saved_product.name == "Archive Product"
+            assert saved_product.is_active is True
     finally:
         with application.app_context():
             db.session.remove()
@@ -488,5 +556,549 @@ def test_salesperson_cannot_view_team_performance():
         assert client.get("/api/dashboard/salespeople").status_code == 403
     finally:
         with app.app_context():
+            db.session.remove()
+            db.drop_all()
+
+
+def test_salesperson_discount_above_limit_requires_admin_approval():
+    application, salesperson_client = make_client("salesperson")
+    try:
+        with application.app_context():
+            salesperson = db.session.query(User).filter_by(
+                email="salesperson@example.test"
+            ).one()
+            company = db.session.query(Company).filter_by(
+                slug="sales-api-salesperson"
+            ).one()
+            customer = Customer(
+                company_id=company.id, created_by_user_id=salesperson.id,
+                name="Approval Customer",
+            )
+            product = Product(
+                company_id=company.id, created_by_user_id=salesperson.id,
+                sku="APPROVAL-1", name="Approval Product",
+                unit_price=Decimal("100.00"), currency="TZS",
+            )
+            admin = User(
+                email="approval-admin@example.test",
+                password_hash=PasswordHasher().hash("a-very-strong-test-password"),
+                email_verified=True,
+            )
+            db.session.add_all([customer, product, admin])
+            db.session.flush()
+            db.session.add(CompanyMembership(
+                user_id=admin.id, company_id=company.id, role="admin", status="active"
+            ))
+            customer_id, product_id, company_id = customer.id, product.id, company.id
+            db.session.commit()
+
+        payload = {
+            "customer_id": str(customer_id),
+            "currency": "TZS",
+            "items": [{
+                "product_id": str(product_id), "quantity": "1",
+                "discount_amount": "10.00",
+            }],
+        }
+        missing_reason = salesperson_client.post("/api/sales", json=payload)
+        assert missing_reason.status_code == 400
+
+        payload["approval_reason"] = "Customer requested a strategic first-order discount."
+        requested = salesperson_client.post("/api/sales", json=payload)
+        assert requested.status_code == 201
+        sale_id = requested.json["item"]["id"]
+        assert salesperson_client.post(
+            f"/api/sales/{sale_id}/complete"
+        ).status_code == 409
+
+        admin_client = application.test_client()
+        assert admin_client.post("/api/auth/login", json={
+            "email": "approval-admin@example.test",
+            "password": "a-very-strong-test-password",
+        }).status_code == 200
+        assert admin_client.post(
+            "/api/auth/company", json={"company_id": str(company_id)}
+        ).status_code == 200
+        inbox = admin_client.get("/api/discount-approvals")
+        assert inbox.status_code == 200
+        assert len(inbox.json["items"]) == 1
+        approval_id = inbox.json["items"][0]["id"]
+        approved = admin_client.post(
+            f"/api/discount-approvals/{approval_id}/decision",
+            json={"decision": "approve"},
+        )
+        assert approved.status_code == 200
+        assert approved.json["item"]["status"] == "approved"
+        completed = salesperson_client.post(f"/api/sales/{sale_id}/complete")
+        assert completed.status_code == 200
+        assert completed.json["item"]["status"] == "completed"
+
+        with application.app_context():
+            approval = db.session.query(DiscountApprovalRequest).one()
+            assert approval.status == "approved"
+            assert approval.approver_user_id is not None
+    finally:
+        with application.app_context():
+            db.session.remove()
+            db.drop_all()
+
+
+def test_salesperson_cannot_view_admin_discount_approval_inbox():
+    application, client = make_client("salesperson")
+    try:
+        assert client.get("/api/discount-approvals").status_code == 403
+    finally:
+        with application.app_context():
+            db.session.remove()
+            db.drop_all()
+
+
+def test_manager_editing_salesperson_sale_uses_salesperson_discount_limit():
+    application, manager_client = make_client("manager")
+    try:
+        with application.app_context():
+            manager = db.session.query(User).filter_by(
+                email="manager@example.test"
+            ).one()
+            company = db.session.query(Company).filter_by(
+                slug="sales-api-manager"
+            ).one()
+            salesperson = User(
+                email="credited-salesperson@example.test",
+                password_hash=PasswordHasher().hash("a-very-strong-test-password"),
+                email_verified=True,
+            )
+            customer = Customer(
+                company_id=company.id, created_by_user_id=manager.id,
+                name="Credited Seller Customer",
+            )
+            product = Product(
+                company_id=company.id, created_by_user_id=manager.id,
+                sku="CREDITED-SELLER-1", name="Credited Seller Product",
+                unit_price=Decimal("100.00"), currency="TZS",
+            )
+            db.session.add_all([salesperson, customer, product])
+            db.session.flush()
+            db.session.add(CompanyMembership(
+                user_id=salesperson.id, company_id=company.id,
+                role="salesperson", status="active",
+            ))
+            customer_id, product_id, salesperson_id = (
+                customer.id, product.id, salesperson.id
+            )
+            db.session.commit()
+
+        created = manager_client.post("/api/sales", json={
+            "customer_id": str(customer_id),
+            "currency": "TZS",
+            "items": [{"product_id": str(product_id), "quantity": "1"}],
+        })
+        assert created.status_code == 201
+        sale_id = created.json["item"]["id"]
+        with application.app_context():
+            sale = db.session.get(Sale, UUID(sale_id))
+            sale.salesperson_user_id = salesperson_id
+            db.session.commit()
+
+        edited = manager_client.patch(f"/api/sales/{sale_id}", json={
+            "customer_id": str(customer_id),
+            "currency": "TZS",
+            "discount_amount": "10.00",
+            "items": [{"product_id": str(product_id), "quantity": "1"}],
+            "approval_reason": "Customer requested a larger discount.",
+        })
+        assert edited.status_code == 200
+        with application.app_context():
+            approval = db.session.query(DiscountApprovalRequest).one()
+            assert approval.status == "pending"
+            assert approval.requested_discount_percent == Decimal("10.00")
+            manager = db.session.query(User).filter_by(
+                email="manager@example.test"
+            ).one()
+            assert approval.requested_by_user_id == manager.id
+        assert manager_client.post(
+            f"/api/sales/{sale_id}/complete"
+        ).status_code == 409
+    finally:
+        with application.app_context():
+            db.session.remove()
+            db.drop_all()
+
+
+def test_product_minimum_price_requires_admin_override_reason():
+    application, client = make_client("admin")
+    try:
+        customer = client.post("/api/customers", json={"name": "Floor Customer"}).json["item"]
+        product = client.post("/api/products", json={
+            "sku": "FLOOR-1", "name": "Floor Product", "unit_price": "100.00",
+            "cost_price": "70.00", "minimum_selling_price": "90.00", "currency": "TZS",
+        })
+        assert product.status_code == 201
+        invalid_catalog_price = client.post("/api/products", json={
+            "sku": "FLOOR-INVALID", "name": "Invalid Floor Product",
+            "unit_price": "80.00", "cost_price": "70.00",
+            "minimum_selling_price": "90.00", "currency": "TZS",
+        })
+        assert invalid_catalog_price.status_code == 400
+        item = product.json["item"]
+        assert item["minimum_selling_price"] == "90.00"
+        assert item["cost_price"] == "70.00"
+        payload = {
+            "customer_id": customer["id"], "currency": "TZS",
+            "items": [{"product_id": item["id"], "quantity": "1", "discount_amount": "15.00"}],
+        }
+        assert client.post("/api/sales", json=payload).status_code == 400
+        payload["price_floor_override_reason"] = "Approved strategic account exception."
+        sale = client.post("/api/sales", json=payload)
+        assert sale.status_code == 201
+        logs = client.get("/api/audit-logs?limit=20")
+        event = next(x for x in logs.json["items"] if x["event_type"] == "price_floor_override")
+        assert event["details"]["items"][0]["effective_unit_price"] == "85.00"
+        assert event["details"]["items"][0]["minimum_selling_price"] == "90.00"
+    finally:
+        with application.app_context():
+            db.session.remove()
+            db.drop_all()
+
+
+def test_salesperson_is_rejected_when_discount_crosses_product_floor():
+    application, client = make_client("salesperson")
+    try:
+        with application.app_context():
+            seller = db.session.query(User).filter_by(
+                email="salesperson@example.test"
+            ).one()
+            company = db.session.query(Company).filter_by(
+                slug="sales-api-salesperson"
+            ).one()
+            customer = Customer(
+                company_id=company.id, created_by_user_id=seller.id,
+                name="Floor Guard Customer",
+            )
+            product = Product(
+                company_id=company.id, created_by_user_id=seller.id,
+                sku="FLOOR-GUARD-1", name="Floor Guard Product",
+                unit_price=Decimal("100.00"), cost_price=Decimal("70.00"),
+                minimum_selling_price=Decimal("90.00"), currency="TZS",
+            )
+            db.session.add_all([customer, product])
+            db.session.commit()
+            customer_id, product_id = str(customer.id), str(product.id)
+        response = client.post("/api/sales", json={
+            "customer_id": customer_id,
+            "currency": "TZS",
+            "price_floor_override_reason": "Approved exception",
+            "items": [{
+                "product_id": product_id, "quantity": "1",
+                "discount_amount": "15.00",
+            }],
+        })
+        assert response.status_code == 400
+    finally:
+        with application.app_context():
+            db.session.remove()
+            db.drop_all()
+
+
+def test_weekly_discount_report_groups_completed_sales_by_seller_and_currency():
+    application, client = make_client("admin")
+    try:
+        customer = client.post("/api/customers", json={"name": "Weekly Discount Customer"})
+        product = client.post("/api/products", json={
+            "sku": "WEEKLY-DISC-1", "name": "Weekly Discount Product",
+            "unit_price": "100.00", "currency": "TZS",
+        })
+        assert customer.status_code == 201
+        assert product.status_code == 201
+        sale = client.post("/api/sales", json={
+            "customer_id": customer.json["item"]["id"],
+            "currency": "TZS",
+            "sale_date": "2026-11-11",
+            "discount_amount": "10.00",
+            "items": [{"product_id": product.json["item"]["id"], "quantity": "1"}],
+        })
+        assert sale.status_code == 201
+        completed = client.post(f"/api/sales/{sale.json['item']['id']}/complete")
+        assert completed.status_code == 200
+
+        report = client.get(
+            "/api/reports/discounts/weekly?week_start=2026-11-09"
+        )
+        assert report.status_code == 200
+        assert report.json["week_start"] == "2026-11-09"
+        assert report.json["week_end"] == "2026-11-15"
+        seller = report.json["salespeople"][0]
+        assert seller["email"] == "admin@example.test"
+        assert seller["by_currency"] == [{
+            "currency": "TZS",
+            "completed_sales": 1,
+            "subtotal": "100.00",
+            "discount_total": "10.00",
+            "discount_rate_percent": "10.00",
+            "net_sales_after_discount": "90.00",
+        }]
+        assert "does not yet track leads" in report.json["note"]
+        audit = client.get("/api/audit-logs?limit=20")
+        discount_event = next(
+            event for event in audit.json["items"]
+            if event["event_type"] == "discount_applied"
+        )
+        assert discount_event["details"]["old_discount_amount"] == "0.00"
+        assert discount_event["details"]["new_discount_amount"] == "10.00"
+        assert discount_event["details"]["items"][0]["base_unit_price"] == "100.00"
+        assert discount_event["details"]["items"][0]["effective_unit_price"] == "90.00"
+        invalid = client.get(
+            "/api/reports/discounts/weekly?week_start=2026-11-11"
+        )
+        assert invalid.status_code == 400
+    finally:
+        with application.app_context():
+            db.session.remove()
+            db.drop_all()
+
+
+def test_salesperson_cannot_view_weekly_team_discount_report():
+    application, client = make_client("salesperson")
+    try:
+        response = client.get("/api/reports/discounts/weekly")
+        assert response.status_code == 403
+    finally:
+        with application.app_context():
+            db.session.remove()
+            db.drop_all()
+
+
+def test_completion_rechecks_current_product_floor_and_audits_admin_override():
+    application, client = make_client("admin")
+    try:
+        customer = client.post("/api/customers", json={"name": "Recheck Floor Customer"})
+        product = client.post("/api/products", json={
+            "sku": "RECHECK-FLOOR-1", "name": "Recheck Floor Product",
+            "unit_price": "100.00", "cost_price": "70.00",
+            "minimum_selling_price": "80.00", "currency": "TZS",
+        })
+        assert customer.status_code == 201
+        assert product.status_code == 201
+        sale = client.post("/api/sales", json={
+            "customer_id": customer.json["item"]["id"],
+            "currency": "TZS",
+            "discount_amount": "10.00",
+            "items": [{"product_id": product.json["item"]["id"], "quantity": "1"}],
+        })
+        assert sale.status_code == 201
+        changed = client.patch(
+            f"/api/products/{product.json['item']['id']}",
+            json={"minimum_selling_price": "95.00"},
+        )
+        assert changed.status_code == 200
+
+        sale_id = sale.json["item"]["id"]
+        blocked = client.post(f"/api/sales/{sale_id}/complete", json={})
+        assert blocked.status_code == 400
+        assert "override requires a reason" in blocked.json["error"]
+
+        completed = client.post(f"/api/sales/{sale_id}/complete", json={
+            "price_floor_override_reason": "Existing quote honoured after floor update.",
+        })
+        assert completed.status_code == 200
+        assert completed.json["item"]["status"] == "completed"
+        logs = client.get("/api/audit-logs?limit=20")
+        override = next(
+            event for event in logs.json["items"]
+            if event["event_type"] == "price_floor_override"
+        )
+        assert override["details"]["reason"] == (
+            "Existing quote honoured after floor update."
+        )
+    finally:
+        with application.app_context():
+            db.session.remove()
+            db.drop_all()
+
+
+def test_order_level_discount_cannot_bypass_product_minimum_price():
+    application, client = make_client("admin")
+    try:
+        customer = client.post("/api/customers", json={"name": "Order Floor Customer"})
+        product = client.post("/api/products", json={
+            "sku": "ORDER-FLOOR-1", "name": "Order Floor Product",
+            "unit_price": "100.00", "cost_price": "70.00",
+            "minimum_selling_price": "90.00", "currency": "TZS",
+        })
+        response = client.post("/api/sales", json={
+            "customer_id": customer.json["item"]["id"],
+            "currency": "TZS",
+            "discount_amount": "15.00",
+            "items": [{"product_id": product.json["item"]["id"], "quantity": "1"}],
+        })
+        assert response.status_code == 400
+        assert "override requires a reason" in response.json["error"]
+    finally:
+        with application.app_context():
+            db.session.remove()
+            db.drop_all()
+
+
+def test_editing_draft_discount_writes_before_and_after_price_audit():
+    application, client = make_client("admin")
+    try:
+        customer = client.post("/api/customers", json={"name": "Discount Edit Customer"})
+        product = client.post("/api/products", json={
+            "sku": "DISCOUNT-EDIT-1", "name": "Discount Edit Product",
+            "unit_price": "100.00", "currency": "TZS",
+        })
+        sale = client.post("/api/sales", json={
+            "customer_id": customer.json["item"]["id"],
+            "currency": "TZS",
+            "items": [{"product_id": product.json["item"]["id"], "quantity": "1"}],
+        })
+        assert sale.status_code == 201
+        updated = client.patch(f"/api/sales/{sale.json['item']['id']}", json={
+            "customer_id": customer.json["item"]["id"],
+            "currency": "TZS",
+            "discount_amount": "5.00",
+            "items": [{
+                "product_id": product.json["item"]["id"],
+                "quantity": "1",
+                "discount_amount": "0.00",
+            }],
+        })
+        assert updated.status_code == 200
+        logs = client.get("/api/audit-logs?limit=20")
+        event = next(
+            item for item in logs.json["items"]
+            if item["event_type"] == "discount_applied"
+        )
+        assert event["details"]["old_discount_amount"] == "0.00"
+        assert event["details"]["new_discount_amount"] == "5.00"
+        assert event["details"]["items"][0]["base_unit_price"] == "100.00"
+        assert event["details"]["items"][0]["effective_unit_price"] == "95.00"
+    finally:
+        with application.app_context():
+            db.session.remove()
+            db.drop_all()
+
+
+def test_manager_can_view_weekly_team_discount_report():
+    application, client = make_client("manager")
+    try:
+        response = client.get(
+            "/api/reports/discounts/weekly?week_start=2026-11-23"
+        )
+        assert response.status_code == 200
+        assert response.json["week_start"] == "2026-11-23"
+        assert response.json["week_end"] == "2026-11-29"
+        assert response.json["salespeople"] == []
+        assert "Conversion rate is not included" in response.json["note"]
+    finally:
+        with application.app_context():
+            db.session.remove()
+            db.drop_all()
+
+
+def test_weekly_discount_report_excludes_drafts_and_separates_currencies():
+    application, client = make_client("admin")
+    try:
+        customer = client.post("/api/customers", json={"name": "Multi Currency Weekly"})
+        assert customer.status_code == 201
+        product_ids = {}
+        for sku, currency in (("WEEK-TZS", "TZS"), ("WEEK-USD", "USD")):
+            response = client.post("/api/products", json={
+                "sku": sku, "name": sku, "unit_price": "100.00",
+                "currency": currency,
+            })
+            assert response.status_code == 201
+            product_ids[currency] = response.json["item"]["id"]
+
+        for currency in ("TZS", "USD"):
+            sale = client.post("/api/sales", json={
+                "customer_id": customer.json["item"]["id"],
+                "currency": currency,
+                "sale_date": "2026-11-24",
+                "discount_amount": "5.00",
+                "items": [{"product_id": product_ids[currency], "quantity": "1"}],
+            })
+            assert sale.status_code == 201
+            completed = client.post(f"/api/sales/{sale.json['item']['id']}/complete")
+            assert completed.status_code == 200
+
+        draft = client.post("/api/sales", json={
+            "customer_id": customer.json["item"]["id"],
+            "currency": "TZS",
+            "sale_date": "2026-11-25",
+            "discount_amount": "50.00",
+            "items": [{"product_id": product_ids["TZS"], "quantity": "1"}],
+        })
+        assert draft.status_code == 201
+
+        report = client.get(
+            "/api/reports/discounts/weekly?week_start=2026-11-23"
+        )
+        assert report.status_code == 200
+        assert len(report.json["salespeople"]) == 1
+        by_currency = {
+            row["currency"]: row
+            for row in report.json["salespeople"][0]["by_currency"]
+        }
+        assert set(by_currency) == {"TZS", "USD"}
+        assert by_currency["TZS"]["completed_sales"] == 1
+        assert by_currency["TZS"]["discount_total"] == "5.00"
+        assert by_currency["USD"]["completed_sales"] == 1
+        assert by_currency["USD"]["discount_total"] == "5.00"
+    finally:
+        with application.app_context():
+            db.session.remove()
+            db.drop_all()
+
+
+def test_weekly_discount_report_is_scoped_to_active_company():
+    application, client = make_client("manager")
+    try:
+        with application.app_context():
+            other_user = User(
+                email="other-tenant-seller@example.test",
+                email_verified=True,
+            )
+            other_company = Company(
+                name="Other Tenant", slug="other-weekly-report-tenant"
+            )
+            db.session.add_all([other_user, other_company])
+            db.session.flush()
+            db.session.add(CompanyMembership(
+                user_id=other_user.id,
+                company_id=other_company.id,
+                role="salesperson",
+                status="active",
+            ))
+            other_customer = Customer(
+                company_id=other_company.id,
+                created_by_user_id=other_user.id,
+                name="Other Tenant Customer",
+            )
+            db.session.add(other_customer)
+            db.session.flush()
+            db.session.add(Sale(
+                company_id=other_company.id,
+                sale_number="OTHER-WEEK-001",
+                customer_id=other_customer.id,
+                salesperson_user_id=other_user.id,
+                created_by_user_id=other_user.id,
+                status="completed",
+                sale_date=date(2026, 11, 24),
+                currency="TZS",
+                subtotal=Decimal("1000.00"),
+                discount_amount=Decimal("500.00"),
+                tax_amount=Decimal("0.00"),
+                total_amount=Decimal("500.00"),
+            ))
+            db.session.commit()
+
+        response = client.get(
+            "/api/reports/discounts/weekly?week_start=2026-11-23"
+        )
+        assert response.status_code == 200
+        assert response.json["salespeople"] == []
+    finally:
+        with application.app_context():
             db.session.remove()
             db.drop_all()

@@ -66,11 +66,27 @@ class Company(db.Model):
         CheckConstraint("length(trim(name)) > 0", name="name_not_empty"),
         CheckConstraint("length(slug) > 0", name="slug_not_empty"),
         CheckConstraint("slug = lower(trim(slug))", name="slug_normalized"),
+        CheckConstraint(
+            "salesperson_discount_limit >= 0 AND salesperson_discount_limit <= 100",
+            name="salesperson_discount_limit_range",
+        ),
+        CheckConstraint(
+            "manager_discount_limit >= 0 AND manager_discount_limit <= 100",
+            name="manager_discount_limit_range",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
     name: Mapped[str] = mapped_column(String(160), nullable=False)
     slug: Mapped[str] = mapped_column(String(80), nullable=False)
+    salesperson_discount_limit: Mapped[Decimal] = mapped_column(
+        db.Numeric(5, 2), nullable=False,
+        default=Decimal("5.00"), server_default="5.00",
+    )
+    manager_discount_limit: Mapped[Decimal] = mapped_column(
+        db.Numeric(5, 2), nullable=False,
+        default=Decimal("15.00"), server_default="15.00",
+    )
     is_active: Mapped[bool] = mapped_column(nullable=False, default=True, server_default="true")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -136,7 +152,9 @@ class AuditLog(db.Model):
             "'company_invitation_revoked', 'mfa_enabled', 'mfa_disabled', "
             "'mfa_recovery_code_used', 'company_settings_updated', "
             "'team_member_role_changed', 'team_member_suspended', "
-            "'team_member_reactivated')",
+            "'team_member_reactivated', 'product_created', 'product_updated', "
+            "'discount_limits_updated', 'discount_approval_requested', "
+            "'discount_approval_decided', 'price_floor_override', 'discount_applied')",
             name="event_type_is_supported",
         ),
         db.Index("ix_audit_logs_company_time", "company_id", "occurred_at"),
@@ -147,6 +165,7 @@ class AuditLog(db.Model):
     actor_user_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
     company_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
     event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    details: Mapped[dict | None] = mapped_column(db.JSON, nullable=True)
     occurred_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -208,6 +227,9 @@ class Product(db.Model):
         CheckConstraint("length(trim(name)) > 0", name="name_not_empty"),
         CheckConstraint("length(trim(sku)) > 0", name="sku_not_empty"),
         CheckConstraint("unit_price >= 0", name="unit_price_nonnegative"),
+        CheckConstraint("cost_price >= 0", name="cost_price_nonnegative"),
+        CheckConstraint("minimum_selling_price >= cost_price", name="minimum_price_covers_cost"),
+        CheckConstraint("unit_price >= minimum_selling_price", name="unit_price_covers_floor"),
         CheckConstraint(
             "currency = upper(currency) AND length(currency) = 3",
             name="currency_iso_code",
@@ -223,6 +245,12 @@ class Product(db.Model):
     name: Mapped[str] = mapped_column(String(160), nullable=False)
     description: Mapped[str | None] = mapped_column(String(2000))
     unit_price: Mapped[Decimal] = mapped_column(db.Numeric(12, 2), nullable=False)
+    cost_price: Mapped[Decimal] = mapped_column(
+        db.Numeric(12, 2), nullable=False, default=0, server_default="0"
+    )
+    minimum_selling_price: Mapped[Decimal] = mapped_column(
+        db.Numeric(12, 2), nullable=False, default=0, server_default="0"
+    )
     currency: Mapped[str] = mapped_column(
         String(3), nullable=False, default="TZS", server_default="TZS"
     )
@@ -313,6 +341,58 @@ class Sale(db.Model):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=utc_now
     )
+
+
+class DiscountApprovalRequest(db.Model):
+    """Decision history for a sale discount above its role limit."""
+
+    __tablename__ = "discount_approval_requests"
+    __table_args__ = (
+        db.ForeignKeyConstraint(
+            ["company_id", "sale_id"], ["sales.company_id", "sales.id"],
+            ondelete="CASCADE", name="fk_discount_approval_sale_same_company",
+        ),
+        db.ForeignKeyConstraint(
+            ["company_id", "requested_by_user_id"],
+            ["company_memberships.company_id", "company_memberships.user_id"],
+            ondelete="NO ACTION", name="fk_discount_approval_requester_membership",
+        ),
+        db.ForeignKeyConstraint(
+            ["company_id", "approver_user_id"],
+            ["company_memberships.company_id", "company_memberships.user_id"],
+            ondelete="NO ACTION", name="fk_discount_approval_approver_membership",
+        ),
+        CheckConstraint(
+            "status IN ('pending', 'approved', 'rejected', 'superseded')",
+            name="status_is_supported",
+        ),
+        CheckConstraint(
+            "requested_discount_percent > 0 AND requested_discount_percent <= 100",
+            name="discount_percent_range",
+        ),
+        CheckConstraint("length(trim(reason)) > 0", name="reason_not_empty"),
+        db.Index("ix_discount_approvals_company_status", "company_id", "status", "created_at"),
+        db.Index("ix_discount_approvals_sale_created", "company_id", "sale_id", "created_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    company_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    sale_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    requested_by_user_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    approver_user_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True))
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="pending", server_default="pending"
+    )
+    requested_discount_percent: Mapped[Decimal] = mapped_column(db.Numeric(5, 2), nullable=False)
+    reason: Mapped[str] = mapped_column(String(1000), nullable=False)
+    decision_reason: Mapped[str | None] = mapped_column(String(1000))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class SaleItem(db.Model):

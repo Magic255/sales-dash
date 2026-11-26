@@ -3,16 +3,26 @@
 import csv
 import io
 from datetime import date, timedelta
-from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
+from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal, InvalidOperation
 from uuid import UUID, uuid4
 
 from flask import Blueprint, Response, g, jsonify, request, session
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
+from .audit import record_audit_event
 from .auth import login_required
 from .extensions import db
-from .models import CompanyMembership, Customer, Product, Sale, SaleItem, User
+from .models import (
+    Company,
+    CompanyMembership,
+    Customer,
+    DiscountApprovalRequest,
+    Product,
+    Sale,
+    SaleItem,
+    User,
+)
 from .permissions import company_permission_required
 
 sales_bp = Blueprint("sales", __name__, url_prefix="/api")
@@ -22,6 +32,210 @@ MILLI = Decimal("0.001")
 
 def _company_id():
     return UUID(session["company_id"])
+
+
+def _discount_limit(company, role):
+    if role == "admin":
+        return None
+    if role == "manager":
+        return company.manager_discount_limit
+    if role == "salesperson":
+        return company.salesperson_discount_limit
+    return Decimal("0.00")
+
+
+def _discount_percent(discount, subtotal):
+    if subtotal <= 0:
+        return Decimal("0.00")
+    return (discount * Decimal("100") / subtotal).quantize(CENT, rounding=ROUND_HALF_UP)
+
+
+def _record_discount_application(
+    sale, user, prepared, order_discount, discount_percent,
+    approval_request, previous_discount_amount,
+):
+    """Write an immutable audit event for every sale discount change."""
+    if sale.discount_amount <= 0 and previous_discount_amount <= 0:
+        return
+    remaining = []
+    for row in prepared:
+        if len(row) == 5:
+            product, quantity, unit_price, line_discount, line_total = row
+        else:
+            product, quantity, line_discount, line_total = row
+            unit_price = product.unit_price
+        remaining.append((
+            product, quantity, unit_price, line_discount, line_total
+        ))
+    remaining_total = sum((row[4] for row in remaining), Decimal("0.00"))
+    allocated = Decimal("0.00")
+    item_details = []
+    for index, (product, quantity, unit_price, line_discount, line_total) in enumerate(remaining):
+        if index == len(remaining) - 1:
+            order_share = order_discount - allocated
+        elif remaining_total > 0:
+            order_share = (
+                order_discount * line_total / remaining_total
+            ).quantize(CENT, rounding=ROUND_DOWN)
+            allocated += order_share
+        else:
+            order_share = Decimal("0.00")
+        effective_unit = (
+            (line_total - order_share) / quantity
+        ).quantize(CENT, rounding=ROUND_DOWN)
+        item_details.append({
+            "product_id": str(product.id),
+            "sku": product.sku,
+            "base_unit_price": str(unit_price),
+            "effective_unit_price": str(effective_unit),
+            "line_discount": str(line_discount),
+            "allocated_order_discount": str(order_share),
+        })
+    record_audit_event(
+        db.session,
+        user.id,
+        "discount_applied",
+        sale.company_id,
+        {
+            "sale_id": str(sale.id),
+            "sale_number": sale.sale_number,
+            "currency": sale.currency,
+            "old_discount_amount": str(previous_discount_amount),
+            "new_discount_amount": str(sale.discount_amount),
+            "discount_percent": str(discount_percent),
+            "approval_request_id": (
+                str(approval_request.id) if approval_request else None
+            ),
+            "approval_status": approval_request.status if approval_request else None,
+            "approver_user_id": (
+                str(approval_request.approver_user_id)
+                if approval_request and approval_request.approver_user_id else None
+            ),
+            "items": item_details,
+        },
+    )
+
+
+def _latest_discount_approval(sale_id, company_id):
+    return db.session.scalar(
+        select(DiscountApprovalRequest)
+        .where(
+            DiscountApprovalRequest.sale_id == sale_id,
+            DiscountApprovalRequest.company_id == company_id,
+        )
+        .order_by(
+            DiscountApprovalRequest.created_at.desc(),
+            DiscountApprovalRequest.id.desc(),
+        )
+        .limit(1)
+    )
+
+
+def _create_discount_approval_if_needed(sale, user, discount_percent, reason):
+    company = db.session.get(Company, sale.company_id)
+    # Discount authority follows the credited salesperson, not the member
+    # editing the draft. Completion uses this same membership role.
+    salesperson_membership = db.session.get(
+        CompanyMembership, (sale.company_id, sale.salesperson_user_id)
+    )
+    salesperson_role = (
+        salesperson_membership.role if salesperson_membership else "viewer"
+    )
+    limit = _discount_limit(company, salesperson_role)
+    previous = db.session.scalars(
+        select(DiscountApprovalRequest)
+        .where(
+            DiscountApprovalRequest.sale_id == sale.id,
+            DiscountApprovalRequest.company_id == sale.company_id,
+            DiscountApprovalRequest.status.in_(("pending", "approved")),
+        )
+        .with_for_update()
+    ).all()
+    for approval in previous:
+        approval.status = "superseded"
+
+    if limit is None or discount_percent <= limit:
+        return None
+    if not reason:
+        raise ValueError(
+            "This discount is above your role limit. Add an approval reason."
+        )
+    approval = DiscountApprovalRequest(
+        company_id=sale.company_id,
+        sale_id=sale.id,
+        requested_by_user_id=user.id,
+        requested_discount_percent=discount_percent,
+        reason=reason,
+        status="pending",
+    )
+    db.session.add(approval)
+    record_audit_event(
+        db.session, user.id, "discount_approval_requested", sale.company_id,
+        {
+            "sale_id": str(sale.id),
+            "discount_percent": str(discount_percent),
+            "role_limit_percent": str(limit),
+        },
+    )
+    return approval
+
+
+
+class PriceFloorError(ValueError):
+    """A sale violates the configured product minimum selling price."""
+
+
+def _check_price_floor(prepared, order_discount, user, override_reason, sale_id):
+    """Check each line after its line discount and proportional order discount."""
+    remaining = []
+    for row in prepared:
+        if len(row) == 5:
+            product, quantity, unit_price, discount, _line_total = row
+            gross = (quantity * unit_price).quantize(CENT, rounding=ROUND_HALF_UP)
+        else:
+            product, quantity, discount, line_total = row
+            gross = line_total + discount
+        remaining.append((product, quantity, gross, discount, gross - discount))
+    remaining_total = sum((row[4] for row in remaining), Decimal("0.00"))
+    allocated = Decimal("0.00")
+    violations = []
+    for index, (product, quantity, gross, line_discount, remaining_line) in enumerate(remaining):
+        if index == len(remaining) - 1:
+            order_share = order_discount - allocated
+        elif remaining_total > 0:
+            order_share = (
+                order_discount * remaining_line / remaining_total
+            ).quantize(CENT, rounding=ROUND_DOWN)
+            allocated += order_share
+        else:
+            order_share = Decimal("0.00")
+        net_line = remaining_line - order_share
+        effective_unit = (net_line / quantity).quantize(
+            CENT, rounding=ROUND_DOWN
+        )
+        if effective_unit < product.minimum_selling_price:
+            violations.append({
+                "product_id": str(product.id),
+                "sku": product.sku,
+                "base_unit_price": str(product.unit_price),
+                "minimum_selling_price": str(product.minimum_selling_price),
+                "effective_unit_price": str(effective_unit),
+                "line_discount": str(line_discount),
+                "allocated_order_discount": str(order_share),
+            })
+    if not violations:
+        return
+    # The authoritative role is the active company membership, not a client field.
+    if getattr(getattr(g, "company_membership", None), "role", None) != "admin":
+        raise PriceFloorError("The discount would take a product below its minimum selling price.")
+    reason = (override_reason or "").strip()
+    if not reason:
+        raise PriceFloorError("An Admin price-floor override requires a reason.")
+    record_audit_event(
+        db.session, user.id, "price_floor_override", _company_id(),
+        {"sale_id": str(sale_id) if sale_id else None,
+         "reason": reason, "items": violations},
+    )
 
 
 def _json_object():
@@ -76,13 +290,17 @@ def _customer_json(item):
     }
 
 
-def _product_json(item):
-    return {
+def _product_json(item, *, include_cost=False):
+    result = {
         "id": str(item.id), "sku": item.sku, "name": item.name,
         "description": item.description, "unit_price": str(item.unit_price),
         "currency": item.currency, "is_active": item.is_active,
+        "minimum_selling_price": str(item.minimum_selling_price),
         "created_at": item.created_at.isoformat(),
     }
+    if include_cost:
+        result["cost_price"] = str(item.cost_price)
+    return result
 
 
 def _sale_json(item, customer_name=None, line_items=None):
@@ -208,12 +426,15 @@ def list_products(_user):
         pattern = f"%{search[:100]}%"
         query = query.where(Product.name.ilike(pattern) | Product.sku.ilike(pattern))
     items = db.session.scalars(query.order_by(Product.name).limit(100)).all()
-    return jsonify({"items": [_product_json(item) for item in items]})
+    return jsonify({"items": [
+        _product_json(item, include_cost=(g.company_membership.role == "admin"))
+        for item in items
+    ]})
 
 
 @sales_bp.post("/products")
 @login_required
-@company_permission_required("manage_products")
+@company_permission_required("manage_product_catalog")
 def create_product(user):
     data = _json_object()
     if data is None:
@@ -227,12 +448,28 @@ def create_product(user):
             description=_text(data, "description", 2000),
             unit_price=_decimal(data.get("unit_price"), "unit_price"),
             currency=_text(data, "currency", 3, required=True, upper=True),
+            cost_price=_decimal(data.get("cost_price", "0"), "cost_price"),
+            minimum_selling_price=_decimal(
+                data.get("minimum_selling_price", data.get("cost_price", "0")),
+                "minimum_selling_price",
+            ),
         )
         if len(item.currency) != 3:
             raise ValueError("Currency must be a 3-letter code, such as TZS.")
+        if item.minimum_selling_price < item.cost_price:
+            raise ValueError("Minimum selling price cannot be below product cost.")
+        if item.unit_price < item.minimum_selling_price:
+            raise ValueError("Unit price cannot be below the minimum selling price.")
         db.session.add(item)
         db.session.flush()
-        result = _product_json(item)
+        record_audit_event(
+            db.session, user.id, "product_created", _company_id(),
+            {"product_id": str(item.id), "sku": item.sku, "name": item.name,
+             "unit_price": str(item.unit_price), "cost_price": str(item.cost_price),
+             "minimum_selling_price": str(item.minimum_selling_price),
+             "currency": item.currency},
+        )
+        result = _product_json(item, include_cost=True)
         db.session.commit()
     except ValueError:
         db.session.rollback()
@@ -245,8 +482,8 @@ def create_product(user):
 
 @sales_bp.patch("/products/<uuid:product_id>")
 @login_required
-@company_permission_required("manage_products")
-def update_product(_user, product_id):
+@company_permission_required("manage_product_catalog")
+def update_product(user, product_id):
     item = db.session.scalar(
         select(Product).where(
             Product.id == product_id, Product.company_id == _company_id()
@@ -257,6 +494,12 @@ def update_product(_user, product_id):
     data = _json_object()
     if data is None:
         return jsonify({"error": "Send a JSON object."}), 400
+    before = {
+        "sku": item.sku, "name": item.name, "description": item.description,
+        "unit_price": str(item.unit_price), "cost_price": str(item.cost_price),
+        "minimum_selling_price": str(item.minimum_selling_price),
+        "currency": item.currency, "is_active": item.is_active,
+    }
     try:
         if "sku" in data:
             item.sku = _text(data, "sku", 64, required=True, upper=True)
@@ -266,6 +509,16 @@ def update_product(_user, product_id):
             item.description = _text(data, "description", 2000)
         if "unit_price" in data:
             item.unit_price = _decimal(data["unit_price"], "unit_price")
+        if "cost_price" in data:
+            item.cost_price = _decimal(data["cost_price"], "cost_price")
+        if "minimum_selling_price" in data:
+            item.minimum_selling_price = _decimal(
+                data["minimum_selling_price"], "minimum_selling_price"
+            )
+        if item.minimum_selling_price < item.cost_price:
+            raise ValueError("Minimum selling price cannot be below product cost.")
+        if item.unit_price < item.minimum_selling_price:
+            raise ValueError("Unit price cannot be below the minimum selling price.")
         if "currency" in data:
             item.currency = _text(data, "currency", 3, required=True, upper=True)
             if len(item.currency) != 3:
@@ -275,7 +528,18 @@ def update_product(_user, product_id):
                 raise ValueError("is_active must be true or false.")
             item.is_active = data["is_active"]
         db.session.flush()
-        result = _product_json(item)
+        after = {
+            "sku": item.sku, "name": item.name, "description": item.description,
+            "unit_price": str(item.unit_price), "cost_price": str(item.cost_price),
+            "minimum_selling_price": str(item.minimum_selling_price),
+            "currency": item.currency, "is_active": item.is_active,
+        }
+        if before != after:
+            record_audit_event(
+                db.session, user.id, "product_updated", _company_id(),
+                {"product_id": str(item.id), "old": before, "new": after},
+            )
+        result = _product_json(item, include_cost=True)
         db.session.commit()
     except ValueError:
         db.session.rollback()
@@ -379,6 +643,11 @@ def create_sale(user):
         if order_discount > subtotal - line_discounts:
             raise ValueError("The sale discount is greater than the remaining amount.")
         total = subtotal - line_discounts - order_discount + tax
+        discount_percent = _discount_percent(line_discounts + order_discount, subtotal)
+        approval_reason = _text(data, "approval_reason", 1000)
+        price_floor_override_reason = _text(
+            data, "price_floor_override_reason", 1000
+        )
         if total < 0:
             raise ValueError("The sale total cannot be negative.")
 
@@ -394,6 +663,16 @@ def create_sale(user):
         )
         db.session.add(sale)
         db.session.flush()
+        _check_price_floor(
+            prepared, order_discount, user, price_floor_override_reason, sale.id
+        )
+        approval_request = _create_discount_approval_if_needed(
+            sale, user, discount_percent, approval_reason
+        )
+        _record_discount_application(
+            sale, user, prepared, order_discount, discount_percent,
+            approval_request, Decimal("0.00"),
+        )
         for product, quantity, unit_price, discount, line_total in prepared:
             db.session.add(SaleItem(
                 company_id=company_id, sale_id=sale.id, product_id=product.id,
@@ -409,7 +688,13 @@ def create_sale(user):
               "line_total": str(line_total)}
              for p, q, price, discount, line_total in prepared],
         )
+        result["approval_status"] = (
+            approval_request.status if approval_request else None
+        )
         db.session.commit()
+    except PriceFloorError as error:
+        db.session.rollback()
+        return jsonify({"error": str(error)}), 400
     except ValueError:
         db.session.rollback()
         return jsonify({"error": "Invalid input. Check the submitted fields and try again."}), 400
@@ -535,6 +820,82 @@ def _csv_safe(value):
     return text
 
 
+@sales_bp.get("/reports/discounts/weekly")
+@login_required
+@company_permission_required("view_reports")
+def weekly_discount_report(_user):
+    """Summarize completed-sale discount use by credited seller for one calendar week."""
+    if g.company_membership.role not in {"admin", "manager"}:
+        return jsonify({"error": "You are not allowed to view team discount performance."}), 403
+    today = date.today()
+    default_week_start = today - timedelta(days=today.weekday())
+    try:
+        week_start = date.fromisoformat(
+            request.args.get("week_start", default_week_start.isoformat())
+        )
+        if week_start.weekday() != 0:
+            raise ValueError
+    except (TypeError, ValueError):
+        return jsonify({
+            "error": "Choose a valid Monday as the start of the reporting week."
+        }), 400
+    week_end = week_start + timedelta(days=6)
+    company_id = _company_id()
+    rows = db.session.execute(
+        select(
+            Sale.salesperson_user_id,
+            User.display_name,
+            User.email,
+            Sale.currency,
+            func.count(Sale.id),
+            func.coalesce(func.sum(Sale.subtotal), 0),
+            func.coalesce(func.sum(Sale.discount_amount), 0),
+            func.coalesce(func.sum(Sale.subtotal - Sale.discount_amount), 0),
+        )
+        .join(User, User.id == Sale.salesperson_user_id)
+        .where(
+            Sale.company_id == company_id,
+            Sale.status == "completed",
+            Sale.sale_date >= week_start,
+            Sale.sale_date <= week_end,
+        )
+        .group_by(
+            Sale.salesperson_user_id, User.display_name, User.email, Sale.currency
+        )
+        .order_by(User.email, Sale.currency)
+    ).all()
+    salespeople = {}
+    for seller_id, display_name, email, currency, count, subtotal, discount, revenue in rows:
+        seller = salespeople.setdefault(str(seller_id), {
+            "user_id": str(seller_id),
+            "name": display_name or email,
+            "email": email,
+            "by_currency": [],
+        })
+        discount_rate = (
+            (Decimal(str(discount)) * Decimal("100") / Decimal(str(subtotal)))
+            .quantize(CENT, rounding=ROUND_HALF_UP)
+            if Decimal(str(subtotal)) > 0 else Decimal("0.00")
+        )
+        seller["by_currency"].append({
+            "currency": currency,
+            "completed_sales": count,
+            "subtotal": str(subtotal),
+            "discount_total": str(discount),
+            "discount_rate_percent": str(discount_rate),
+            "net_sales_after_discount": str(revenue),
+        })
+    return jsonify({
+        "week_start": week_start.isoformat(),
+        "week_end": week_end.isoformat(),
+        "salespeople": list(salespeople.values()),
+        "note": (
+            "Conversion rate is not included because this workspace does not yet "
+            "track leads or opportunities."
+        ),
+    })
+
+
 @sales_bp.get("/reports/sales.csv")
 @login_required
 @company_permission_required("view_reports")
@@ -573,11 +934,13 @@ def export_sales_report(_user):
 @sales_bp.patch("/sales/<uuid:sale_id>")
 @login_required
 @company_permission_required("edit_sales")
-def update_draft_sale(_user, sale_id):
+def update_draft_sale(user, sale_id):
     company_id = _company_id()
-    sale = db.session.scalar(select(Sale).where(
-        Sale.id == sale_id, Sale.company_id == company_id
-    ))
+    sale = db.session.scalar(
+        select(Sale)
+        .where(Sale.id == sale_id, Sale.company_id == company_id)
+        .with_for_update()
+    )
     if sale is None:
         return jsonify({"error": "Sale not found."}), 404
     if sale.status != "draft":
@@ -630,11 +993,14 @@ def update_draft_sale(_user, sale_id):
         if order_discount > subtotal - line_discounts:
             raise ValueError("The sale discount is greater than the remaining amount.")
         total = subtotal - line_discounts - order_discount + tax
+        discount_percent = _discount_percent(line_discounts + order_discount, subtotal)
+        approval_reason = _text(data, "approval_reason", 1000)
         if total < 0:
             raise ValueError("The sale total cannot be negative.")
         sale_date = _parse_report_date(
             data.get("sale_date") or sale.sale_date.isoformat(), "Sale date"
         )
+        previous_discount_amount = sale.discount_amount
         sale.customer_id = customer.id
         sale.currency = currency
         sale.sale_date = sale_date
@@ -649,6 +1015,13 @@ def update_draft_sale(_user, sale_id):
         )).all():
             db.session.delete(old_item)
         db.session.flush()
+        approval_request = _create_discount_approval_if_needed(
+            sale, user, discount_percent, approval_reason
+        )
+        _record_discount_application(
+            sale, user, prepared, order_discount, discount_percent,
+            approval_request, previous_discount_amount,
+        )
         for product, quantity, discount, line_total in prepared:
             db.session.add(SaleItem(
                 company_id=company_id,
@@ -668,7 +1041,13 @@ def update_draft_sale(_user, sale_id):
              "line_total": str(line_total)}
             for p, q, discount, line_total in prepared
         ])
+        result["approval_status"] = (
+            approval_request.status if approval_request else None
+        )
         db.session.commit()
+    except PriceFloorError as error:
+        db.session.rollback()
+        return jsonify({"error": str(error)}), 400
     except (ValueError, TypeError):
         db.session.rollback()
         return jsonify({"error": "Invalid input. Check the submitted fields and try again."}), 400
@@ -678,19 +1057,172 @@ def update_draft_sale(_user, sale_id):
     return jsonify({"item": result})
 
 
+@sales_bp.get("/discount-approvals")
+@login_required
+@company_permission_required("manage_discount_approvals")
+def list_discount_approvals(_user):
+    company_id = _company_id()
+    rows = db.session.execute(
+        select(DiscountApprovalRequest, Sale.sale_number, User.display_name, User.email)
+        .join(
+            Sale,
+            (Sale.id == DiscountApprovalRequest.sale_id)
+            & (Sale.company_id == DiscountApprovalRequest.company_id),
+        )
+        .join(User, User.id == DiscountApprovalRequest.requested_by_user_id)
+        .where(
+            DiscountApprovalRequest.company_id == company_id,
+            DiscountApprovalRequest.status == "pending",
+        )
+        .order_by(DiscountApprovalRequest.created_at.asc())
+        .limit(100)
+    ).all()
+    return jsonify({"items": [{
+        "id": str(item.id),
+        "sale_id": str(item.sale_id),
+        "sale_number": sale_number,
+        "requested_by": display_name or email,
+        "requested_discount_percent": str(item.requested_discount_percent),
+        "reason": item.reason,
+        "created_at": item.created_at.isoformat(),
+    } for item, sale_number, display_name, email in rows]})
+
+
+@sales_bp.post("/discount-approvals/<uuid:approval_id>/decision")
+@login_required
+@company_permission_required("manage_discount_approvals")
+def decide_discount_approval(user, approval_id):
+    company_id = _company_id()
+    data = _json_object()
+    if data is None or set(data) - {"decision", "reason"}:
+        return jsonify({"error": "Provide an approval decision."}), 400
+    decision = data.get("decision")
+    if decision not in {"approve", "reject"}:
+        return jsonify({"error": "Choose approve or reject."}), 400
+    try:
+        decision_reason = _text(data, "reason", 1000, required=(decision == "reject"))
+    except ValueError:
+        return jsonify({"error": "A reason is required when rejecting a request."}), 400
+
+    approval = db.session.scalar(
+        select(DiscountApprovalRequest)
+        .where(
+            DiscountApprovalRequest.id == approval_id,
+            DiscountApprovalRequest.company_id == company_id,
+        )
+        .with_for_update()
+    )
+    if approval is None:
+        return jsonify({"error": "Approval request not found."}), 404
+    if approval.status != "pending":
+        return jsonify({"error": "This approval request has already been decided."}), 409
+    if approval.requested_by_user_id == user.id:
+        return jsonify({"error": "You cannot approve your own discount request."}), 403
+    sale = db.session.scalar(
+        select(Sale)
+        .where(Sale.id == approval.sale_id, Sale.company_id == company_id)
+        .with_for_update()
+    )
+    if sale is None or sale.status != "draft":
+        return jsonify({"error": "Only requests for draft sales can be decided."}), 409
+
+    approval.status = "approved" if decision == "approve" else "rejected"
+    approval.approver_user_id = user.id
+    approval.decision_reason = decision_reason
+    approval.decided_at = func.now()
+    record_audit_event(
+        db.session, user.id, "discount_approval_decided", company_id,
+        {
+            "approval_id": str(approval.id),
+            "sale_id": str(sale.id),
+            "decision": approval.status,
+            "requested_discount_percent": str(approval.requested_discount_percent),
+            "requester_user_id": str(approval.requested_by_user_id),
+        },
+    )
+    db.session.commit()
+    return jsonify({"item": {
+        "id": str(approval.id),
+        "status": approval.status,
+        "approver_user_id": str(approval.approver_user_id),
+        "decided_at": approval.decided_at.isoformat(),
+    }})
+
+
 @sales_bp.post("/sales/<uuid:sale_id>/complete")
 @login_required
 @company_permission_required("create_sales")
 def complete_sale(user, sale_id):
-    item = db.session.scalar(select(Sale).where(
-        Sale.id == sale_id, Sale.company_id == _company_id()
-    ))
+    item = db.session.scalar(
+        select(Sale)
+        .where(Sale.id == sale_id, Sale.company_id == _company_id())
+        .with_for_update()
+    )
     if item is None:
         return jsonify({"error": "Sale not found."}), 404
     if item.status != "draft":
         return jsonify({"error": "Only draft sales can be completed."}), 409
     if g.company_membership.role not in {"admin", "manager"} and item.created_by_user_id != user.id:
         return jsonify({"error": "You can only complete sales you created."}), 403
+    company = db.session.get(Company, item.company_id)
+    creator_membership = db.session.get(
+        CompanyMembership, (item.company_id, item.salesperson_user_id)
+    )
+    limit = _discount_limit(company, creator_membership.role if creator_membership else "viewer")
+    discount_percent = _discount_percent(item.discount_amount, item.subtotal)
+    if limit is not None and discount_percent > limit:
+        approval = _latest_discount_approval(item.id, item.company_id)
+        if approval is None or approval.requested_discount_percent != discount_percent:
+            return jsonify({
+                "error": "A current discount approval is required before completion."
+            }), 409
+        if approval.status == "pending":
+            return jsonify({"error": "This sale is waiting for Admin approval."}), 409
+        if approval.status != "approved":
+            return jsonify({
+                "error": "The discount request was not approved. "
+                "Update the sale or request approval again."
+            }), 409
+    sale_lines = db.session.scalars(
+        select(SaleItem).where(
+            SaleItem.sale_id == item.id,
+            SaleItem.company_id == item.company_id,
+        )
+    ).all()
+    product_ids = {line.product_id for line in sale_lines}
+    current_products = db.session.scalars(
+        select(Product).where(
+            Product.company_id == item.company_id,
+            Product.id.in_(product_ids),
+        )
+    ).all() if product_ids else []
+    products_by_id = {product.id: product for product in current_products}
+    if len(products_by_id) != len(product_ids):
+        return jsonify({
+            "error": "A product on this sale is no longer available for price validation."
+        }), 409
+    line_discount_total = sum(
+        (line.discount_amount for line in sale_lines), Decimal("0.00")
+    )
+    order_discount = item.discount_amount - line_discount_total
+    try:
+        request_data = request.get_json(silent=True) or {}
+        override_reason = _text(
+            request_data, "price_floor_override_reason", 1000
+        ) if isinstance(request_data, dict) else ""
+        _check_price_floor(
+            [
+                (products_by_id[line.product_id], line.quantity,
+                 line.unit_price, line.discount_amount, line.line_total)
+                for line in sale_lines
+            ],
+            max(order_discount, Decimal("0.00")),
+            user,
+            override_reason,
+            item.id,
+        )
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 400
     item.status = "completed"
     db.session.flush()
     result = _sale_json(item)

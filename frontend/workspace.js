@@ -51,17 +51,23 @@ async function loadAuditLogs(generation = workspaceGeneration) {
   }
 
   message.textContent = "";
-  emptyRow(body, 3, "Loading security activity…");
+  emptyRow(body, 4, "Loading security activity…");
   try {
     const data = await workspaceRequest("/api/audit-logs?limit=50");
     if (generation !== workspaceGeneration || workspaceRole !== "admin") return;
     body.replaceChildren();
     if (!data.items.length) {
-      emptyRow(body, 3, "No security activity recorded yet.");
+      emptyRow(body, 4, "No security activity recorded yet.");
       return;
     }
 
     const eventLabels = {
+      product_created: "Product created",
+      product_updated: "Product details or price changed",
+      discount_limits_updated: "Discount limits updated",
+      discount_approval_requested: "Discount approval requested",
+      discount_approval_decided: "Discount approval decided",
+      discount_applied: "Sale discount applied or changed",
       login_succeeded: "Signed in",
       password_changed: "Password changed",
       company_selected: "Company selected",
@@ -97,12 +103,89 @@ async function loadAuditLogs(generation = workspaceGeneration) {
         row,
         item.actor_user_id ? "Account " + item.actor_user_id.slice(0, 8) : "System",
       );
+      textCell(row, item.details ? JSON.stringify(item.details) : "—");
       body.append(row);
     }
     message.textContent = "Showing the " + data.items.length + " most recent events.";
   } catch (error) {
     if (generation !== workspaceGeneration) return;
-    emptyRow(body, 3, "Security activity could not be loaded.");
+    emptyRow(body, 4, "Security activity could not be loaded.");
+    message.textContent = error.message;
+  }
+}
+
+async function loadDiscountApprovals() {
+  const generation = workspaceGeneration;
+  const panel = document.querySelector('[data-workspace-panel="discount-approvals"]');
+  const body = document.querySelector("#discount-approval-rows");
+  const message = document.querySelector("#discount-approvals-message");
+  if (workspaceRole !== "admin") {
+    panel.hidden = true;
+    document.querySelector("#discount-approvals-tab").hidden = true;
+  document.querySelector("#weekly-discount-report").hidden = true;
+    return;
+  }
+  message.textContent = "";
+  emptyRow(body, 6, "Loading approval requests…");
+  try {
+    const data = await workspaceRequest("/api/discount-approvals");
+    if (generation !== workspaceGeneration || workspaceRole !== "admin") return;
+    body.replaceChildren();
+    if (!data.items.length) {
+      emptyRow(body, 6, "No discount approvals are waiting.");
+      return;
+    }
+    for (const item of data.items) {
+      const row = document.createElement("tr");
+      textCell(row, item.sale_number);
+      textCell(row, item.requested_by);
+      textCell(row, Number(item.requested_discount_percent).toFixed(2) + "%");
+      textCell(row, item.reason);
+      const requestedAt = new Date(item.created_at);
+      textCell(row, Number.isNaN(requestedAt.getTime())
+        ? item.created_at : requestedAt.toLocaleString());
+      const actions = document.createElement("td");
+      const approve = document.createElement("button");
+      approve.type = "button";
+      approve.className = "table-action";
+      approve.textContent = "Approve";
+      const reject = document.createElement("button");
+      reject.type = "button";
+      reject.className = "table-action table-action-danger";
+      reject.textContent = "Reject";
+      for (const [button, decision] of [[approve, "approve"], [reject, "reject"]]) {
+        button.addEventListener("click", async () => {
+          let reason;
+          if (decision === "reject") {
+            reason = window.prompt("Reason for rejecting this discount request");
+            if (reason === null) return;
+            if (!reason.trim()) {
+              message.textContent = "A reason is required to reject a request.";
+              return;
+            }
+          }
+          button.disabled = true;
+          try {
+            await workspaceRequest(
+              "/api/discount-approvals/" + encodeURIComponent(item.id) + "/decision",
+              {method: "POST", body: JSON.stringify({decision, ...(reason ? {reason} : {})})},
+            );
+            message.textContent = decision === "approve"
+              ? "Discount approved." : "Discount request rejected.";
+            await loadDiscountApprovals();
+          } catch (error) {
+            message.textContent = error.message;
+            button.disabled = false;
+          }
+        });
+      }
+      actions.append(approve, reject);
+      row.append(actions);
+      body.append(row);
+    }
+  } catch (error) {
+    if (generation !== workspaceGeneration) return;
+    emptyRow(body, 6, "Approval requests could not be loaded.");
     message.textContent = error.message;
   }
 }
@@ -126,6 +209,10 @@ function selectTab(name) {
 
 function canManageCatalog() {
   return ["admin", "manager"].includes(workspaceRole);
+}
+
+function canManageProducts() {
+  return workspaceRole === "admin";
 }
 
 function addCatalogAction(cell, label, callback, danger = false) {
@@ -182,12 +269,21 @@ async function editProduct(item) {
   if (description === null) return;
   const unitPrice = window.prompt("Unit price", item.unit_price);
   if (unitPrice === null) return;
+  const costPrice = window.prompt("Cost price", item.cost_price || "0.00");
+  if (costPrice === null) return;
+  const minimumSellingPrice = window.prompt(
+    "Minimum selling price", item.minimum_selling_price || "0.00"
+  );
+  if (minimumSellingPrice === null) return;
   const currency = window.prompt("Currency (3-letter code)", item.currency);
   if (currency === null) return;
   try {
     await workspaceRequest("/api/products/" + encodeURIComponent(item.id), {
       method: "PATCH",
-      body: JSON.stringify({sku, name, description, unit_price: unitPrice, currency}),
+      body: JSON.stringify({
+        sku, name, description, unit_price: unitPrice,
+        cost_price: costPrice, minimum_selling_price: minimumSellingPrice, currency,
+      }),
     });
     await loadWorkspace();
     workspaceMessage("Product updated. Existing sales retain their saved price snapshots.");
@@ -238,16 +334,17 @@ function renderCustomers() {
 function renderProducts() {
   const body = document.querySelector("#product-rows");
   body.replaceChildren();
-  if (!products.length) return emptyRow(body, 6, "No products yet. Add the first product above.");
+  if (!products.length) return emptyRow(body, 7, "No products yet. Add the first product above.");
   for (const item of products) {
     const row = document.createElement("tr");
     textCell(row, item.sku);
     textCell(row, item.name);
     textCell(row, amount(item.currency, item.unit_price));
+    textCell(row, amount(item.currency, item.minimum_selling_price));
     textCell(row, item.currency);
     textCell(row, item.is_active ? "Active" : "Archived");
     const actions = document.createElement("td");
-    if (canManageCatalog()) {
+    if (canManageProducts()) {
       addCatalogAction(actions, "Edit", () => editProduct(item));
       addCatalogAction(
         actions, item.is_active ? "Archive" : "Restore",
@@ -299,9 +396,27 @@ async function loadSales(generation) {
       complete.addEventListener("click", async () => {
         complete.disabled = true;
         try {
-          await workspaceRequest("/api/sales/" + encodeURIComponent(sale.id) + "/complete", {
-            method: "POST", body: "{}",
-          });
+          const path = "/api/sales/" + encodeURIComponent(sale.id) + "/complete";
+          try {
+            await workspaceRequest(path, {method: "POST", body: "{}"});
+          } catch (error) {
+            if (
+              workspaceRole !== "admin" ||
+              !error.message.toLowerCase().includes("override requires a reason")
+            ) throw error;
+            const reason = window.prompt(
+              "This draft is now below a product's minimum price. Enter the reason for the Admin override:"
+            );
+            if (reason === null || !reason.trim()) {
+              workspaceMessage("Completion cancelled. An override reason is required.");
+              complete.disabled = false;
+              return;
+            }
+            await workspaceRequest(path, {
+              method: "POST",
+              body: JSON.stringify({price_floor_override_reason: reason.trim()}),
+            });
+          }
           await loadWorkspace();
         } catch (error) {
           workspaceMessage(error.message);
@@ -334,9 +449,29 @@ async function loadSales(generation) {
         };
         edit.disabled = true;
         try {
-          await workspaceRequest("/api/sales/" + encodeURIComponent(sale.id), {
-            method: "PATCH", body: JSON.stringify(payload),
-          });
+          const path = "/api/sales/" + encodeURIComponent(sale.id);
+          try {
+            await workspaceRequest(path, {
+              method: "PATCH", body: JSON.stringify(payload),
+            });
+          } catch (error) {
+            if (
+              workspaceRole !== "admin" ||
+              !error.message.toLowerCase().includes("override requires a reason")
+            ) throw error;
+            const reason = window.prompt(
+              "This edit would take a product below its minimum price. Enter the reason for the Admin override:"
+            );
+            if (reason === null || !reason.trim()) {
+              workspaceMessage("Edit cancelled. An override reason is required.");
+              edit.disabled = false;
+              return;
+            }
+            payload.price_floor_override_reason = reason.trim();
+            await workspaceRequest(path, {
+              method: "PATCH", body: JSON.stringify(payload),
+            });
+          }
           await loadWorkspace();
           workspaceMessage("Draft sale updated.");
         } catch (error) {
@@ -627,16 +762,21 @@ document.addEventListener("salesdash:company-selected", (event) => {
   document.querySelector("#sales-target-message").textContent = "";
   workspace.hidden = false;
   document.querySelector("#customer-form").hidden = workspaceRole === "viewer";
-  document.querySelector("#product-form").hidden = !["admin", "manager"].includes(workspaceRole);
+  document.querySelector("#product-form").hidden = !canManageProducts();
   document.querySelector("#sale-form").hidden = workspaceRole === "viewer";
+  document.querySelector("#sale-floor-override").hidden = workspaceRole !== "admin";
   document.querySelector("#team-tab").hidden = workspaceRole !== "admin";
   document.querySelector("#company-settings-tab").hidden = workspaceRole !== "admin";
+  document.querySelector("#discount-approvals-tab").hidden = workspaceRole !== "admin";
+  document.querySelector("#weekly-discount-report").hidden =
+    !["admin", "manager"].includes(workspaceRole);
   const auditPanel = document.querySelector("#audit-panel");
   auditPanel.hidden = workspaceRole !== "admin";
   if (workspaceRole === "admin") {
     loadAuditLogs(workspaceGeneration);
+    loadDiscountApprovals();
   } else {
-    emptyRow(document.querySelector("#audit-rows"), 3, "Security activity is available to company admins only.");
+    emptyRow(document.querySelector("#audit-rows"), 4, "Security activity is available to company admins only.");
   }
   if (workspaceRole !== "admin") selectTab("overview");
   loadWorkspace();
@@ -647,8 +787,10 @@ document.addEventListener("salesdash:signed-out", () => {
   customers = [];
   products = [];
   document.querySelector("#audit-panel").hidden = true;
+  document.querySelector("#discount-approvals-tab").hidden = true;
+  document.querySelector("#discount-approvals-message").textContent = "";
   document.querySelector("#audit-message").textContent = "";
-  emptyRow(document.querySelector("#audit-rows"), 3, "Select a company to view activity.");
+  emptyRow(document.querySelector("#audit-rows"), 4, "Select a company to view activity.");
   workspace.hidden = true;
 });
 
@@ -737,6 +879,8 @@ document.querySelector("#product-form").addEventListener("submit", async (event)
         sku: document.querySelector("#product-sku").value,
         name: document.querySelector("#product-name").value,
         unit_price: document.querySelector("#product-price").value,
+        cost_price: document.querySelector("#product-cost").value,
+        minimum_selling_price: document.querySelector("#product-minimum-price").value,
         currency: document.querySelector("#product-currency").value,
       }),
     });
@@ -768,6 +912,8 @@ document.querySelector("#sale-form").addEventListener("submit", async (event) =>
         discount_amount: document.querySelector("#sale-discount").value || "0",
         tax_amount: document.querySelector("#sale-tax").value || "0",
         notes: document.querySelector("#sale-notes").value,
+        approval_reason: document.querySelector("#sale-approval-reason").value,
+        price_floor_override_reason: document.querySelector("#sale-floor-override-reason").value,
         items: [{
           product_id: product.id,
           quantity: document.querySelector("#sale-quantity").value,
@@ -781,9 +927,12 @@ document.querySelector("#sale-form").addEventListener("submit", async (event) =>
     document.querySelector("#sale-item-discount").value = "0";
     document.querySelector("#sale-discount").value = "0";
     document.querySelector("#sale-tax").value = "0";
+    document.querySelector("#sale-floor-override-reason").value = "";
     selectTab("sales");
-    workspaceMessage("Draft " + saved.item.sale_number + " saved.");
     await loadWorkspace();
+    workspaceMessage(saved.item.approval_status === "pending"
+      ? "Draft saved. Your discount approval request is waiting for an Admin."
+      : "Draft " + saved.item.sale_number + " saved.");
   } catch (error) {
     workspaceMessage(error.message);
   } finally {
@@ -838,6 +987,45 @@ async function loadSalesReport() {
     ? "Showing the first 500 matching sales. Narrow the date range for a complete view."
     : data.count + " matching sales.";
 }
+
+async function loadWeeklyDiscountReport() {
+  const weekStart = document.querySelector("#discount-week-start").value;
+  const params = new URLSearchParams();
+  if (weekStart) params.set("week_start", weekStart);
+  const data = await workspaceRequest(
+    "/api/reports/discounts/weekly?" + params.toString()
+  );
+  const body = document.querySelector("#weekly-discount-rows");
+  body.replaceChildren();
+  document.querySelector("#weekly-discount-note").textContent =
+    "Week: " + data.week_start + " to " + data.week_end + ". " + data.note;
+  const rows = data.salespeople.flatMap((seller) =>
+    seller.by_currency.map((summary) => ({seller, summary}))
+  );
+  if (!rows.length) {
+    emptyRow(body, 6, "No completed sales were recorded for this week.");
+    return;
+  }
+  for (const {seller, summary} of rows) {
+    const row = document.createElement("tr");
+    textCell(row, seller.name);
+    textCell(row, summary.currency);
+    textCell(row, String(summary.completed_sales));
+    textCell(row, amount(summary.currency, summary.discount_total));
+    textCell(row, summary.discount_rate_percent + "%");
+    textCell(row, amount(summary.currency, summary.net_sales_after_discount));
+    body.append(row);
+  }
+}
+
+document.querySelector("#weekly-discount-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  try {
+    await loadWeeklyDiscountReport();
+  } catch (error) {
+    workspaceMessage(error.message);
+  }
+});
 
 document.querySelector("#report-filter-form").addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -1030,6 +1218,10 @@ async function loadCompanySettings() {
   try {
     const data = await workspaceRequest("/api/company/settings");
     document.querySelector("#company-settings-name").value = data.item.name;
+    document.querySelector("#company-settings-salesperson-limit").value =
+      data.item.discount_limits.salesperson_percent;
+    document.querySelector("#company-settings-manager-limit").value =
+      data.item.discount_limits.manager_percent;
     message.textContent = "";
   } catch (error) {
     message.textContent = error.message;
@@ -1037,6 +1229,10 @@ async function loadCompanySettings() {
 }
 
 document.querySelector("#company-settings-tab").addEventListener("click", loadCompanySettings);
+document.querySelector("#discount-approvals-tab").addEventListener("click", loadDiscountApprovals);
+document.querySelector("#discount-approvals-refresh").addEventListener(
+  "click", loadDiscountApprovals,
+);
 document.querySelector("#company-settings-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = event.currentTarget;
@@ -1046,10 +1242,20 @@ document.querySelector("#company-settings-form").addEventListener("submit", asyn
   try {
     const data = await workspaceRequest("/api/company/settings", {
       method: "PATCH",
-      body: JSON.stringify({name: document.querySelector("#company-settings-name").value}),
+      body: JSON.stringify({
+        name: document.querySelector("#company-settings-name").value,
+        salesperson_discount_limit:
+          document.querySelector("#company-settings-salesperson-limit").value,
+        manager_discount_limit:
+          document.querySelector("#company-settings-manager-limit").value,
+      }),
     });
     document.querySelector("#company-settings-name").value = data.item.name;
-    message.textContent = "Company name updated.";
+    document.querySelector("#company-settings-salesperson-limit").value =
+      data.item.discount_limits.salesperson_percent;
+    document.querySelector("#company-settings-manager-limit").value =
+      data.item.discount_limits.manager_percent;
+    message.textContent = "Company settings updated.";
     workspaceMessage("Company settings saved.");
   } catch (error) {
     message.textContent = error.message;
