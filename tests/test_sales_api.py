@@ -1244,7 +1244,7 @@ def test_inventory_tracking_cannot_be_disabled_while_stock_exists():
             json={"track_inventory": False},
         )
         assert disabled.status_code == 409
-        assert "cannot be disabled" in disabled.json["error"]
+        assert "cannot be disabled after stock movements" in disabled.json["error"]
     finally:
         with application.app_context():
             db.session.remove()
