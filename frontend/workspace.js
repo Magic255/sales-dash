@@ -448,9 +448,29 @@ async function loadSales(generation) {
         };
         edit.disabled = true;
         try {
-          await workspaceRequest("/api/sales/" + encodeURIComponent(sale.id), {
-            method: "PATCH", body: JSON.stringify(payload),
-          });
+          const path = "/api/sales/" + encodeURIComponent(sale.id);
+          try {
+            await workspaceRequest(path, {
+              method: "PATCH", body: JSON.stringify(payload),
+            });
+          } catch (error) {
+            if (
+              workspaceRole !== "admin" ||
+              !error.message.toLowerCase().includes("override requires a reason")
+            ) throw error;
+            const reason = window.prompt(
+              "This edit would take a product below its minimum price. Enter the reason for the Admin override:"
+            );
+            if (reason === null || !reason.trim()) {
+              workspaceMessage("Edit cancelled. An override reason is required.");
+              edit.disabled = false;
+              return;
+            }
+            payload.price_floor_override_reason = reason.trim();
+            await workspaceRequest(path, {
+              method: "PATCH", body: JSON.stringify(payload),
+            });
+          }
           await loadWorkspace();
           workspaceMessage("Draft sale updated.");
         } catch (error) {
