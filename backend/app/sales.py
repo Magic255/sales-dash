@@ -539,6 +539,20 @@ def update_product(user, product_id):
                 )
                 if existing_batches:
                     raise ValueError("Inventory tracking cannot be disabled after batches exist.")
+            if not item.track_inventory and data["track_inventory"]:
+                pending_drafts = db.session.scalar(
+                    select(func.count(SaleItem.id))
+                    .join(Sale, Sale.id == SaleItem.sale_id)
+                    .where(
+                        SaleItem.company_id == item.company_id,
+                        SaleItem.product_id == item.id,
+                        Sale.status == "draft",
+                    )
+                )
+                if pending_drafts:
+                    raise ValueError(
+                        "Complete or cancel existing draft sales before enabling inventory tracking."
+                    )
             item.track_inventory = data["track_inventory"]
         if "reorder_level" in data:
             item.reorder_level = _decimal(
