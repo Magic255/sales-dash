@@ -60,8 +60,8 @@ def _record_discount_application(
         return
     remaining = []
     for row in prepared:
-        if len(row) == 5:
-            product, quantity, unit_price, line_discount, line_total = row
+        if len(row) >= 5:
+            product, quantity, unit_price, line_discount, line_total = row[:5]
         else:
             product, quantity, line_discount, line_total = row
             unit_price = product.unit_price
@@ -190,8 +190,8 @@ def _check_price_floor(prepared, order_discount, user, override_reason, sale_id)
     """Check each line after its line discount and proportional order discount."""
     remaining = []
     for row in prepared:
-        if len(row) == 5:
-            product, quantity, unit_price, discount, _line_total = row
+        if len(row) >= 5:
+            product, quantity, unit_price, discount, _line_total = row[:5]
             gross = (quantity * unit_price).quantize(CENT, rounding=ROUND_HALF_UP)
         else:
             product, quantity, discount, line_total = row
@@ -665,9 +665,14 @@ def create_sale(user):
             if discount > gross:
                 raise ValueError("An item discount cannot exceed its line amount.")
             line_total = gross - discount
+            batch_id = validate_sale_batch(
+                company_id, product, raw.get("batch_id"), quantity
+            )
             subtotal += gross
             line_discounts += discount
-            prepared.append((product, quantity, unit_price, discount, line_total))
+            prepared.append((
+                product, quantity, unit_price, discount, line_total, batch_id
+            ))
 
         order_discount = _decimal(data.get("discount_amount", "0"), "discount_amount")
         tax = _decimal(data.get("tax_amount", "0"), "tax_amount")
@@ -704,12 +709,12 @@ def create_sale(user):
             sale, user, prepared, order_discount, discount_percent,
             approval_request, Decimal("0.00"),
         )
-        for product, quantity, unit_price, discount, line_total in prepared:
+        for product, quantity, unit_price, discount, line_total, batch_id in prepared:
             db.session.add(SaleItem(
                 company_id=company_id, sale_id=sale.id, product_id=product.id,
                 product_name=product.name, sku_snapshot=product.sku,
                 quantity=quantity, unit_price=unit_price,
-                discount_amount=discount, line_total=line_total,
+                discount_amount=discount, batch_id=batch_id, line_total=line_total,
             ))
         db.session.flush()
         result = _sale_json(
@@ -1017,9 +1022,15 @@ def update_draft_sale(user, sale_id):
             discount = _decimal(raw.get("discount_amount", "0"), "item discount")
             if discount > gross:
                 raise ValueError("An item discount cannot exceed its line amount.")
+            batch_id = validate_sale_batch(
+                company_id, product, raw.get("batch_id"), quantity
+            )
             subtotal += gross
             line_discounts += discount
-            prepared.append((product, quantity, discount, gross - discount))
+            prepared.append((
+                product, quantity, product.unit_price, discount,
+                gross - discount, batch_id,
+            ))
         order_discount = _decimal(data.get("discount_amount", "0"), "discount_amount")
         tax = _decimal(data.get("tax_amount", "0"), "tax_amount")
         if order_discount > subtotal - line_discounts:
@@ -1054,7 +1065,7 @@ def update_draft_sale(user, sale_id):
             sale, user, prepared, order_discount, discount_percent,
             approval_request, previous_discount_amount,
         )
-        for product, quantity, discount, line_total in prepared:
+        for product, quantity, unit_price, discount, line_total, batch_id in prepared:
             db.session.add(SaleItem(
                 company_id=company_id,
                 sale_id=sale.id,
@@ -1062,8 +1073,9 @@ def update_draft_sale(user, sale_id):
                 product_name=product.name,
                 sku_snapshot=product.sku,
                 quantity=quantity,
-                unit_price=product.unit_price,
+                unit_price=unit_price,
                 discount_amount=discount,
+                batch_id=batch_id,
                 line_total=line_total,
             ))
         db.session.flush()
