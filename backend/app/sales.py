@@ -398,6 +398,7 @@ def _product_json(item, *, include_cost=False):
         "currency": item.currency, "is_active": item.is_active,
         "minimum_selling_price": str(item.minimum_selling_price),
         "track_inventory": item.track_inventory,
+        "compliance_required": item.compliance_required,
         "low_stock_threshold": str(item.low_stock_threshold),
         "created_at": item.created_at.isoformat(),
     }
@@ -573,6 +574,7 @@ def _batch_balances(company_id, product_id):
             "inflows": totals[batch.id]["inflows"],
             "writeoffs": totals[batch.id]["writeoffs"],
             "available": totals[batch.id]["on_hand"] - totals[batch.id]["reserved"],
+            "compliance_blocked": batch.compliance_status != "approved",
             "expired": batch.expiry_date is not None and batch.expiry_date < today,
             "expiring_soon": (
                 batch.expiry_date is not None
@@ -591,7 +593,7 @@ def _stock_balance(company_id, product_id):
     available = sum(
         (
             item["available"] for item in balances
-            if not item["expired"]
+            if not item["expired"] and not item["compliance_blocked"]
         ),
         Decimal("0.000"),
     )
@@ -607,7 +609,7 @@ def _allocate_fifo_movements(
     remaining = quantity
     created = []
     for item in balances:
-        if item["expired"] and not allow_expired:
+        if (item["expired"] or item["compliance_blocked"]) and not allow_expired:
             continue
         capacity = item["reserved"] if movement_type == "released" else item["available"]
         if capacity <= 0:
@@ -745,6 +747,11 @@ def list_stock_batches(_user, product_id):
             "id": str(batch.id),
             "batch_code": batch.batch_code,
             "expiry_date": batch.expiry_date.isoformat() if batch.expiry_date else None,
+            "compliance_status": batch.compliance_status,
+            "qr_code_present": bool(batch.qr_code),
+            "authority_name": batch.authority_name,
+            "certificate_reference": batch.certificate_reference,
+            "verified_at": batch.verified_at.isoformat() if batch.verified_at else None,
             "stock_on_hand": str(row["on_hand"]),
             "reserved_quantity": str(row["reserved"]),
             "available_quantity": str(
@@ -756,6 +763,7 @@ def list_stock_batches(_user, product_id):
             ),
             "status": (
                 "expired" if row["expired"] and row["on_hand"] > 0
+                else "pending_verification" if row["compliance_blocked"] and row["on_hand"] > 0
                 else "reserved" if row["available"] <= 0 and row["reserved"] > 0
                 else "sold" if (
                     row["on_hand"] <= 0 and row["sold"] > 0
@@ -768,6 +776,92 @@ def list_stock_batches(_user, product_id):
             "received_at": batch.created_at.isoformat(),
         })
     return jsonify({"items": items})
+
+
+
+@sales_bp.post("/stock-batches/<uuid:batch_id>/compliance")
+@login_required
+@company_permission_required("manage_inventory")
+def verify_stock_batch_compliance(user, batch_id):
+    """Record an independent, evidence-backed compliance decision for one batch."""
+    company_id = _company_id()
+    batch = db.session.scalar(
+        select(StockBatch).where(
+            StockBatch.id == batch_id,
+            StockBatch.company_id == company_id,
+        ).with_for_update()
+    )
+    if batch is None:
+        return jsonify({"error": "Stock batch not found."}), 404
+    if g.company_membership.role not in {"admin", "manager"}:
+        return jsonify({"error": "Only authorised compliance verifiers can review stock."}), 403
+    if batch.received_by_user_id == user.id:
+        return jsonify({"error": "The person who received this batch cannot verify it."}), 403
+    data = _json_object()
+    if data is None:
+        return jsonify({"error": "Send a JSON object."}), 400
+    try:
+        decision = _text(data, "decision", 16, required=True, lower=True)
+        if decision not in {"approve", "reject", "recall"}:
+            raise ValueError("Unsupported compliance decision.")
+        notes = _text(data, "notes", 1000, required=(decision != "approve"))
+        if decision == "approve":
+            qr_code = _text(data, "qr_code", 500, required=True)
+            authority_name = _text(data, "authority_name", 160, required=True)
+            authority_country = _text(data, "authority_country", 2, required=True, upper=True)
+            certificate_reference = _text(
+                data, "certificate_reference", 160, required=True
+            )
+            evidence_reference = _text(
+                data, "evidence_reference", 500, required=True
+            )
+            standard_reference = _text(data, "standard_reference", 160)
+            batch.qr_code = qr_code
+            batch.authority_name = authority_name
+            batch.authority_country = authority_country
+            batch.certificate_reference = certificate_reference
+            batch.evidence_reference = evidence_reference
+            batch.standard_reference = standard_reference
+            batch.compliance_status = "approved"
+            event_type = "product_compliance_verified"
+        else:
+            batch.compliance_status = "rejected" if decision == "reject" else "recalled"
+            event_type = (
+                "product_compliance_rejected" if decision == "reject"
+                else "product_compliance_recalled"
+            )
+        batch.verified_by_user_id = user.id
+        batch.verified_at = datetime.now(timezone.utc)
+        batch.verification_notes = notes
+        record_audit_event(
+            db.session, user.id, event_type, company_id,
+            {
+                "product_id": str(batch.product_id),
+                "batch_id": str(batch.id),
+                "batch_code": batch.batch_code,
+                "decision": decision,
+                "authority_name": batch.authority_name,
+                "authority_country": batch.authority_country,
+                "certificate_reference": batch.certificate_reference,
+                "qr_code_present": bool(batch.qr_code),
+                "evidence_reference_present": bool(batch.evidence_reference),
+                "notes": notes,
+            },
+        )
+        db.session.flush()
+        result = {
+            "id": str(batch.id),
+            "compliance_status": batch.compliance_status,
+            "authority_name": batch.authority_name,
+            "authority_country": batch.authority_country,
+            "certificate_reference": batch.certificate_reference,
+            "verified_at": batch.verified_at.isoformat(),
+        }
+        db.session.commit()
+    except ValueError:
+        db.session.rollback()
+        return jsonify({"error": "Invalid compliance review. Check the required evidence and fields."}), 400
+    return jsonify({"item": result})
 
 
 @sales_bp.get("/products/<uuid:product_id>/stock-movements")
@@ -866,6 +960,10 @@ def create_stock_movement(user, product_id):
                 product_id=product_id,
                 batch_code=batch_code,
                 expiry_date=expiry_date,
+                compliance_status=(
+                    "pending_verification" if product.compliance_required else "approved"
+                ),
+                received_by_user_id=user.id,
                 created_at=datetime.now(timezone.utc),
             )
             db.session.add(batch)
@@ -961,6 +1059,9 @@ def create_product(user):
                 "minimum_selling_price",
             ),
             track_inventory=_boolean(data.get("track_inventory", False), "track_inventory"),
+            compliance_required=_boolean(
+                data.get("compliance_required", False), "compliance_required"
+            ),
             low_stock_threshold=_decimal(
                 data.get("low_stock_threshold", "0"), "low_stock_threshold",
                 places=MILLI,
@@ -1026,6 +1127,7 @@ def update_product(user, product_id):
         "unit_price": str(item.unit_price), "cost_price": str(item.cost_price),
         "minimum_selling_price": str(item.minimum_selling_price),
         "track_inventory": item.track_inventory,
+        "compliance_required": item.compliance_required,
         "low_stock_threshold": str(item.low_stock_threshold),
         "currency": item.currency, "is_active": item.is_active,
     }
@@ -1046,6 +1148,21 @@ def update_product(user, product_id):
             )
         if "track_inventory" in data:
             item.track_inventory = _boolean(data["track_inventory"], "track_inventory")
+        if "compliance_required" in data:
+            item.compliance_required = _boolean(
+                data["compliance_required"], "compliance_required"
+            )
+            if item.compliance_required:
+                existing_batches = db.session.scalars(
+                    select(StockBatch).where(
+                        StockBatch.company_id == item.company_id,
+                        StockBatch.product_id == item.id,
+                        StockBatch.compliance_status == "approved",
+                        StockBatch.verified_by_user_id.is_(None),
+                    ).with_for_update()
+                ).all()
+                for batch in existing_batches:
+                    batch.compliance_status = "pending_verification"
         if "low_stock_threshold" in data:
             item.low_stock_threshold = _decimal(
                 data["low_stock_threshold"], "low_stock_threshold", places=MILLI
@@ -1070,6 +1187,7 @@ def update_product(user, product_id):
             "unit_price": str(item.unit_price), "cost_price": str(item.cost_price),
             "minimum_selling_price": str(item.minimum_selling_price),
             "track_inventory": item.track_inventory,
+            "compliance_required": item.compliance_required,
             "low_stock_threshold": str(item.low_stock_threshold),
             "currency": item.currency, "is_active": item.is_active,
         }
@@ -1851,6 +1969,11 @@ def complete_sale(user, sale_id):
             item.company_id, tracked_product_id
         )
         if required_quantity > available:
+            balances = _batch_balances(item.company_id, tracked_product_id)
+            if any(row["compliance_blocked"] and row["available"] > 0 for row in balances):
+                return jsonify({
+                    "error": "Stock is quarantined pending product compliance verification."
+                }), 409
             return jsonify({
                 "error": "Insufficient available stock in non-expired batches for "
                 + products_by_id[tracked_product_id].sku + "."
