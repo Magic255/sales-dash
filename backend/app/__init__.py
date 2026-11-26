@@ -63,6 +63,10 @@ def create_app(test_config=None):
             raise RuntimeError(
                 "COMPLIANCE_EVIDENCE_ENCRYPTION_KEY must be a valid Fernet key."
             ) from error
+        if evidence_key == app.config.get("MFA_ENCRYPTION_KEY"):
+            raise RuntimeError(
+                "COMPLIANCE_EVIDENCE_ENCRYPTION_KEY must be distinct from MFA_ENCRYPTION_KEY."
+            )
 
     if app.config.get("APP_ENV") == "production":
         encryption_key = app.config.get("MFA_ENCRYPTION_KEY")
