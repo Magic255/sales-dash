@@ -611,7 +611,9 @@ def _batch_balances(company_id, product_id):
             "inflows": totals[batch.id]["inflows"],
             "writeoffs": totals[batch.id]["writeoffs"],
             "available": totals[batch.id]["on_hand"] - totals[batch.id]["reserved"],
-            "compliance_blocked": batch.compliance_status != "approved",
+            "compliance_blocked": batch.compliance_status not in {
+                "approved", "exception_approved"
+            },
             "expired": batch.expiry_date is not None and batch.expiry_date < today,
             "expiring_soon": (
                 batch.expiry_date is not None
@@ -850,10 +852,29 @@ def verify_stock_batch_compliance(user, batch_id):
         return jsonify({"error": "Send a JSON object."}), 400
     try:
         decision = _text(data, "decision", 16, required=True, lower=True)
-        if decision not in {"approve", "reject", "recall"}:
+        if decision not in {"approve", "reject", "recall", "exception"}:
             raise ValueError("Unsupported compliance decision.")
         notes = _text(data, "notes", 1000, required=(decision != "approve"))
-        if decision == "approve":
+        product = db.session.scalar(
+            select(Product).where(
+                Product.company_id == company_id, Product.id == batch.product_id
+            )
+        )
+        policy = _category_compliance_policy(
+            company_id, product.category_key, product.market_country
+        ) if product else None
+        if decision == "exception":
+            if (
+                g.company_membership.role != "admin"
+                or not policy
+                or policy.approval_mode != "admin_exception"
+            ):
+                return jsonify({
+                    "error": "An Admin exception is not enabled for this category and market."
+                }), 403
+            batch.compliance_status = "exception_approved"
+            event_type = "product_compliance_exception"
+        elif decision == "approve":
             qr_code = _text(data, "qr_code", 500, required=True)
             authority_name = _text(data, "authority_name", 160, required=True)
             authority_country = _text(data, "authority_country", 2, required=True, upper=True)
@@ -864,6 +885,10 @@ def verify_stock_batch_compliance(user, batch_id):
                 data, "evidence_reference", 500, required=True
             )
             standard_reference = _text(data, "standard_reference", 160)
+            if policy and policy.accepted_authorities and authority_name.casefold() not in {
+                value.casefold() for value in policy.accepted_authorities
+            }:
+                raise ValueError("The issuing authority is not on this category policy allow-list.")
             batch.qr_code = qr_code
             batch.authority_name = authority_name
             batch.authority_country = authority_country
@@ -872,7 +897,7 @@ def verify_stock_batch_compliance(user, batch_id):
             batch.standard_reference = standard_reference
             batch.compliance_status = "approved"
             event_type = "product_compliance_verified"
-        else:
+        elif decision in {"reject", "recall"}:
             batch.compliance_status = "rejected" if decision == "reject" else "recalled"
             event_type = (
                 "product_compliance_rejected" if decision == "reject"
