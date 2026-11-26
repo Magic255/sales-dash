@@ -556,7 +556,7 @@ def inventory_summary(_user):
         reserved = sum((row["reserved"] for row in balances), Decimal("0.000"))
         expired_quantity = sum(
             (
-                max(row["available"], Decimal("0.000"))
+                max(row["on_hand"], Decimal("0.000"))
                 for row in balances if row["expired"]
             ),
             Decimal("0.000"),
@@ -616,7 +616,7 @@ def list_stock_batches(_user, product_id):
                 Decimal("0.000") if row["expired"] else row["available"]
             ),
             "expired_quantity": str(
-                max(row["available"], Decimal("0.000")) if row["expired"]
+                max(row["on_hand"], Decimal("0.000")) if row["expired"]
                 else Decimal("0.000")
             ),
             "status": (
@@ -1634,7 +1634,7 @@ def complete_sale(user, sale_id):
         )
         if required_quantity > available:
             return jsonify({
-                "error": "Insufficient non-expired available stock for "
+                "error": "Insufficient available stock in non-expired batches for "
                 + products_by_id[tracked_product_id].sku + "."
             }), 409
     try:
