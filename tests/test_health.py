@@ -113,7 +113,10 @@ def test_production_requires_compliance_evidence_encryption_key():
 
 
 def test_production_rejects_invalid_compliance_evidence_encryption_key():
-    with pytest.raises(RuntimeError, match="COMPLIANCE_EVIDENCE_ENCRYPTION_KEY must be a valid Fernet key"):
+    with pytest.raises(
+        RuntimeError,
+        match="COMPLIANCE_EVIDENCE_ENCRYPTION_KEY must be a valid Fernet key",
+    ):
         create_app(
             {
                 "TESTING": True,
