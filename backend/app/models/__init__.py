@@ -276,6 +276,7 @@ class StockBatch(db.Model):
 
     __tablename__ = "stock_batches"
     __table_args__ = (
+        db.UniqueConstraint("company_id", "id", name="uq_stock_batches_company_id_id"),
         db.UniqueConstraint(
             "company_id", "product_id", "batch_code",
             name="uq_stock_batches_company_product_code",
