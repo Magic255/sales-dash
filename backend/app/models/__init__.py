@@ -500,8 +500,20 @@ class AppNotification(db.Model):
             ondelete="CASCADE",
             name="fk_app_notifications_sale_same_company",
         ),
+        db.ForeignKeyConstraint(
+            ["company_id", "related_batch_id"],
+            ["stock_batches.company_id", "stock_batches.id"],
+            ondelete="CASCADE",
+            name="fk_app_notifications_batch_same_company",
+        ),
+        db.UniqueConstraint(
+            "company_id", "recipient_user_id", "dedupe_key",
+            name="uq_app_notifications_recipient_dedupe",
+        ),
         CheckConstraint(
-            "notification_type IN ('discount_approval_requested', 'discount_approval_decided')",
+            "notification_type IN ('discount_approval_requested', "
+            "'discount_approval_decided', 'inventory_batch_expiring', "
+            "'inventory_batch_expired')",
             name="notification_type_is_supported",
         ),
         CheckConstraint("length(trim(title)) > 0", name="title_not_empty"),
@@ -518,6 +530,8 @@ class AppNotification(db.Model):
     )
     recipient_user_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
     related_sale_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True))
+    related_batch_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True))
+    dedupe_key: Mapped[str | None] = mapped_column(String(160))
     notification_type: Mapped[str] = mapped_column(String(40), nullable=False)
     title: Mapped[str] = mapped_column(String(160), nullable=False)
     message: Mapped[str] = mapped_column(String(500), nullable=False)
