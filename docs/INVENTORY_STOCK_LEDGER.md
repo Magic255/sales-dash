@@ -55,8 +55,15 @@ into a non-expiring `LEGACY-...` batch so balances and history are preserved.
 - Batch records are tenant-isolated and the runtime database role can only SELECT/INSERT.
   Stock movement rows remain append-only.
 
-The inventory screen exposes batch codes, expiry dates, batch balances, and expired
-quantities. Admins and Managers can review batches and movement history.
+Product-level inventory states distinguish `available`, `low_stock`, `reserved`,
+`out_of_stock`, `expired`, `sold` (all received stock sold without write-offs), and
+`discontinued`. Discontinued products cannot be sold, including drafts created before
+the product was discontinued. Individual batches also distinguish sold-out and
+reserved stock rather than labelling a product sold after only a partial sale.
+
+The inventory screen exposes batch codes, expiry dates, batch balances, expired and
+expiring-soon quantities, and lifecycle states. Admins and Managers can review batches
+and movement history.
 
 ## Current scope boundaries
 
