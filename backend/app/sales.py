@@ -388,6 +388,10 @@ def create_product(user):
             raise ValueError("Currency must be a 3-letter code, such as TZS.")
         if item.minimum_selling_price < item.cost_price:
             raise ValueError("Minimum selling price cannot be below product cost.")
+        if item.unit_price < item.minimum_selling_price:
+            raise ValueError("Unit price cannot be below the minimum selling price.")
+        if item.unit_price < item.minimum_selling_price:
+            raise ValueError("Unit price cannot be below the minimum selling price.")
         db.session.add(item)
         db.session.flush()
         record_audit_event(
