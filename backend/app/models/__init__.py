@@ -255,6 +255,9 @@ class Product(db.Model):
     track_inventory: Mapped[bool] = mapped_column(
         nullable=False, default=False, server_default="false"
     )
+    compliance_required: Mapped[bool] = mapped_column(
+        nullable=False, default=False, server_default="false"
+    )
     low_stock_threshold: Mapped[Decimal] = mapped_column(
         db.Numeric(12, 3), nullable=False, default=0, server_default="0"
     )
@@ -288,6 +291,10 @@ class StockBatch(db.Model):
             name="fk_stock_batches_product_same_company",
         ),
         CheckConstraint("length(trim(batch_code)) > 0", name="batch_code_not_empty"),
+        CheckConstraint(
+            "compliance_status IN ('approved', 'pending_verification', 'rejected', 'recalled')",
+            name="compliance_status_supported",
+        ),
         db.Index("ix_stock_batches_company_product_expiry",
                  "company_id", "product_id", "expiry_date"),
     )
@@ -297,6 +304,19 @@ class StockBatch(db.Model):
     product_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
     batch_code: Mapped[str] = mapped_column(String(80), nullable=False)
     expiry_date: Mapped[date | None] = mapped_column(db.Date)
+    compliance_status: Mapped[str] = mapped_column(
+        String(24), nullable=False, default="approved", server_default="approved"
+    )
+    received_by_user_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True))
+    qr_code: Mapped[str | None] = mapped_column(String(500))
+    authority_name: Mapped[str | None] = mapped_column(String(160))
+    authority_country: Mapped[str | None] = mapped_column(String(2))
+    standard_reference: Mapped[str | None] = mapped_column(String(160))
+    certificate_reference: Mapped[str | None] = mapped_column(String(160))
+    evidence_reference: Mapped[str | None] = mapped_column(String(500))
+    verified_by_user_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True))
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    verification_notes: Mapped[str | None] = mapped_column(String(1000))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
