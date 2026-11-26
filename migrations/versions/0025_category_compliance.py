@@ -32,7 +32,7 @@ def upgrade():
         "products",
         "market_country IS NULL OR "
         "(market_country = upper(market_country) AND length(market_country) = 2)",
-    );
+    )
     op.create_check_constraint(
         "category_key_normalized",
         "products",
@@ -117,6 +117,10 @@ def upgrade():
         """
     )
 
+    op.execute(
+        "UPDATE stock_batches SET compliance_status = 'pending_verification' "
+        "WHERE compliance_status = 'exception_approved'"
+    )
     op.drop_constraint("compliance_status_supported", "stock_batches", type_="check")
     op.create_check_constraint(
         "compliance_status_supported",
