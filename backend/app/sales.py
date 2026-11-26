@@ -601,9 +601,10 @@ def create_stock_movement(user, product_id):
             reference=reference,
         )
         db.session.add(movement)
-        db.session.commit()
+        db.session.flush()
         on_hand, reserved, available = _stock_balance(company_id, product_id)
         result = _stock_movement_json(movement)
+        db.session.commit()
     except ValueError as error:
         db.session.rollback()
         return jsonify({"error": str(error)}), 400
