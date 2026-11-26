@@ -33,6 +33,10 @@ def upgrade():
         "minimum_price_covers_cost", "products",
         "minimum_selling_price >= cost_price",
     )
+    op.create_check_constraint(
+        "unit_price_covers_floor", "products",
+        "unit_price >= minimum_selling_price",
+    )
     op.execute(
         "GRANT UPDATE (cost_price, minimum_selling_price) ON products TO sales_dash_app"
     )
@@ -68,6 +72,7 @@ def downgrade():
     op.execute(
         "REVOKE UPDATE (cost_price, minimum_selling_price) ON products FROM sales_dash_app"
     )
+    op.drop_constraint("unit_price_covers_floor", "products", type_="check")
     op.drop_constraint("minimum_price_covers_cost", "products", type_="check")
     op.drop_constraint("cost_price_nonnegative", "products", type_="check")
     op.drop_column("products", "minimum_selling_price")
