@@ -467,6 +467,10 @@ def _batch_balances(company_id, product_id):
             "reserved": totals[batch.id]["reserved"],
             "available": totals[batch.id]["on_hand"] - totals[batch.id]["reserved"],
             "expired": batch.expiry_date is not None and batch.expiry_date < today,
+            "expiring_soon": (
+                batch.expiry_date is not None
+                and today <= batch.expiry_date <= today + timedelta(days=30)
+            ),
         }
         for batch in batches
     ]
@@ -568,6 +572,13 @@ def inventory_summary(_user):
             ),
             Decimal("0.000"),
         )
+        expiring_soon_quantity = sum(
+            (
+                max(row["available"], Decimal("0.000"))
+                for row in balances if row["expiring_soon"]
+            ),
+            Decimal("0.000"),
+        )
         status = (
             "expired" if available <= 0 and expired_quantity > 0
             else "out_of_stock" if available <= 0
@@ -583,6 +594,7 @@ def inventory_summary(_user):
             "reserved_quantity": str(reserved),
             "available_quantity": str(available),
             "expired_quantity": str(expired_quantity),
+            "expiring_soon_quantity": str(expiring_soon_quantity),
             "low_stock_threshold": str(product.low_stock_threshold),
             "status": status,
         })
@@ -622,6 +634,7 @@ def list_stock_batches(_user, product_id):
             "status": (
                 "expired" if row["expired"] and row["on_hand"] > 0
                 else "out_of_stock" if row["available"] <= 0
+                else "expiring_soon" if row["expiring_soon"]
                 else "available"
             ),
             "received_at": batch.created_at.isoformat(),
