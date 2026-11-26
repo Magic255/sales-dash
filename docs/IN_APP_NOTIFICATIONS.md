@@ -12,11 +12,15 @@ decisions, and inventory batch expiry events.
 - Notifications are visible from the Notifications tab in the company workspace.
 - Users can mark their own notifications as read.
 - The unread count is scoped to the signed-in user and selected company.
-- Active Admins and Managers receive one alert per batch when remaining stock first
-  appears within 30 days of expiry, and one separate alert when remaining stock is
-  expired.
+- When an Admin or Manager refreshes the inventory summary, active Admins and
+  Managers receive one alert per batch if remaining stock is within 30 days of expiry,
+  and one separate alert if remaining stock is expired.
 - Expired stock is already excluded from sale availability; the alert reports it but
   does not change stock or sale state.
+- This phase checks expiry on inventory-summary requests, not on a background schedule.
+  If nobody opens the inventory summary during the 30-day window, the first later
+  refresh reports the batch as expired rather than sending a missed "expiring soon"
+  alert.
 - Depleted batches and discontinued products do not generate new expiry alerts.
 
 ## Security
