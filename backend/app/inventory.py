@@ -4,7 +4,7 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 from uuid import UUID
 
-from flask import Blueprint, jsonify, request, session
+from flask import Blueprint, g, jsonify, request, session
 from sqlalchemy import case, func, select
 from sqlalchemy.exc import IntegrityError
 
@@ -336,6 +336,7 @@ def create_inventory_movement(user):
         }:
             raise ValueError("Choose a supported stock movement.")
         if movement_type == "adjusted" and g.company_membership.role != "admin":
+            db.session.rollback()
             return jsonify({"error": "Only an Admin can make stock adjustments."}), 403
         on_hand, reserved = batch_balance(company_id, batch.id)
         quantity_delta = Decimal("0.000")
