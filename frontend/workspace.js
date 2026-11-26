@@ -640,7 +640,7 @@ async function loadInventoryBatches(productId, generation = workspaceGeneration)
   const body = document.querySelector("#inventory-batches-rows");
   body.replaceChildren();
   if (!productId) {
-    emptyRow(body, 6, "Select a tracked product to view batches.");
+    emptyRow(body, 8, "Select a tracked product to view batches.");
     return;
   }
   const data = await workspaceRequest(
@@ -648,7 +648,7 @@ async function loadInventoryBatches(productId, generation = workspaceGeneration)
   );
   if (generation !== workspaceGeneration) return;
   if (!data.items.length) {
-    emptyRow(body, 6, "No batches have been recorded for this product.");
+    emptyRow(body, 8, "No batches have been recorded for this product.");
     return;
   }
   for (const batch of data.items) {
@@ -665,10 +665,13 @@ async function loadInventoryBatches(productId, generation = workspaceGeneration)
       const review = document.createElement("button");
       review.type = "button";
       review.className = "table-action";
-      review.textContent = batch.compliance_status === "approved" ? "Recall" : "Verify";
+      review.textContent = batch.compliance_status === "approved" ? "Recall" : "Review";
       review.addEventListener("click", async () => {
         const decision = batch.compliance_status === "approved"
-          ? "recall" : window.prompt("Decision: enter approve or reject", "approve");
+          ? "recall" : window.prompt(
+            "Record an evidence-based decision: enter approve or reject. QR text alone is not proof.",
+            "approve"
+          );
         if (!decision) return;
         const normalized = decision.trim().toLowerCase();
         if (!["approve", "reject", "recall"].includes(normalized)) {
