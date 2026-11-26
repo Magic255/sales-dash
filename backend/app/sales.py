@@ -1382,11 +1382,13 @@ def update_product(user, product_id):
             )
         policy = _apply_category_compliance_policy(item)
         if item.compliance_required:
-            reclassified = "category_key" in data or "market_country" in data
-            if (
-                policy and policy.approval_mode in {"required", "admin_exception"}
-                and reclassified
-            ):
+            compliance_enabled = (
+                not before["compliance_required"] and item.compliance_required
+            )
+            reclassified = (
+                "category_key" in data or "market_country" in data or compliance_enabled
+            )
+            if reclassified:
                 eligible_statuses = ["approved", "exception_approved"]
                 require_unverified = False
             else:
