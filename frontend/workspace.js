@@ -275,6 +275,17 @@ async function editProduct(item) {
     "Minimum selling price", item.minimum_selling_price || "0.00"
   );
   if (minimumSellingPrice === null) return;
+  const trackInventory = window.prompt(
+    "Track inventory? Enter yes or no", item.track_inventory ? "yes" : "no"
+  );
+  if (trackInventory === null) return;
+  if (!["yes", "no"].includes(trackInventory.trim().toLowerCase())) {
+    return workspaceMessage("Enter yes or no for inventory tracking.");
+  }
+  const lowStockThreshold = window.prompt(
+    "Low-stock threshold", item.low_stock_threshold || "0.000"
+  );
+  if (lowStockThreshold === null) return;
   const currency = window.prompt("Currency (3-letter code)", item.currency);
   if (currency === null) return;
   try {
@@ -282,7 +293,9 @@ async function editProduct(item) {
       method: "PATCH",
       body: JSON.stringify({
         sku, name, description, unit_price: unitPrice,
-        cost_price: costPrice, minimum_selling_price: minimumSellingPrice, currency,
+        cost_price: costPrice, minimum_selling_price: minimumSellingPrice,
+        track_inventory: trackInventory.trim().toLowerCase() === "yes",
+        low_stock_threshold: lowStockThreshold, currency,
       }),
     });
     await loadWorkspace();
@@ -881,11 +894,14 @@ document.querySelector("#product-form").addEventListener("submit", async (event)
         unit_price: document.querySelector("#product-price").value,
         cost_price: document.querySelector("#product-cost").value,
         minimum_selling_price: document.querySelector("#product-minimum-price").value,
+        track_inventory: document.querySelector("#product-track-inventory").checked,
+        low_stock_threshold: document.querySelector("#product-low-stock-threshold").value,
         currency: document.querySelector("#product-currency").value,
       }),
     });
     form.reset();
     document.querySelector("#product-currency").value = "TZS";
+    document.querySelector("#product-low-stock-threshold").value = "0";
     selectTab("products");
     await loadWorkspace();
   } catch (error) {
