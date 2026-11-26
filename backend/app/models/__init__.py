@@ -230,6 +230,7 @@ class Product(db.Model):
         CheckConstraint("cost_price >= 0", name="cost_price_nonnegative"),
         CheckConstraint("minimum_selling_price >= cost_price", name="minimum_price_covers_cost"),
         CheckConstraint("unit_price >= minimum_selling_price", name="unit_price_covers_floor"),
+        CheckConstraint("reorder_level >= 0", name="reorder_level_nonnegative"),
         CheckConstraint(
             "currency = upper(currency) AND length(currency) = 3",
             name="currency_iso_code",
@@ -251,6 +252,12 @@ class Product(db.Model):
     minimum_selling_price: Mapped[Decimal] = mapped_column(
         db.Numeric(12, 2), nullable=False, default=0, server_default="0"
     )
+    track_inventory: Mapped[bool] = mapped_column(
+        nullable=False, default=False, server_default="false"
+    )
+    reorder_level: Mapped[Decimal] = mapped_column(
+        db.Numeric(12, 3), nullable=False, default=0, server_default="0"
+    )
     currency: Mapped[str] = mapped_column(
         String(3), nullable=False, default="TZS", server_default="TZS"
     )
@@ -261,6 +268,109 @@ class Product(db.Model):
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=utc_now
+    )
+
+
+class ProductBatch(db.Model):
+    """A product lot with an optional best-before or expiry date."""
+
+    __tablename__ = "product_batches"
+    __table_args__ = (
+        db.UniqueConstraint("company_id", "id", name="uq_product_batches_company_id_id"),
+        db.UniqueConstraint(
+            "company_id", "product_id", "batch_code",
+            name="uq_product_batches_company_product_code",
+        ),
+        db.ForeignKeyConstraint(
+            ["company_id", "product_id"],
+            ["products.company_id", "products.id"],
+            ondelete="NO ACTION",
+            name="fk_product_batches_product_same_company",
+        ),
+        db.ForeignKeyConstraint(
+            ["company_id", "created_by_user_id"],
+            ["company_memberships.company_id", "company_memberships.user_id"],
+            ondelete="NO ACTION",
+            name="fk_product_batches_creator_membership",
+        ),
+        CheckConstraint("length(trim(batch_code)) > 0", name="batch_code_not_empty"),
+        db.Index("ix_product_batches_company_product", "company_id", "product_id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    company_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False
+    )
+    product_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    batch_code: Mapped[str] = mapped_column(String(80), nullable=False)
+    expiry_date: Mapped[date | None] = mapped_column(db.Date)
+    created_by_user_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class StockMovement(db.Model):
+    """Append-only quantity and reservation movement for a product batch."""
+
+    __tablename__ = "stock_movements"
+    __table_args__ = (
+        db.UniqueConstraint("company_id", "id", name="uq_stock_movements_company_id_id"),
+        db.ForeignKeyConstraint(
+            ["company_id", "product_id"],
+            ["products.company_id", "products.id"],
+            ondelete="NO ACTION",
+            name="fk_stock_movements_product_same_company",
+        ),
+        db.ForeignKeyConstraint(
+            ["company_id", "batch_id"],
+            ["product_batches.company_id", "product_batches.id"],
+            ondelete="NO ACTION",
+            name="fk_stock_movements_batch_same_company",
+        ),
+        db.ForeignKeyConstraint(
+            ["company_id", "actor_user_id"],
+            ["company_memberships.company_id", "company_memberships.user_id"],
+            ondelete="NO ACTION",
+            name="fk_stock_movements_actor_same_company",
+        ),
+        db.ForeignKeyConstraint(
+            ["company_id", "sale_id"],
+            ["sales.company_id", "sales.id"],
+            ondelete="NO ACTION",
+            name="fk_stock_movements_sale_same_company",
+        ),
+        CheckConstraint(
+            "movement_type IN ('received', 'sold', 'returned', 'damaged', "
+            "'adjusted', 'reserved', 'released')",
+            name="stock_movement_type_supported",
+        ),
+        CheckConstraint(
+            "quantity_delta <> 0 OR reserved_delta <> 0",
+            name="stock_movement_nonzero",
+        ),
+        db.Index("ix_stock_movements_company_batch", "company_id", "batch_id"),
+        db.Index("ix_stock_movements_company_product", "company_id", "product_id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    company_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False
+    )
+    product_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    batch_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    sale_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
+    actor_user_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    movement_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    quantity_delta: Mapped[Decimal] = mapped_column(
+        db.Numeric(12, 3), nullable=False, default=0, server_default="0"
+    )
+    reserved_delta: Mapped[Decimal] = mapped_column(
+        db.Numeric(12, 3), nullable=False, default=0, server_default="0"
+    )
+    reason: Mapped[str] = mapped_column(String(1000), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
 
@@ -412,6 +522,12 @@ class SaleItem(db.Model):
             ondelete="NO ACTION",
             name="fk_sale_items_product_same_company",
         ),
+        db.ForeignKeyConstraint(
+            ["company_id", "batch_id"],
+            ["product_batches.company_id", "product_batches.id"],
+            ondelete="NO ACTION",
+            name="fk_sale_items_batch_same_company",
+        ),
         CheckConstraint("length(trim(product_name)) > 0", name="product_name_not_empty"),
         CheckConstraint("quantity > 0", name="quantity_positive"),
         CheckConstraint("unit_price >= 0", name="unit_price_nonnegative"),
@@ -433,6 +549,7 @@ class SaleItem(db.Model):
     discount_amount: Mapped[Decimal] = mapped_column(
         db.Numeric(14, 2), nullable=False, default=0, server_default="0"
     )
+    batch_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
     line_total: Mapped[Decimal] = mapped_column(db.Numeric(14, 2), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
