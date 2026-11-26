@@ -10,7 +10,7 @@ from sqlalchemy.exc import IntegrityError
 
 from .auth import login_required
 from .extensions import db
-from .models import Product, ProductBatch, StockMovement
+from .models import Product, ProductBatch, StockMovement, User
 from .permissions import company_permission_required
 
 inventory_bp = Blueprint("inventory", __name__, url_prefix="/api/inventory")
