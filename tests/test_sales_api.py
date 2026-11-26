@@ -564,9 +564,6 @@ def test_salesperson_discount_above_limit_requires_admin_approval():
     application, salesperson_client = make_client("salesperson")
     try:
         with application.app_context():
-            salesperson = db.session.query(User).filter_by(
-                email="salesperson@example.test"
-            ).one()
             company = db.session.query(Company).filter_by(
                 slug="sales-api-salesperson"
             ).one()
