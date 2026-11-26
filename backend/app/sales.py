@@ -141,7 +141,7 @@ def _check_price_floor(prepared, order_discount, user, override_reason, sale_id)
             order_share = Decimal("0.00")
         net_line = remaining_line - order_share
         effective_unit = (net_line / quantity).quantize(
-            CENT, rounding=ROUND_HALF_UP
+            CENT, rounding=ROUND_DOWN
         )
         if effective_unit < product.minimum_selling_price:
             violations.append({
