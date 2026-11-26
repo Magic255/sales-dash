@@ -764,7 +764,9 @@ def list_stock_batches(_user, product_id):
             "stock_on_hand": str(row["on_hand"]),
             "reserved_quantity": str(row["reserved"]),
             "available_quantity": str(
-                Decimal("0.000") if row["expired"] or row["compliance_blocked"] else row["available"]
+                Decimal("0.000")
+                if row["expired"] or row["compliance_blocked"]
+                else row["available"]
             ),
             "expired_quantity": str(
                 max(row["on_hand"], Decimal("0.000")) if row["expired"]
@@ -869,7 +871,9 @@ def verify_stock_batch_compliance(user, batch_id):
         db.session.commit()
     except ValueError:
         db.session.rollback()
-        return jsonify({"error": "Invalid compliance review. Check the required evidence and fields."}), 400
+        return jsonify({
+            "error": "Invalid compliance review. Check the required evidence and fields."
+        }), 400
     return jsonify({"item": result})
 
 
