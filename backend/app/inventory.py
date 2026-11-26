@@ -117,6 +117,8 @@ def record_sale_stock_movements(session_company_id, sale, user, *, returning=Fal
         if not product.track_inventory:
             continue
         if line.batch_id is None:
+            if returning:
+                continue
             raise ValueError(
                 f"Choose an inventory batch for tracked product {product.sku}."
             )
