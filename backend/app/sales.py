@@ -1693,9 +1693,11 @@ def complete_sale(user, sale_id):
                 item.sale_number,
                 allow_expired=False,
             )
-    except ValueError as error:
+    except ValueError:
         db.session.rollback()
-        return jsonify({"error": str(error)}), 409
+        return jsonify({
+            "error": "Insufficient available stock in non-expired batches."
+        }), 409
     item.status = "completed"
     db.session.flush()
     result = _sale_json(item)
