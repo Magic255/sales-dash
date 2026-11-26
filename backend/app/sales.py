@@ -683,6 +683,8 @@ def create_product(user):
             {"product_id": str(item.id), "sku": item.sku, "name": item.name,
              "unit_price": str(item.unit_price), "cost_price": str(item.cost_price),
              "minimum_selling_price": str(item.minimum_selling_price),
+             "track_inventory": item.track_inventory,
+             "low_stock_threshold": str(item.low_stock_threshold),
              "currency": item.currency},
         )
         result = _product_json(item, include_cost=True)
