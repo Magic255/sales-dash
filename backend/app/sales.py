@@ -456,7 +456,13 @@ def create_product(user):
                 data.get("minimum_selling_price", data.get("cost_price", "0")),
                 "minimum_selling_price",
             ),
+            track_inventory=data.get("track_inventory", False),
+            reorder_level=_decimal(
+                data.get("reorder_level", "0"), "reorder_level", places=MILLI
+            ),
         )
+        if not isinstance(item.track_inventory, bool):
+            raise ValueError("track_inventory must be true or false.")
         if len(item.currency) != 3:
             raise ValueError("Currency must be a 3-letter code, such as TZS.")
         if item.minimum_selling_price < item.cost_price:
@@ -501,6 +507,8 @@ def update_product(user, product_id):
         "sku": item.sku, "name": item.name, "description": item.description,
         "unit_price": str(item.unit_price), "cost_price": str(item.cost_price),
         "minimum_selling_price": str(item.minimum_selling_price),
+        "track_inventory": item.track_inventory,
+        "reorder_level": str(item.reorder_level),
         "currency": item.currency, "is_active": item.is_active,
     }
     try:
@@ -517,6 +525,24 @@ def update_product(user, product_id):
         if "minimum_selling_price" in data:
             item.minimum_selling_price = _decimal(
                 data["minimum_selling_price"], "minimum_selling_price"
+            )
+        if "track_inventory" in data:
+            if not isinstance(data["track_inventory"], bool):
+                raise ValueError("track_inventory must be true or false.")
+            if item.track_inventory and not data["track_inventory"]:
+                from .models import ProductBatch
+                existing_batches = db.session.scalar(
+                    select(func.count(ProductBatch.id)).where(
+                        ProductBatch.company_id == item.company_id,
+                        ProductBatch.product_id == item.id,
+                    )
+                )
+                if existing_batches:
+                    raise ValueError("Inventory tracking cannot be disabled after batches exist.")
+            item.track_inventory = data["track_inventory"]
+        if "reorder_level" in data:
+            item.reorder_level = _decimal(
+                data["reorder_level"], "reorder_level", places=MILLI
             )
         if item.minimum_selling_price < item.cost_price:
             raise ValueError("Minimum selling price cannot be below product cost.")
@@ -535,6 +561,8 @@ def update_product(user, product_id):
             "sku": item.sku, "name": item.name, "description": item.description,
             "unit_price": str(item.unit_price), "cost_price": str(item.cost_price),
             "minimum_selling_price": str(item.minimum_selling_price),
+            "track_inventory": item.track_inventory,
+            "reorder_level": str(item.reorder_level),
             "currency": item.currency, "is_active": item.is_active,
         }
         if before != after:
