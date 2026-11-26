@@ -230,6 +230,7 @@ class Product(db.Model):
         CheckConstraint("cost_price >= 0", name="cost_price_nonnegative"),
         CheckConstraint("minimum_selling_price >= cost_price", name="minimum_price_covers_cost"),
         CheckConstraint("unit_price >= minimum_selling_price", name="unit_price_covers_floor"),
+        CheckConstraint("low_stock_threshold >= 0", name="low_stock_threshold_nonnegative"),
         CheckConstraint(
             "currency = upper(currency) AND length(currency) = 3",
             name="currency_iso_code",
@@ -251,6 +252,12 @@ class Product(db.Model):
     minimum_selling_price: Mapped[Decimal] = mapped_column(
         db.Numeric(12, 2), nullable=False, default=0, server_default="0"
     )
+    track_inventory: Mapped[bool] = mapped_column(
+        nullable=False, default=False, server_default="false"
+    )
+    low_stock_threshold: Mapped[Decimal] = mapped_column(
+        db.Numeric(12, 3), nullable=False, default=0, server_default="0"
+    )
     currency: Mapped[str] = mapped_column(
         String(3), nullable=False, default="TZS", server_default="TZS"
     )
@@ -261,6 +268,49 @@ class Product(db.Model):
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=utc_now
+    )
+
+
+class StockMovement(db.Model):
+    """Append-only, company-scoped inventory movement ledger."""
+
+    __tablename__ = "stock_movements"
+    __table_args__ = (
+        db.ForeignKeyConstraint(
+            ["company_id", "product_id"],
+            ["products.company_id", "products.id"],
+            ondelete="NO ACTION",
+            name="fk_stock_movements_product_same_company",
+        ),
+        db.ForeignKeyConstraint(
+            ["company_id", "actor_user_id"],
+            ["company_memberships.company_id", "company_memberships.user_id"],
+            ondelete="NO ACTION",
+            name="fk_stock_movements_actor_membership",
+        ),
+        CheckConstraint(
+            "movement_type IN ('received', 'sold', 'returned', 'damaged', "
+            "'adjustment_increase', 'adjustment_decrease', 'reserved', 'released')",
+            name="movement_type_is_supported",
+        ),
+        CheckConstraint("quantity > 0", name="quantity_positive"),
+        CheckConstraint("length(trim(reason)) > 0", name="reason_not_empty"),
+        db.Index("ix_stock_movements_company_product_time",
+                 "company_id", "product_id", "created_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    company_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False
+    )
+    product_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    actor_user_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    movement_type: Mapped[str] = mapped_column(String(24), nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(db.Numeric(12, 3), nullable=False)
+    reason: Mapped[str] = mapped_column(String(1000), nullable=False)
+    reference: Mapped[str | None] = mapped_column(String(120))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
 

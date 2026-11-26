@@ -21,6 +21,7 @@ from .models import (
     Product,
     Sale,
     SaleItem,
+    StockMovement,
     User,
 )
 from .permissions import company_permission_required
@@ -243,6 +244,12 @@ def _json_object():
     return data if isinstance(data, dict) else None
 
 
+def _boolean(value, field):
+    if not isinstance(value, bool):
+        raise ValueError(f"{field.replace('_', ' ').capitalize()} must be true or false.")
+    return value
+
+
 def _text(data, field, maximum, *, required=False, lower=False, upper=False):
     value = data.get(field)
     if value is None:
@@ -296,6 +303,8 @@ def _product_json(item, *, include_cost=False):
         "description": item.description, "unit_price": str(item.unit_price),
         "currency": item.currency, "is_active": item.is_active,
         "minimum_selling_price": str(item.minimum_selling_price),
+        "track_inventory": item.track_inventory,
+        "low_stock_threshold": str(item.low_stock_threshold),
         "created_at": item.created_at.isoformat(),
     }
     if include_cost:
@@ -410,6 +419,208 @@ def update_customer(_user, customer_id):
     return jsonify({"item": result})
 
 
+def _stock_balance(company_id, product_id):
+    """Calculate on-hand and reserved quantities from the immutable ledger."""
+    rows = db.session.execute(
+        select(StockMovement.movement_type, func.sum(StockMovement.quantity))
+        .where(
+            StockMovement.company_id == company_id,
+            StockMovement.product_id == product_id,
+        )
+        .group_by(StockMovement.movement_type)
+    ).all()
+    on_hand = Decimal("0.000")
+    reserved = Decimal("0.000")
+    for movement_type, total in rows:
+        quantity = Decimal(str(total or 0))
+        if movement_type in {"received", "returned", "adjustment_increase"}:
+            on_hand += quantity
+        elif movement_type in {"sold", "damaged", "adjustment_decrease"}:
+            on_hand -= quantity
+        elif movement_type == "reserved":
+            reserved += quantity
+        elif movement_type == "released":
+            reserved -= quantity
+    return on_hand, reserved, on_hand - reserved
+
+
+def _stock_movement_json(item):
+    return {
+        "id": str(item.id),
+        "product_id": str(item.product_id),
+        "movement_type": item.movement_type,
+        "quantity": str(item.quantity),
+        "reason": item.reason,
+        "reference": item.reference,
+        "actor_user_id": str(item.actor_user_id),
+        "created_at": item.created_at.isoformat(),
+    }
+
+
+@sales_bp.get("/inventory")
+@login_required
+@company_permission_required("manage_inventory")
+def inventory_summary(_user):
+    company_id = _company_id()
+    products = db.session.scalars(
+        select(Product).where(
+            Product.company_id == company_id,
+            Product.track_inventory.is_(True),
+        ).order_by(Product.name)
+    ).all()
+    product_ids = [product.id for product in products]
+    grouped = db.session.execute(
+        select(
+            StockMovement.product_id,
+            StockMovement.movement_type,
+            func.sum(StockMovement.quantity),
+        )
+        .where(
+            StockMovement.company_id == company_id,
+            StockMovement.product_id.in_(product_ids),
+        )
+        .group_by(StockMovement.product_id, StockMovement.movement_type)
+    ).all() if product_ids else []
+    totals = {
+        product_id: {"on_hand": Decimal("0.000"), "reserved": Decimal("0.000")}
+        for product_id in product_ids
+    }
+    for product_id, movement_type, total in grouped:
+        quantity = Decimal(str(total or 0))
+        if movement_type in {"received", "returned", "adjustment_increase"}:
+            totals[product_id]["on_hand"] += quantity
+        elif movement_type in {"sold", "damaged", "adjustment_decrease"}:
+            totals[product_id]["on_hand"] -= quantity
+        elif movement_type == "reserved":
+            totals[product_id]["reserved"] += quantity
+        elif movement_type == "released":
+            totals[product_id]["reserved"] -= quantity
+    items = []
+    for product in products:
+        balance = totals[product.id]
+        available = balance["on_hand"] - balance["reserved"]
+        status = (
+            "out_of_stock" if available <= 0
+            else "low_stock" if available <= product.low_stock_threshold
+            else "available"
+        )
+        items.append({
+            "product_id": str(product.id),
+            "sku": product.sku,
+            "name": product.name,
+            "currency": product.currency,
+            "stock_on_hand": str(balance["on_hand"]),
+            "reserved_quantity": str(balance["reserved"]),
+            "available_quantity": str(available),
+            "low_stock_threshold": str(product.low_stock_threshold),
+            "status": status,
+        })
+    return jsonify({"items": items})
+
+
+@sales_bp.get("/products/<uuid:product_id>/stock-movements")
+@login_required
+@company_permission_required("manage_inventory")
+def list_stock_movements(_user, product_id):
+    company_id = _company_id()
+    product = db.session.scalar(
+        select(Product).where(
+            Product.id == product_id, Product.company_id == company_id
+        )
+    )
+    if product is None:
+        return jsonify({"error": "Product not found."}), 404
+    if not product.track_inventory:
+        return jsonify({"error": "Inventory tracking is not enabled for this product."}), 409
+    rows = db.session.scalars(
+        select(StockMovement)
+        .where(
+            StockMovement.company_id == company_id,
+            StockMovement.product_id == product_id,
+        )
+        .order_by(StockMovement.created_at.desc(), StockMovement.id.desc())
+        .limit(200)
+    ).all()
+    on_hand, reserved, available = _stock_balance(company_id, product_id)
+    return jsonify({
+        "items": [_stock_movement_json(item) for item in rows],
+        "balance": {
+            "stock_on_hand": str(on_hand),
+            "reserved_quantity": str(reserved),
+            "available_quantity": str(available),
+        },
+    })
+
+
+@sales_bp.post("/products/<uuid:product_id>/stock-movements")
+@login_required
+@company_permission_required("manage_inventory")
+def create_stock_movement(user, product_id):
+    company_id = _company_id()
+    product = db.session.scalar(
+        select(Product).where(
+            Product.id == product_id, Product.company_id == company_id
+        ).with_for_update()
+    )
+    if product is None:
+        return jsonify({"error": "Product not found."}), 404
+    if not product.track_inventory:
+        return jsonify({"error": "Enable inventory tracking for this product first."}), 409
+    data = _json_object()
+    if data is None:
+        return jsonify({"error": "Send a JSON object."}), 400
+    try:
+        movement_type = _text(data, "movement_type", 24, required=True, lower=True)
+        allowed = {
+            "received", "returned", "damaged", "adjustment_increase",
+            "adjustment_decrease", "reserved", "released",
+        }
+        if movement_type not in allowed:
+            raise ValueError("Unsupported stock movement type.")
+        if movement_type.startswith("adjustment_") and g.company_membership.role != "admin":
+            return jsonify({"error": "Only Admins can make stock adjustments."}), 403
+        quantity = _decimal(
+            data.get("quantity"), "quantity",
+            minimum=Decimal("0.001"), places=MILLI,
+        )
+        reason = _text(data, "reason", 1000, required=True)
+        reference = _text(data, "reference", 120)
+        on_hand, reserved, available = _stock_balance(company_id, product_id)
+        if movement_type in {"damaged", "adjustment_decrease", "reserved"}:
+            if quantity > available:
+                return jsonify({"error": "The movement exceeds available stock."}), 409
+        if movement_type == "released" and quantity > reserved:
+            return jsonify({"error": "The release exceeds reserved stock."}), 409
+        movement = StockMovement(
+            company_id=company_id,
+            product_id=product_id,
+            actor_user_id=user.id,
+            movement_type=movement_type,
+            quantity=quantity,
+            reason=reason,
+            reference=reference,
+        )
+        db.session.add(movement)
+        db.session.flush()
+        on_hand, reserved, available = _stock_balance(company_id, product_id)
+        result = _stock_movement_json(movement)
+        db.session.commit()
+    except ValueError as error:
+        db.session.rollback()
+        return jsonify({"error": str(error)}), 400
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({"error": "The stock movement could not be recorded."}), 409
+    return jsonify({
+        "item": result,
+        "balance": {
+            "stock_on_hand": str(on_hand),
+            "reserved_quantity": str(reserved),
+            "available_quantity": str(available),
+        },
+    }), 201
+
+
 @sales_bp.get("/products")
 @login_required
 @company_permission_required("view_reports")
@@ -453,6 +664,11 @@ def create_product(user):
                 data.get("minimum_selling_price", data.get("cost_price", "0")),
                 "minimum_selling_price",
             ),
+            track_inventory=_boolean(data.get("track_inventory", False), "track_inventory"),
+            low_stock_threshold=_decimal(
+                data.get("low_stock_threshold", "0"), "low_stock_threshold",
+                places=MILLI,
+            ),
         )
         if len(item.currency) != 3:
             raise ValueError("Currency must be a 3-letter code, such as TZS.")
@@ -460,6 +676,8 @@ def create_product(user):
             raise ValueError("Minimum selling price cannot be below product cost.")
         if item.unit_price < item.minimum_selling_price:
             raise ValueError("Unit price cannot be below the minimum selling price.")
+        if item.low_stock_threshold < 0:
+            raise ValueError("Low-stock threshold cannot be negative.")
         db.session.add(item)
         db.session.flush()
         record_audit_event(
@@ -467,6 +685,8 @@ def create_product(user):
             {"product_id": str(item.id), "sku": item.sku, "name": item.name,
              "unit_price": str(item.unit_price), "cost_price": str(item.cost_price),
              "minimum_selling_price": str(item.minimum_selling_price),
+             "track_inventory": item.track_inventory,
+             "low_stock_threshold": str(item.low_stock_threshold),
              "currency": item.currency},
         )
         result = _product_json(item, include_cost=True)
@@ -487,17 +707,30 @@ def update_product(user, product_id):
     item = db.session.scalar(
         select(Product).where(
             Product.id == product_id, Product.company_id == _company_id()
-        )
+        ).with_for_update()
     )
     if item is None:
         return jsonify({"error": "Product not found."}), 404
     data = _json_object()
     if data is None:
         return jsonify({"error": "Send a JSON object."}), 400
+    if data.get("track_inventory") is False and item.track_inventory:
+        movement_count = db.session.scalar(
+            select(func.count()).select_from(StockMovement).where(
+                StockMovement.company_id == _company_id(),
+                StockMovement.product_id == item.id,
+            )
+        )
+        if movement_count:
+            return jsonify({
+                "error": "Inventory tracking cannot be disabled after stock movements are recorded."
+            }), 409
     before = {
         "sku": item.sku, "name": item.name, "description": item.description,
         "unit_price": str(item.unit_price), "cost_price": str(item.cost_price),
         "minimum_selling_price": str(item.minimum_selling_price),
+        "track_inventory": item.track_inventory,
+        "low_stock_threshold": str(item.low_stock_threshold),
         "currency": item.currency, "is_active": item.is_active,
     }
     try:
@@ -515,6 +748,14 @@ def update_product(user, product_id):
             item.minimum_selling_price = _decimal(
                 data["minimum_selling_price"], "minimum_selling_price"
             )
+        if "track_inventory" in data:
+            item.track_inventory = _boolean(data["track_inventory"], "track_inventory")
+        if "low_stock_threshold" in data:
+            item.low_stock_threshold = _decimal(
+                data["low_stock_threshold"], "low_stock_threshold", places=MILLI
+            )
+        if item.low_stock_threshold < 0:
+            raise ValueError("Low-stock threshold cannot be negative.")
         if item.minimum_selling_price < item.cost_price:
             raise ValueError("Minimum selling price cannot be below product cost.")
         if item.unit_price < item.minimum_selling_price:
@@ -532,6 +773,8 @@ def update_product(user, product_id):
             "sku": item.sku, "name": item.name, "description": item.description,
             "unit_price": str(item.unit_price), "cost_price": str(item.cost_price),
             "minimum_selling_price": str(item.minimum_selling_price),
+            "track_inventory": item.track_inventory,
+            "low_stock_threshold": str(item.low_stock_threshold),
             "currency": item.currency, "is_active": item.is_active,
         }
         if before != after:
@@ -1194,7 +1437,7 @@ def complete_sale(user, sale_id):
         select(Product).where(
             Product.company_id == item.company_id,
             Product.id.in_(product_ids),
-        )
+        ).order_by(Product.id).with_for_update()
     ).all() if product_ids else []
     products_by_id = {product.id: product for product in current_products}
     if len(products_by_id) != len(product_ids):
@@ -1223,6 +1466,33 @@ def complete_sale(user, sale_id):
         )
     except ValueError as error:
         return jsonify({"error": str(error)}), 400
+    tracked_quantities = {}
+    for line in sale_lines:
+        product = products_by_id[line.product_id]
+        if product.track_inventory:
+            tracked_quantities[line.product_id] = (
+                tracked_quantities.get(line.product_id, Decimal("0.000"))
+                + line.quantity
+            )
+    for tracked_product_id, required_quantity in tracked_quantities.items():
+        _on_hand, _reserved, available = _stock_balance(
+            item.company_id, tracked_product_id
+        )
+        if required_quantity > available:
+            return jsonify({
+                "error": "Insufficient available stock for "
+                + products_by_id[tracked_product_id].sku + "."
+            }), 409
+    for tracked_product_id, sold_quantity in tracked_quantities.items():
+        db.session.add(StockMovement(
+            company_id=item.company_id,
+            product_id=tracked_product_id,
+            actor_user_id=user.id,
+            movement_type="sold",
+            quantity=sold_quantity,
+            reason="Stock issued for completed sale " + item.sale_number,
+            reference=item.sale_number,
+        ))
     item.status = "completed"
     db.session.flush()
     result = _sale_json(item)
@@ -1233,14 +1503,47 @@ def complete_sale(user, sale_id):
 @sales_bp.post("/sales/<uuid:sale_id>/void")
 @login_required
 @company_permission_required("delete_sales")
-def void_sale(_user, sale_id):
+def void_sale(user, sale_id):
     item = db.session.scalar(select(Sale).where(
         Sale.id == sale_id, Sale.company_id == _company_id()
-    ))
+    ).with_for_update())
     if item is None:
         return jsonify({"error": "Sale not found."}), 404
     if item.status == "void":
         return jsonify({"error": "This sale is already void."}), 409
+    if item.status == "completed":
+        lines = db.session.scalars(
+            select(SaleItem).where(
+                SaleItem.company_id == item.company_id,
+                SaleItem.sale_id == item.id,
+            )
+        ).all()
+        product_ids = {line.product_id for line in lines}
+        tracked_products = db.session.scalars(
+            select(Product).where(
+                Product.company_id == item.company_id,
+                Product.id.in_(product_ids),
+            ).order_by(Product.id).with_for_update()
+        ).all() if product_ids else []
+        tracked_ids = {
+            product.id for product in tracked_products if product.track_inventory
+        }
+        returned = {}
+        for line in lines:
+            if line.product_id in tracked_ids:
+                returned[line.product_id] = (
+                    returned.get(line.product_id, Decimal("0.000")) + line.quantity
+                )
+        for product_id, quantity in returned.items():
+            db.session.add(StockMovement(
+                company_id=item.company_id,
+                product_id=product_id,
+                actor_user_id=user.id,
+                movement_type="returned",
+                quantity=quantity,
+                reason="Stock returned because sale " + item.sale_number + " was voided",
+                reference=item.sale_number,
+            ))
     item.status = "void"
     db.session.flush()
     result = _sale_json(item)

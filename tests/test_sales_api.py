@@ -1102,3 +1102,194 @@ def test_weekly_discount_report_is_scoped_to_active_company():
         with application.app_context():
             db.session.remove()
             db.drop_all()
+
+
+def test_inventory_ledger_receives_reserves_sells_and_restores_voided_sales():
+    application, client = make_client("admin")
+    try:
+        customer = client.post("/api/customers", json={"name": "Inventory Customer"})
+        product = client.post("/api/products", json={
+            "sku": "INV-LEDGER-1", "name": "Tracked Item",
+            "unit_price": "100.00", "cost_price": "60.00",
+            "minimum_selling_price": "80.00", "currency": "TZS",
+            "track_inventory": True, "low_stock_threshold": "4.000",
+        })
+        assert customer.status_code == 201
+        assert product.status_code == 201
+        product_id = product.json["item"]["id"]
+        assert product.json["item"]["track_inventory"] is True
+
+        received = client.post(
+            f"/api/products/{product_id}/stock-movements",
+            json={"movement_type": "received", "quantity": "5",
+                  "reason": "Opening stock received."},
+        )
+        assert received.status_code == 201
+        reserved = client.post(
+            f"/api/products/{product_id}/stock-movements",
+            json={"movement_type": "reserved", "quantity": "2",
+                  "reason": "Reserved for a customer order."},
+        )
+        assert reserved.status_code == 201
+        assert reserved.json["balance"] == {
+            "stock_on_hand": "5.000",
+            "reserved_quantity": "2.000",
+            "available_quantity": "3.000",
+        }
+        low_stock = client.get("/api/inventory")
+        assert low_stock.status_code == 200
+        assert low_stock.json["items"][0]["status"] == "low_stock"
+
+        insufficient = client.post("/api/sales", json={
+            "customer_id": customer.json["item"]["id"], "currency": "TZS",
+            "items": [{"product_id": product_id, "quantity": "4"}],
+        })
+        assert insufficient.status_code == 201
+        blocked = client.post(
+            f"/api/sales/{insufficient.json['item']['id']}/complete"
+        )
+        assert blocked.status_code == 409
+        assert "Insufficient available stock" in blocked.json["error"]
+
+        sale = client.post("/api/sales", json={
+            "customer_id": customer.json["item"]["id"], "currency": "TZS",
+            "items": [{"product_id": product_id, "quantity": "3"}],
+        })
+        assert sale.status_code == 201
+        completed = client.post(f"/api/sales/{sale.json['item']['id']}/complete")
+        assert completed.status_code == 200
+        summary = client.get("/api/inventory")
+        assert summary.status_code == 200
+        assert summary.json["items"][0]["stock_on_hand"] == "2.000"
+        assert summary.json["items"][0]["reserved_quantity"] == "2.000"
+        assert summary.json["items"][0]["available_quantity"] == "0.000"
+        assert summary.json["items"][0]["status"] == "out_of_stock"
+
+        voided = client.post(f"/api/sales/{sale.json['item']['id']}/void")
+        assert voided.status_code == 200
+        summary = client.get("/api/inventory")
+        assert summary.json["items"][0]["stock_on_hand"] == "5.000"
+        assert summary.json["items"][0]["reserved_quantity"] == "2.000"
+        assert summary.json["items"][0]["available_quantity"] == "3.000"
+        history = client.get(f"/api/products/{product_id}/stock-movements")
+        assert history.status_code == 200
+        assert [entry["movement_type"] for entry in history.json["items"]].count("sold") == 1
+        assert [entry["movement_type"] for entry in history.json["items"]].count("returned") == 1
+    finally:
+        with application.app_context():
+            db.session.remove()
+            db.drop_all()
+
+
+def test_manager_can_receive_stock_but_cannot_make_inventory_adjustments():
+    application, client = make_client("manager")
+    try:
+        with application.app_context():
+            manager = db.session.query(User).filter_by(
+                email="manager@example.test"
+            ).one()
+            company = db.session.query(Company).filter_by(
+                slug="sales-api-manager"
+            ).one()
+            product = Product(
+                company_id=company.id, created_by_user_id=manager.id,
+                sku="INV-MANAGER-1", name="Manager Tracked Item",
+                unit_price=Decimal("50.00"), cost_price=Decimal("20.00"),
+                minimum_selling_price=Decimal("30.00"),
+                track_inventory=True, low_stock_threshold=Decimal("1.000"),
+                currency="TZS",
+            )
+            db.session.add(product)
+            db.session.commit()
+            product_id = str(product.id)
+
+        received = client.post(
+            f"/api/products/{product_id}/stock-movements",
+            json={"movement_type": "received", "quantity": "4",
+                  "reason": "Supplier delivery received."},
+        )
+        assert received.status_code == 201
+        adjustment = client.post(
+            f"/api/products/{product_id}/stock-movements",
+            json={"movement_type": "adjustment_decrease", "quantity": "1",
+                  "reason": "Attempted correction."},
+        )
+        assert adjustment.status_code == 403
+        summary = client.get("/api/inventory")
+        assert summary.status_code == 200
+        assert summary.json["items"][0]["available_quantity"] == "4.000"
+    finally:
+        with application.app_context():
+            db.session.remove()
+            db.drop_all()
+
+
+def test_inventory_tracking_cannot_be_disabled_while_stock_exists():
+    application, client = make_client("admin")
+    try:
+        product = client.post("/api/products", json={
+            "sku": "INV-DISABLE-1", "name": "Inventory Locked Product",
+            "unit_price": "25.00", "cost_price": "10.00",
+            "minimum_selling_price": "15.00", "currency": "TZS",
+            "track_inventory": True,
+        })
+        assert product.status_code == 201
+        product_id = product.json["item"]["id"]
+        received = client.post(
+            f"/api/products/{product_id}/stock-movements",
+            json={"movement_type": "received", "quantity": "1",
+                  "reason": "Opening quantity."},
+        )
+        assert received.status_code == 201
+        disabled = client.patch(
+            f"/api/products/{product_id}",
+            json={"track_inventory": False},
+        )
+        assert disabled.status_code == 409
+        assert "cannot be disabled after stock movements" in disabled.json["error"]
+    finally:
+        with application.app_context():
+            db.session.remove()
+            db.drop_all()
+
+
+def test_salesperson_cannot_access_inventory_management():
+    application, client = make_client("salesperson")
+    try:
+        response = client.get("/api/inventory")
+        assert response.status_code == 403
+    finally:
+        with application.app_context():
+            db.session.remove()
+            db.drop_all()
+
+
+def test_admin_can_make_reasoned_stock_adjustments():
+    application, client = make_client("admin")
+    try:
+        product = client.post("/api/products", json={
+            "sku": "INV-ADMIN-ADJUST", "name": "Admin Adjustment Item",
+            "unit_price": "40.00", "cost_price": "20.00",
+            "minimum_selling_price": "25.00", "currency": "TZS",
+            "track_inventory": True,
+        })
+        assert product.status_code == 201
+        product_id = product.json["item"]["id"]
+        increase = client.post(
+            f"/api/products/{product_id}/stock-movements",
+            json={"movement_type": "adjustment_increase", "quantity": "2",
+                  "reason": "Physical count found two extra units."},
+        )
+        assert increase.status_code == 201
+        decrease = client.post(
+            f"/api/products/{product_id}/stock-movements",
+            json={"movement_type": "adjustment_decrease", "quantity": "1",
+                  "reason": "Reconciled one missing unit."},
+        )
+        assert decrease.status_code == 201
+        assert decrease.json["balance"]["stock_on_hand"] == "1.000"
+        assert decrease.json["balance"]["available_quantity"] == "1.000"
+    finally:
+        with application.app_context():
+            db.session.remove()
+            db.drop_all()
