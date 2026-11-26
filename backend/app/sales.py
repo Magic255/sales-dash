@@ -694,34 +694,66 @@ def create_stock_movement(user, product_id):
         )
         reason = _text(data, "reason", 1000, required=True)
         reference = _text(data, "reference", 120)
-        on_hand, reserved, available = _stock_balance(company_id, product_id)
-        if movement_type in {"damaged", "adjustment_decrease", "reserved"}:
-            if quantity > available:
-                return jsonify({"error": "The movement exceeds available stock."}), 409
-        if movement_type == "released" and quantity > reserved:
-            return jsonify({"error": "The release exceeds reserved stock."}), 409
-        movement = StockMovement(
-            company_id=company_id,
-            product_id=product_id,
-            actor_user_id=user.id,
-            movement_type=movement_type,
-            quantity=quantity,
-            reason=reason,
-            reference=reference,
-        )
-        db.session.add(movement)
+        created = []
+        if movement_type in {"received", "returned", "adjustment_increase"}:
+            batch_code = _text(data, "batch_code", 80, required=True)
+            raw_expiry = data.get("expiry_date")
+            if raw_expiry in (None, ""):
+                expiry_date = None
+            elif not isinstance(raw_expiry, str):
+                raise ValueError("Expiry date must use YYYY-MM-DD.")
+            else:
+                try:
+                    expiry_date = date.fromisoformat(raw_expiry)
+                except ValueError:
+                    raise ValueError("Expiry date must use YYYY-MM-DD.") from None
+            batch = StockBatch(
+                company_id=company_id,
+                product_id=product_id,
+                batch_code=batch_code,
+                expiry_date=expiry_date,
+            )
+            db.session.add(batch)
+            db.session.flush()
+            created.append(StockMovement(
+                company_id=company_id,
+                product_id=product_id,
+                batch_id=batch.id,
+                actor_user_id=user.id,
+                movement_type=movement_type,
+                quantity=quantity,
+                reason=reason,
+                reference=reference,
+            ))
+        else:
+            created.extend(_allocate_fifo_movements(
+                company_id,
+                product_id,
+                quantity,
+                movement_type,
+                user.id,
+                reason,
+                reference,
+                allow_expired=movement_type in {
+                    "damaged", "adjustment_decrease", "released"
+                },
+            ))
+        db.session.add_all(created)
         db.session.flush()
         on_hand, reserved, available = _stock_balance(company_id, product_id)
-        result = _stock_movement_json(movement)
+        result = [_stock_movement_json(movement) for movement in created]
         db.session.commit()
     except ValueError as error:
         db.session.rollback()
         return jsonify({"error": str(error)}), 400
     except IntegrityError:
         db.session.rollback()
-        return jsonify({"error": "The stock movement could not be recorded."}), 409
+        return jsonify({
+            "error": "The batch code already exists or the stock movement could not be recorded."
+        }), 409
     return jsonify({
-        "item": result,
+        "item": result[0] if result else None,
+        "items": result,
         "balance": {
             "stock_on_hand": str(on_hand),
             "reserved_quantity": str(reserved),
