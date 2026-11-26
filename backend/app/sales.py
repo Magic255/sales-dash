@@ -7,10 +7,10 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal, InvalidOperation
 from uuid import UUID, uuid4
 
+from cryptography.fernet import Fernet, InvalidToken
 from flask import Blueprint, Response, current_app, g, jsonify, request, send_file, session
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
-from cryptography.fernet import Fernet, InvalidToken
 from werkzeug.utils import secure_filename
 
 from .audit import record_audit_event
@@ -856,9 +856,9 @@ def _compliance_evidence_cipher():
 def _detect_compliance_evidence_type(content):
     if content.startswith(b"%PDF-"):
         return "application/pdf"
-    if content.startswith(b"\\x89PNG\\r\\n\\x1a\\n"):
+    if content.startswith(b"\x89PNG\r\n\x1a\n"):
         return "image/png"
-    if content.startswith(b"\\xff\\xd8\\xff"):
+    if content.startswith(b"\xff\xd8\xff"):
         return "image/jpeg"
     if len(content) >= 12 and content[:4] == b"RIFF" and content[8:12] == b"WEBP":
         return "image/webp"
