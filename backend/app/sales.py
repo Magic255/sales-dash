@@ -419,6 +419,207 @@ def update_customer(_user, customer_id):
     return jsonify({"item": result})
 
 
+def _stock_balance(company_id, product_id):
+    """Calculate on-hand and reserved quantities from the immutable ledger."""
+    rows = db.session.execute(
+        select(StockMovement.movement_type, func.sum(StockMovement.quantity))
+        .where(
+            StockMovement.company_id == company_id,
+            StockMovement.product_id == product_id,
+        )
+        .group_by(StockMovement.movement_type)
+    ).all()
+    on_hand = Decimal("0.000")
+    reserved = Decimal("0.000")
+    for movement_type, total in rows:
+        quantity = Decimal(str(total or 0))
+        if movement_type in {"received", "returned", "adjustment_increase"}:
+            on_hand += quantity
+        elif movement_type in {"sold", "damaged", "adjustment_decrease"}:
+            on_hand -= quantity
+        elif movement_type == "reserved":
+            reserved += quantity
+        elif movement_type == "released":
+            reserved -= quantity
+    return on_hand, reserved, on_hand - reserved
+
+
+def _stock_movement_json(item):
+    return {
+        "id": str(item.id),
+        "product_id": str(item.product_id),
+        "movement_type": item.movement_type,
+        "quantity": str(item.quantity),
+        "reason": item.reason,
+        "reference": item.reference,
+        "actor_user_id": str(item.actor_user_id),
+        "created_at": item.created_at.isoformat(),
+    }
+
+
+@sales_bp.get("/inventory")
+@login_required
+@company_permission_required("manage_inventory")
+def inventory_summary(_user):
+    company_id = _company_id()
+    products = db.session.scalars(
+        select(Product).where(
+            Product.company_id == company_id,
+            Product.track_inventory.is_(True),
+        ).order_by(Product.name)
+    ).all()
+    product_ids = [product.id for product in products]
+    grouped = db.session.execute(
+        select(
+            StockMovement.product_id,
+            StockMovement.movement_type,
+            func.sum(StockMovement.quantity),
+        )
+        .where(
+            StockMovement.company_id == company_id,
+            StockMovement.product_id.in_(product_ids),
+        )
+        .group_by(StockMovement.product_id, StockMovement.movement_type)
+    ).all() if product_ids else []
+    totals = {
+        product_id: {"on_hand": Decimal("0.000"), "reserved": Decimal("0.000")}
+        for product_id in product_ids
+    }
+    for product_id, movement_type, total in grouped:
+        quantity = Decimal(str(total or 0))
+        if movement_type in {"received", "returned", "adjustment_increase"}:
+            totals[product_id]["on_hand"] += quantity
+        elif movement_type in {"sold", "damaged", "adjustment_decrease"}:
+            totals[product_id]["on_hand"] -= quantity
+        elif movement_type == "reserved":
+            totals[product_id]["reserved"] += quantity
+        elif movement_type == "released":
+            totals[product_id]["reserved"] -= quantity
+    items = []
+    for product in products:
+        balance = totals[product.id]
+        available = balance["on_hand"] - balance["reserved"]
+        status = (
+            "out_of_stock" if available <= 0
+            else "low_stock" if available <= product.low_stock_threshold
+            else "available"
+        )
+        items.append({
+            "product_id": str(product.id),
+            "sku": product.sku,
+            "name": product.name,
+            "currency": product.currency,
+            "stock_on_hand": str(balance["on_hand"]),
+            "reserved_quantity": str(balance["reserved"]),
+            "available_quantity": str(available),
+            "low_stock_threshold": str(product.low_stock_threshold),
+            "status": status,
+        })
+    return jsonify({"items": items})
+
+
+@sales_bp.get("/products/<uuid:product_id>/stock-movements")
+@login_required
+@company_permission_required("manage_inventory")
+def list_stock_movements(_user, product_id):
+    company_id = _company_id()
+    product = db.session.scalar(
+        select(Product).where(
+            Product.id == product_id, Product.company_id == company_id
+        )
+    )
+    if product is None:
+        return jsonify({"error": "Product not found."}), 404
+    if not product.track_inventory:
+        return jsonify({"error": "Inventory tracking is not enabled for this product."}), 409
+    rows = db.session.scalars(
+        select(StockMovement)
+        .where(
+            StockMovement.company_id == company_id,
+            StockMovement.product_id == product_id,
+        )
+        .order_by(StockMovement.created_at.desc(), StockMovement.id.desc())
+        .limit(200)
+    ).all()
+    on_hand, reserved, available = _stock_balance(company_id, product_id)
+    return jsonify({
+        "items": [_stock_movement_json(item) for item in rows],
+        "balance": {
+            "stock_on_hand": str(on_hand),
+            "reserved_quantity": str(reserved),
+            "available_quantity": str(available),
+        },
+    })
+
+
+@sales_bp.post("/products/<uuid:product_id>/stock-movements")
+@login_required
+@company_permission_required("manage_inventory")
+def create_stock_movement(user, product_id):
+    company_id = _company_id()
+    product = db.session.scalar(
+        select(Product).where(
+            Product.id == product_id, Product.company_id == company_id
+        ).with_for_update()
+    )
+    if product is None:
+        return jsonify({"error": "Product not found."}), 404
+    if not product.track_inventory:
+        return jsonify({"error": "Enable inventory tracking for this product first."}), 409
+    data = _json_object()
+    if data is None:
+        return jsonify({"error": "Send a JSON object."}), 400
+    try:
+        movement_type = _text(data, "movement_type", 24, required=True, lower=True)
+        allowed = {
+            "received", "returned", "damaged", "adjustment_increase",
+            "adjustment_decrease", "reserved", "released",
+        }
+        if movement_type not in allowed:
+            raise ValueError("Unsupported stock movement type.")
+        if movement_type.startswith("adjustment_") and g.company_membership.role != "admin":
+            return jsonify({"error": "Only Admins can make stock adjustments."}), 403
+        quantity = _decimal(
+            data.get("quantity"), "quantity",
+            minimum=Decimal("0.001"), places=MILLI,
+        )
+        reason = _text(data, "reason", 1000, required=True)
+        reference = _text(data, "reference", 120)
+        on_hand, reserved, available = _stock_balance(company_id, product_id)
+        if movement_type in {"damaged", "adjustment_decrease", "reserved"}:
+            if quantity > available:
+                return jsonify({"error": "The movement exceeds available stock."}), 409
+        if movement_type == "released" and quantity > reserved:
+            return jsonify({"error": "The release exceeds reserved stock."}), 409
+        movement = StockMovement(
+            company_id=company_id,
+            product_id=product_id,
+            actor_user_id=user.id,
+            movement_type=movement_type,
+            quantity=quantity,
+            reason=reason,
+            reference=reference,
+        )
+        db.session.add(movement)
+        db.session.commit()
+        on_hand, reserved, available = _stock_balance(company_id, product_id)
+        result = _stock_movement_json(movement)
+    except ValueError as error:
+        db.session.rollback()
+        return jsonify({"error": str(error)}), 400
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({"error": "The stock movement could not be recorded."}), 409
+    return jsonify({
+        "item": result,
+        "balance": {
+            "stock_on_hand": str(on_hand),
+            "reserved_quantity": str(reserved),
+            "available_quantity": str(available),
+        },
+    }), 201
+
+
 @sales_bp.get("/products")
 @login_required
 @company_permission_required("view_reports")
