@@ -21,7 +21,12 @@ def upgrade():
     )
     op.add_column(
         "stock_batches",
-        sa.Column("compliance_status", sa.String(length=24), nullable=False, server_default="approved"),
+        sa.Column(
+            "compliance_status",
+            sa.String(length=24),
+            nullable=False,
+            server_default="approved",
+        ),
     )
     op.add_column(
         "stock_batches",
