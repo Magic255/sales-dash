@@ -14,10 +14,10 @@ from .audit import record_audit_event
 from .auth import login_required
 from .extensions import db
 from .models import (
+    AppNotification,
     Company,
     CompanyMembership,
     Customer,
-    AppNotification,
     DiscountApprovalRequest,
     Product,
     Sale,
