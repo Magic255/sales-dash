@@ -17,6 +17,10 @@ inventory_bp = Blueprint("inventory", __name__, url_prefix="/api/inventory")
 ZERO = Decimal("0.000")
 
 
+class InventoryStockError(ValueError):
+    """A draft sale cannot use the selected tracked stock batch."""
+
+
 def _company_id():
     return UUID(session["company_id"])
 
@@ -70,14 +74,14 @@ def validate_sale_batch(company_id, product, batch_id, quantity):
     """Validate a selected batch and its current available quantity for a draft."""
     if not product.track_inventory:
         if batch_id:
-            raise ValueError("A batch can only be selected for a tracked product.")
+            raise InventoryStockError("A batch can only be selected for a tracked product.")
         return None
     if not batch_id:
-        raise ValueError(f"Choose a batch for tracked product {product.sku}.")
+        raise InventoryStockError(f"Choose a batch for tracked product {product.sku}.")
     try:
         parsed_batch_id = UUID(str(batch_id))
     except (ValueError, TypeError):
-        raise ValueError("Choose a valid inventory batch.") from None
+        raise InventoryStockError("Choose a valid inventory batch.") from None
     batch = db.session.scalar(
         select(ProductBatch).where(
             ProductBatch.company_id == company_id,
@@ -86,12 +90,12 @@ def validate_sale_batch(company_id, product, batch_id, quantity):
         )
     )
     if batch is None:
-        raise ValueError("The selected batch does not belong to this product.")
+        raise InventoryStockError("The selected batch does not belong to this product.")
     if batch.expiry_date and batch.expiry_date < date.today():
-        raise ValueError(f"Batch {batch.batch_code} has expired.")
+        raise InventoryStockError(f"Batch {batch.batch_code} has expired.")
     on_hand, reserved = batch_balance(company_id, batch.id)
     if on_hand - reserved < quantity:
-        raise ValueError(f"Insufficient available stock in batch {batch.batch_code}.")
+        raise InventoryStockError(f"Insufficient available stock in batch {batch.batch_code}.")
     return batch.id
 
 
