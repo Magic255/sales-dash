@@ -664,7 +664,7 @@ def create_sale(user):
             product = db.session.scalar(select(Product).where(
                 Product.id == product_id, Product.company_id == company_id,
                 Product.is_active.is_(True),
-            ))
+            ).with_for_update())
             if product is None:
                 raise ValueError("A selected product is unavailable in this company.")
             if product.currency != currency:
@@ -1025,7 +1025,7 @@ def update_draft_sale(user, sale_id):
                 Product.id == product_id,
                 Product.company_id == company_id,
                 Product.is_active.is_(True),
-            ))
+            ).with_for_update())
             if product is None or product.currency != currency:
                 raise ValueError("Choose an available product in the sale currency.")
             quantity = _decimal(
