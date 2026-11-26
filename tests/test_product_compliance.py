@@ -122,7 +122,7 @@ def test_compliance_required_stock_is_received_to_quarantine_until_independent_v
                 "authority_name": "Tanzania Bureau of Standards",
                 "authority_country": "TZ",
                 "certificate_reference": "TBS-SYNTHETIC-123",
-                "evidence_file_id": evidence_file_id,
+                "evidence_reference": "forbidden-self-approval-test",
             },
         )
         assert self_approval.status_code == 403
@@ -169,7 +169,7 @@ def test_compliance_required_stock_is_received_to_quarantine_until_independent_v
                 "authority_country": "TZ",
                 "standard_reference": "TZS-SYNTHETIC-001",
                 "certificate_reference": "TBS-SYNTHETIC-123",
-                "evidence_reference": "private-evidence-ref-001",
+                "evidence_file_id": evidence_file_id,
             },
         )
         assert approved.status_code == 200
@@ -279,6 +279,13 @@ def test_category_market_policy_enforces_quarantine_authorities_and_admin_except
         ).json["items"]
         assert batches[0]["compliance_status"] == "pending_verification"
 
+        uploaded = admin_client.post(
+            f"/api/stock-batches/{batch_id}/evidence",
+            data={"file": (BytesIO(b"%PDF-1.7\\nsynthetic policy evidence\\n"), "policy-certificate.pdf")},
+            content_type="multipart/form-data",
+        )
+        assert uploaded.status_code == 201
+
         unknown_authority = admin_client.post(
             f"/api/stock-batches/{batch_id}/compliance",
             json={
@@ -290,20 +297,13 @@ def test_category_market_policy_enforces_quarantine_authorities_and_admin_except
         )
         assert unknown_authority.status_code == 400
 
-        uploaded = admin_client.post(
-            f"/api/stock-batches/{batch_id}/evidence",
-            data={"file": (BytesIO(b"%PDF-1.7\\nsynthetic policy evidence\\n"), "policy-certificate.pdf")},
-            content_type="multipart/form-data",
-        )
-        assert uploaded.status_code == 201
-
         verified = admin_client.post(
             f"/api/stock-batches/{batch_id}/compliance",
             json={
                 "decision": "approve", "qr_code": "SYNTHETIC-QR-FOOD",
                 "authority_name": "Tanzania Bureau of Standards", "authority_country": "TZ",
                 "certificate_reference": "SYNTHETIC-CERT-1",
-                "evidence_reference": "private-evidence-food-1",
+                "evidence_file_id": uploaded.json["item"]["id"],
             },
         )
         assert verified.status_code == 200
