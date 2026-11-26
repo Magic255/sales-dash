@@ -4,6 +4,7 @@ Revision ID: 0026_private_evidence
 Revises: 0025_category_compliance
 """
 
+# ruff: noqa: I001
 from alembic import op
 import sqlalchemy as sa
 
