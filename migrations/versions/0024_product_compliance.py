@@ -23,16 +23,46 @@ def upgrade():
         "stock_batches",
         sa.Column("compliance_status", sa.String(length=24), nullable=False, server_default="approved"),
     )
-    op.add_column("stock_batches", sa.Column("received_by_user_id", sa.Uuid(), nullable=True))
-    op.add_column("stock_batches", sa.Column("qr_code", sa.String(length=500), nullable=True))
-    op.add_column("stock_batches", sa.Column("authority_name", sa.String(length=160), nullable=True))
-    op.add_column("stock_batches", sa.Column("authority_country", sa.String(length=2), nullable=True))
-    op.add_column("stock_batches", sa.Column("standard_reference", sa.String(length=160), nullable=True))
-    op.add_column("stock_batches", sa.Column("certificate_reference", sa.String(length=160), nullable=True))
-    op.add_column("stock_batches", sa.Column("evidence_reference", sa.String(length=500), nullable=True))
-    op.add_column("stock_batches", sa.Column("verified_by_user_id", sa.Uuid(), nullable=True))
-    op.add_column("stock_batches", sa.Column("verified_at", sa.DateTime(timezone=True), nullable=True))
-    op.add_column("stock_batches", sa.Column("verification_notes", sa.String(length=1000), nullable=True))
+    op.add_column(
+        "stock_batches",
+        sa.Column("received_by_user_id", sa.Uuid(), nullable=True),
+    )
+    op.add_column(
+        "stock_batches",
+        sa.Column("qr_code", sa.String(length=500), nullable=True),
+    )
+    op.add_column(
+        "stock_batches",
+        sa.Column("authority_name", sa.String(length=160), nullable=True),
+    )
+    op.add_column(
+        "stock_batches",
+        sa.Column("authority_country", sa.String(length=2), nullable=True),
+    )
+    op.add_column(
+        "stock_batches",
+        sa.Column("standard_reference", sa.String(length=160), nullable=True),
+    )
+    op.add_column(
+        "stock_batches",
+        sa.Column("certificate_reference", sa.String(length=160), nullable=True),
+    )
+    op.add_column(
+        "stock_batches",
+        sa.Column("evidence_reference", sa.String(length=500), nullable=True),
+    )
+    op.add_column(
+        "stock_batches",
+        sa.Column("verified_by_user_id", sa.Uuid(), nullable=True),
+    )
+    op.add_column(
+        "stock_batches",
+        sa.Column("verified_at", sa.DateTime(timezone=True), nullable=True),
+    )
+    op.add_column(
+        "stock_batches",
+        sa.Column("verification_notes", sa.String(length=1000), nullable=True),
+    )
     op.create_check_constraint(
         "compliance_status_supported",
         "stock_batches",
