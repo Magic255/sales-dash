@@ -87,6 +87,7 @@ def upgrade():
         sa.Column("batch_id", sa.Uuid(), nullable=False),
         sa.Column("sale_id", sa.Uuid(), nullable=True),
         sa.Column("actor_user_id", sa.Uuid(), nullable=False),
+        sa.Column("actor_label", sa.String(length=255), nullable=False),
         sa.Column("movement_type", sa.String(length=20), nullable=False),
         sa.Column(
             "quantity_delta", sa.Numeric(12, 3),
