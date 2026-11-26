@@ -42,6 +42,7 @@ Add these in the Render service's **Environment** settings. Use Render's generat
 | `APP_DATABASE_URL` | Internal PostgreSQL URL using the dedicated restricted runtime login (not the database owner URL) |
 | `RATELIMIT_STORAGE_URI` | Internal Render Key Value URL, using `redis://` or `rediss://` as supplied by Render |
 | `MFA_ENCRYPTION_KEY` | Generate a valid Fernet key using the command below; required for production startup and validated before the app accepts traffic |
+| `COMPLIANCE_EVIDENCE_ENCRYPTION_KEY` | A separate valid Fernet key for encrypted compliance certificate files; required for production startup |
 | `PUBLIC_BASE_URL` | The exact public HTTPS origin after the service URL/domain is assigned |
 | `MAIL_SERVER` | `smtp.gmail.com` for the configured personal Gmail SMTP option |
 | `MAIL_PORT` | `587` |
@@ -61,7 +62,7 @@ Generate the MFA key in a trusted local operator environment:
 python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
 
-Copy the generated value straight into Render's protected environment setting. Do not paste it into ChatGPT, GitHub, a ticket, or a source file. Keep a protected recovery copy in an approved password manager or secrets vault with access limited to designated operators. Losing or rotating this key without a migration plan can make enrolled authenticator secrets unreadable.
+Copy the generated value straight into the matching protected environment setting. Generate **two independent keys**: one for `MFA_ENCRYPTION_KEY` and another for `COMPLIANCE_EVIDENCE_ENCRYPTION_KEY`. Do not reuse one key for both purposes. Do not paste either key into ChatGPT, GitHub, a ticket, or a source file. Keep protected recovery copies in an approved password manager or secrets vault with access limited to designated operators. Losing the MFA key can make enrolled authenticator secrets unreadable; losing the evidence key makes stored compliance documents unreadable. Key rotation requires a controlled migration/re-encryption plan.
 
 ## Database setup and migrations
 
@@ -87,6 +88,7 @@ The app fails startup in production unless its rate-limit storage URI uses Redis
 - [ ] Confirm TLS/HTTPS, secure session cookies, HSTS, security headers, and `/api/health` (which now checks database readiness and returns HTTP 503 when the database is unavailable).
 - [ ] Confirm API responses use `Cache-Control: no-store` and are never cached by the service worker.
 - [ ] Confirm web service environment contains no admin/owner database URL.
+- [ ] Confirm the separate compliance evidence encryption key is present, recoverable from the approved vault, and distinct from the MFA key.
 - [ ] Confirm database public access is disabled and runtime login is restricted, non-owner, non-superuser, and not `BYPASSRLS`.
 - [ ] Confirm Key Value external access is disabled and the production app uses its internal URL.
 - [ ] Run synthetic two-company tests for cross-tenant read/write denial and role permissions.
