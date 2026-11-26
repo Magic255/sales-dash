@@ -690,6 +690,7 @@ async function loadInventoryBatches(productId, generation = workspaceGeneration)
           return workspaceMessage("Choose one of the available compliance decisions.");
         }
         const payload = {decision: normalized};
+        try {
         if (normalized === "approve") {
           payload.qr_code = window.prompt("QR / traceability value (required)", "");
           if (payload.qr_code === null) return;
@@ -726,7 +727,6 @@ async function loadInventoryBatches(productId, generation = workspaceGeneration)
           if (payload.notes === null || !payload.notes.trim()) return;
         }
         review.disabled = true;
-        try {
           await workspaceRequest("/api/stock-batches/" + encodeURIComponent(batch.id) + "/compliance", {
             method: "POST", body: JSON.stringify(payload),
           });
@@ -739,6 +739,38 @@ async function loadInventoryBatches(productId, generation = workspaceGeneration)
       });
       actions.append(review);
     }
+    const evidenceButton = document.createElement("button");
+    evidenceButton.type = "button";
+    evidenceButton.className = "table-action";
+    evidenceButton.textContent = "Evidence";
+    evidenceButton.addEventListener("click", async () => {
+      evidenceButton.disabled = true;
+      try {
+        const evidence = await workspaceRequest(
+          "/api/stock-batches/" + encodeURIComponent(batch.id) + "/evidence"
+        );
+        const links = evidence.items || [];
+        if (!links.length) {
+          workspaceMessage("No private evidence has been uploaded for this batch yet.");
+        } else {
+          for (const item of links) {
+            const link = document.createElement("a");
+            link.href = item.download_url;
+            link.textContent = "Download " + item.filename;
+            link.className = "table-action";
+            link.style.display = "block";
+            link.style.marginTop = "4px";
+            actions.append(link);
+          }
+          workspaceMessage(links.length + " private evidence file(s) available.");
+        }
+      } catch (error) {
+        workspaceMessage(error.message);
+      } finally {
+        evidenceButton.disabled = false;
+      }
+    });
+    actions.append(evidenceButton);
     if (!actions.childElementCount) actions.textContent = "—";
     row.append(actions);
     body.append(row);
