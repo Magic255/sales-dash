@@ -797,6 +797,27 @@ async function loadInventoryBatches(productId, generation = workspaceGeneration)
       });
       actions.append(review);
     }
+    if (batch.verification_method) {
+      const verificationSummary = document.createElement("small");
+      verificationSummary.textContent = [
+        batch.authority_role || "issuer",
+        batch.verification_method.replaceAll("_", " "),
+        batch.verified_scope || "",
+      ].filter(Boolean).join(" · ");
+      verificationSummary.style.display = "block";
+      verificationSummary.style.marginTop = "6px";
+      actions.append(verificationSummary);
+      if (batch.verification_source_url) {
+        const sourceLink = document.createElement("a");
+        sourceLink.href = batch.verification_source_url;
+        sourceLink.target = "_blank";
+        sourceLink.rel = "noopener noreferrer";
+        sourceLink.textContent = "Open recorded verification source";
+        sourceLink.className = "table-action";
+        sourceLink.style.display = "block";
+        actions.append(sourceLink);
+      }
+    }
     const evidenceButton = document.createElement("button");
     evidenceButton.type = "button";
     evidenceButton.className = "table-action";
