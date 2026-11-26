@@ -424,9 +424,14 @@ class ComplianceEvidenceFile(db.Model):
             name="fk_compliance_evidence_uploader_membership",
         ),
         CheckConstraint("length(trim(original_filename)) > 0", name="filename_not_empty"),
-        CheckConstraint("content_type IN ('application/pdf', 'image/jpeg', 'image/png', 'image/webp')",
-                        name="content_type_supported"),
-        CheckConstraint("size_bytes > 0 AND size_bytes <= 8388608", name="size_bytes_supported"),
+        CheckConstraint(
+            "content_type IN ('application/pdf', 'image/jpeg', 'image/png', 'image/webp')",
+            name="content_type_supported",
+        ),
+        CheckConstraint(
+            "size_bytes > 0 AND size_bytes <= 8388608",
+            name="size_bytes_supported",
+        ),
         CheckConstraint("length(sha256) = 64", name="sha256_length"),
         db.Index("ix_compliance_evidence_company_batch", "company_id", "batch_id", "created_at"),
     )
