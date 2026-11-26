@@ -977,3 +977,20 @@ def test_editing_draft_discount_writes_before_and_after_price_audit():
         with application.app_context():
             db.session.remove()
             db.drop_all()
+
+
+def test_manager_can_view_weekly_team_discount_report():
+    application, client = make_client("manager")
+    try:
+        response = client.get(
+            "/api/reports/discounts/weekly?week_start=2026-11-23"
+        )
+        assert response.status_code == 200
+        assert response.json["week_start"] == "2026-11-23"
+        assert response.json["week_end"] == "2026-11-29"
+        assert response.json["salespeople"] == []
+        assert "Conversion rate is not included" in response.json["note"]
+    finally:
+        with application.app_context():
+            db.session.remove()
+            db.drop_all()
