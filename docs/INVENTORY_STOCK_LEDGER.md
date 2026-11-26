@@ -45,6 +45,7 @@ into a non-expiring `LEGACY-...` batch so balances and history are preserved.
 - Batch balances are calculated from the same append-only movement ledger.
 - Sales allocate from the oldest eligible batch first (FIFO).
 - Expired batches are excluded from sale availability and reservations.
+- Batches expiring within 30 days are flagged as `expiring_soon` with a separate quantity in the inventory summary.
 - Expired stock remains visible in on-hand totals and is shown separately.
 - A product with only expired stock is shown as `expired`.
 - Voiding a completed sale returns each sold quantity to its original batch, preserving
