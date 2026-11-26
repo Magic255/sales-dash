@@ -864,6 +864,14 @@ document.addEventListener("salesdash:company-selected", (event) => {
   document.querySelector("#team-tab").hidden = workspaceRole !== "admin";
   document.querySelector("#company-settings-tab").hidden = workspaceRole !== "admin";
   document.querySelector("#discount-approvals-tab").hidden = workspaceRole !== "admin";
+  document.querySelector("#inventory-tab").hidden =
+    !["admin", "manager"].includes(workspaceRole);
+  document.querySelector("#inventory-movement-form").hidden =
+    !["admin", "manager"].includes(workspaceRole);
+  document.querySelectorAll("[data-admin-only]").forEach((option) => {
+    option.hidden = workspaceRole !== "admin";
+    option.disabled = workspaceRole !== "admin";
+  });
   document.querySelector("#weekly-discount-report").hidden =
     !["admin", "manager"].includes(workspaceRole);
   const auditPanel = document.querySelector("#audit-panel");
@@ -884,6 +892,10 @@ document.addEventListener("salesdash:signed-out", () => {
   products = [];
   document.querySelector("#audit-panel").hidden = true;
   document.querySelector("#discount-approvals-tab").hidden = true;
+  document.querySelector("#inventory-tab").hidden = true;
+  document.querySelector("#inventory-message").textContent = "";
+  document.querySelector("#inventory-rows").replaceChildren();
+  document.querySelector("#inventory-history-rows").replaceChildren();
   document.querySelector("#discount-approvals-message").textContent = "";
   document.querySelector("#audit-message").textContent = "";
   emptyRow(document.querySelector("#audit-rows"), 4, "Select a company to view activity.");
@@ -891,7 +903,59 @@ document.addEventListener("salesdash:signed-out", () => {
 });
 
 document.querySelectorAll("[data-workspace-tab]").forEach((button) => {
-  button.addEventListener("click", () => selectTab(button.dataset.workspaceTab));
+  button.addEventListener("click", () => {
+    selectTab(button.dataset.workspaceTab);
+    if (button.dataset.workspaceTab === "inventory") {
+      loadInventory().catch((error) => {
+        document.querySelector("#inventory-message").textContent = error.message;
+      });
+    }
+  });
+});
+
+document.querySelector("#inventory-product").addEventListener("change", async (event) => {
+  try {
+    await loadInventoryHistory(event.currentTarget.value);
+  } catch (error) {
+    document.querySelector("#inventory-message").textContent = error.message;
+  }
+});
+
+document.querySelector("#inventory-movement-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const button = form.querySelector("button");
+  const productId = document.querySelector("#inventory-product").value;
+  if (!productId) {
+    document.querySelector("#inventory-message").textContent =
+      "Choose a product with inventory tracking enabled.";
+    return;
+  }
+  button.disabled = true;
+  try {
+    await workspaceRequest(
+      "/api/products/" + encodeURIComponent(productId) + "/stock-movements",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          movement_type: document.querySelector("#inventory-movement-type").value,
+          quantity: document.querySelector("#inventory-quantity").value,
+          reason: document.querySelector("#inventory-reason").value,
+          reference: document.querySelector("#inventory-reference").value,
+        }),
+      }
+    );
+    document.querySelector("#inventory-reason").value = "";
+    document.querySelector("#inventory-reference").value = "";
+    document.querySelector("#inventory-quantity").value = "";
+    document.querySelector("#inventory-message").textContent =
+      "Stock movement recorded in the inventory ledger.";
+    await loadInventory();
+  } catch (error) {
+    document.querySelector("#inventory-message").textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
 });
 
 document.querySelector("#workspace-refresh").addEventListener("click", loadWorkspace);
