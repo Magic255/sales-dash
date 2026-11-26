@@ -235,6 +235,10 @@ def test_category_market_policy_enforces_quarantine_authorities_and_admin_except
         product_data = admin_client.get("/api/products?include_inactive=true").json["items"]
         regulated = next(item for item in product_data if item["id"] == product_id)
         assert regulated["compliance_required"] is True
+        missing_market = admin_client.patch(
+            f"/api/products/{product_id}", json={"market_country": None}
+        )
+        assert missing_market.status_code == 400
 
         receipt = manager_client.post(
             f"/api/products/{product_id}/stock-movements",
@@ -306,6 +310,20 @@ def test_category_market_policy_enforces_quarantine_authorities_and_admin_except
             "approval_mode": "not_required", "accepted_authorities": [],
         })
         assert not_required.status_code == 200
+        unregulated = admin_client.post("/api/products", json={
+            "sku": "STATIONERY-001",
+            "name": "Synthetic stationery item",
+            "unit_price": "4.00",
+            "cost_price": "1.00",
+            "minimum_selling_price": "1.00",
+            "currency": "TZS",
+            "track_inventory": True,
+            "category_key": "stationery",
+            "market_country": "TZ",
+            "compliance_required": False,
+        })
+        assert unregulated.status_code == 201
+        assert unregulated.json["item"]["compliance_required"] is False
     finally:
         with app.app_context():
             db.session.remove()
