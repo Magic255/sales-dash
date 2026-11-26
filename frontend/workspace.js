@@ -459,6 +459,7 @@ async function loadSales(generation) {
             product_id: item.product_id,
             quantity: index === 0 ? quantity : item.quantity,
             discount_amount: item.discount_amount,
+            batch_id: item.batch_id || null,
           })),
         };
         edit.disabled = true;
