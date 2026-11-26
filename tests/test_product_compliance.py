@@ -1,11 +1,16 @@
 from decimal import Decimal
+from io import BytesIO
 from uuid import UUID
 
 from argon2 import PasswordHasher
+from cryptography.fernet import Fernet
 
 from app import create_app
 from app.extensions import db
-from app.models import Company, CompanyMembership, Customer, Product, User
+from app.models import (Company, CompanyMembership, ComplianceEvidenceFile, Customer, Product, User)
+
+
+TEST_EVIDENCE_KEY = Fernet.generate_key().decode("ascii")
 
 
 def _login(client, email, company_id):
@@ -25,6 +30,7 @@ def test_compliance_required_stock_is_received_to_quarantine_until_independent_v
         "SQLALCHEMY_DATABASE_URI": "sqlite://",
         "WTF_CSRF_ENABLED": False,
         "RATELIMIT_ENABLED": False,
+        "COMPLIANCE_EVIDENCE_ENCRYPTION_KEY": TEST_EVIDENCE_KEY,
     })
     try:
         with app.app_context():
@@ -116,7 +122,7 @@ def test_compliance_required_stock_is_received_to_quarantine_until_independent_v
                 "authority_name": "Tanzania Bureau of Standards",
                 "authority_country": "TZ",
                 "certificate_reference": "TBS-SYNTHETIC-123",
-                "evidence_reference": "private-evidence-ref-001",
+                "evidence_file_id": evidence_file_id,
             },
         )
         assert self_approval.status_code == 403
@@ -135,6 +141,24 @@ def test_compliance_required_stock_is_received_to_quarantine_until_independent_v
             },
         )
         assert missing_qr.status_code == 400
+
+        uploaded = verifier_client.post(
+            f"/api/stock-batches/{batch_id}/evidence",
+            data={"file": (BytesIO(b"%PDF-1.7\\nsynthetic certificate evidence\\n"), "certificate.pdf")},
+            content_type="multipart/form-data",
+        )
+        assert uploaded.status_code == 201
+        evidence_file_id = uploaded.json["item"]["id"]
+        with app.app_context():
+            stored = db.session.get(ComplianceEvidenceFile, UUID(evidence_file_id))
+            assert stored is not None
+            assert b"synthetic certificate evidence" not in stored.encrypted_content
+        downloaded = verifier_client.get(
+            f"/api/stock-batches/{batch_id}/evidence/{evidence_file_id}"
+        )
+        assert downloaded.status_code == 200
+        assert downloaded.data.startswith(b"%PDF-1.7")
+        assert downloaded.headers["Cache-Control"] == "no-store"
 
         approved = verifier_client.post(
             f"/api/stock-batches/{batch_id}/compliance",
@@ -261,10 +285,17 @@ def test_category_market_policy_enforces_quarantine_authorities_and_admin_except
                 "decision": "approve", "qr_code": "SYNTHETIC-QR-FOOD",
                 "authority_name": "Unlisted Authority", "authority_country": "TZ",
                 "certificate_reference": "SYNTHETIC-CERT-1",
-                "evidence_reference": "private-evidence-food-1",
+                "evidence_file_id": uploaded.json["item"]["id"],
             },
         )
         assert unknown_authority.status_code == 400
+
+        uploaded = admin_client.post(
+            f"/api/stock-batches/{batch_id}/evidence",
+            data={"file": (BytesIO(b"%PDF-1.7\\nsynthetic policy evidence\\n"), "policy-certificate.pdf")},
+            content_type="multipart/form-data",
+        )
+        assert uploaded.status_code == 201
 
         verified = admin_client.post(
             f"/api/stock-batches/{batch_id}/compliance",
