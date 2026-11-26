@@ -319,6 +319,13 @@ def create_inventory_batch(user):
             created_by_user_id=user.id,
         )
         db.session.add(batch)
+        db.session.flush()
+        result = {
+            "id": str(batch.id),
+            "product_id": str(batch.product_id),
+            "batch_code": batch.batch_code,
+            "expiry_date": batch.expiry_date.isoformat() if batch.expiry_date else None,
+        }
         db.session.commit()
     except (ValueError, TypeError):
         db.session.rollback()
@@ -326,12 +333,7 @@ def create_inventory_batch(user):
     except IntegrityError:
         db.session.rollback()
         return jsonify({"error": "That batch code already exists for this product."}), 409
-    return jsonify({"item": {
-        "id": str(batch.id),
-        "product_id": str(batch.product_id),
-        "batch_code": batch.batch_code,
-        "expiry_date": batch.expiry_date.isoformat() if batch.expiry_date else None,
-    }}), 201
+    return jsonify({"item": result}), 201
 
 
 @inventory_bp.post("/movements")
@@ -403,17 +405,17 @@ def create_inventory_movement(user):
             reason=reason,
         )
         db.session.add(movement)
-        db.session.commit()
-    except (ValueError, TypeError):
-        db.session.rollback()
-        return jsonify({"error": "Invalid stock movement. Check the quantity, batch, and reason."}), 400
-    return jsonify({
-        "item": {
+        db.session.flush()
+        result = {
             "id": str(movement.id),
             "movement_type": movement.movement_type,
             "quantity_delta": str(movement.quantity_delta),
             "reserved_delta": str(movement.reserved_delta),
             "reason": movement.reason,
-        },
-        "inventory": _inventory_rows(company_id),
-    }), 201
+        }
+        inventory = _inventory_rows(company_id)
+        db.session.commit()
+    except (ValueError, TypeError):
+        db.session.rollback()
+        return jsonify({"error": "Invalid stock movement. Check the quantity, batch, and reason."}), 400
+    return jsonify({"item": result, "inventory": inventory}), 201
