@@ -58,7 +58,6 @@ The existing 30-day indicator is only a warning lead-time for a supplied expiry 
 
 ## Remaining work
 
-- Official QR decoding and trusted certificate/authority verification integrations, where suitable sources and permissions exist.
 - Trusted QR decoding and official certificate/authority verification integrations, where suitable sources and permissions exist.
 - Evidence scope and product/manufacturer identity checks, certificate validity/revocation handling, and batch-level inspection reporting.
 - Configurable expiry warning lead-times and recall traceability reporting.
