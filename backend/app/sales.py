@@ -13,6 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from .audit import record_audit_event
 from .auth import login_required
 from .extensions import db
+from .inventory import record_sale_stock_movements, validate_sale_batch
 from .models import (
     Company,
     CompanyMembership,
@@ -296,6 +297,8 @@ def _product_json(item, *, include_cost=False):
         "description": item.description, "unit_price": str(item.unit_price),
         "currency": item.currency, "is_active": item.is_active,
         "minimum_selling_price": str(item.minimum_selling_price),
+        "track_inventory": item.track_inventory,
+        "reorder_level": str(item.reorder_level),
         "created_at": item.created_at.isoformat(),
     }
     if include_cost:
@@ -730,6 +733,7 @@ def _sale_line_items(sale_id, company_id):
             "quantity": str(line.quantity),
             "unit_price": str(line.unit_price),
             "discount_amount": str(line.discount_amount),
+            "batch_id": str(line.batch_id) if line.batch_id else None,
             "line_total": str(line.line_total),
         }
         for line, _name, _sku in rows
