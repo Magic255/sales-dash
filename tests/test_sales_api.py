@@ -977,3 +977,144 @@ def test_editing_draft_discount_writes_before_and_after_price_audit():
         with application.app_context():
             db.session.remove()
             db.drop_all()
+
+
+def test_inventory_batches_ledger_sale_consumption_and_void_restoration():
+    application, client = make_client("admin")
+    try:
+        customer = client.post("/api/customers", json={"name": "Inventory Ledger Customer"})
+        product = client.post("/api/products", json={
+            "sku": "INV-LEDGER-1", "name": "Tracked Inventory Product",
+            "unit_price": "100.00", "cost_price": "70.00",
+            "minimum_selling_price": "90.00", "track_inventory": True,
+            "reorder_level": "2.000", "currency": "TZS",
+        })
+        assert customer.status_code == 201
+        assert product.status_code == 201
+        assert product.json["item"]["track_inventory"] is True
+        batch = client.post("/api/inventory/batches", json={
+            "product_id": product.json["item"]["id"],
+            "batch_code": "LOT-INV-001",
+            "expiry_date": "2027-12-31",
+        })
+        assert batch.status_code == 201
+        received = client.post("/api/inventory/movements", json={
+            "product_id": product.json["item"]["id"],
+            "batch_id": batch.json["item"]["id"],
+            "movement_type": "received",
+            "quantity": "5.000",
+            "reason": "Initial supplier delivery.",
+        })
+        assert received.status_code == 201
+        inventory = client.get("/api/inventory")
+        stock = inventory.json["items"][0]
+        assert stock["on_hand"] == "5.000"
+        assert stock["available"] == "5.000"
+        assert stock["status"] == "Available"
+
+        sale = client.post("/api/sales", json={
+            "customer_id": customer.json["item"]["id"],
+            "currency": "TZS",
+            "items": [{
+                "product_id": product.json["item"]["id"],
+                "quantity": "3.000",
+                "batch_id": batch.json["item"]["id"],
+            }],
+        })
+        assert sale.status_code == 201
+        assert sale.json["item"]["items"][0]["batch_id"] == batch.json["item"]["id"]
+        completed = client.post(f"/api/sales/{sale.json['item']['id']}/complete")
+        assert completed.status_code == 200
+        after_sale = client.get("/api/inventory").json["items"][0]
+        assert after_sale["on_hand"] == "2.000"
+        assert after_sale["available"] == "2.000"
+        assert after_sale["status"] == "Low stock"
+
+        voided = client.post(f"/api/sales/{sale.json['item']['id']}/void")
+        assert voided.status_code == 200
+        after_void = client.get("/api/inventory").json["items"][0]
+        assert after_void["on_hand"] == "5.000"
+        assert after_void["available"] == "5.000"
+        movements = client.get("/api/inventory/movements")
+        assert [row["movement_type"] for row in movements.json["items"]] == [
+            "returned", "sold", "received",
+        ]
+    finally:
+        with application.app_context():
+            db.session.remove()
+            db.drop_all()
+
+
+def test_inventory_prevents_overselling_between_draft_and_completion():
+    application, client = make_client("admin")
+    try:
+        customer = client.post("/api/customers", json={"name": "Inventory Race Customer"})
+        product = client.post("/api/products", json={
+            "sku": "INV-RACE-1", "name": "Inventory Race Product",
+            "unit_price": "100.00", "track_inventory": True,
+            "currency": "TZS",
+        })
+        batch = client.post("/api/inventory/batches", json={
+            "product_id": product.json["item"]["id"], "batch_code": "LOT-RACE-001",
+        })
+        received = client.post("/api/inventory/movements", json={
+            "product_id": product.json["item"]["id"],
+            "batch_id": batch.json["item"]["id"],
+            "movement_type": "received", "quantity": "2.000",
+            "reason": "Opening stock.",
+        })
+        assert received.status_code == 201
+        def create_draft():
+            return client.post("/api/sales", json={
+                "customer_id": customer.json["item"]["id"],
+                "currency": "TZS",
+                "items": [{
+                    "product_id": product.json["item"]["id"],
+                    "quantity": "2.000",
+                    "batch_id": batch.json["item"]["id"],
+                }],
+            })
+        first = create_draft()
+        second = create_draft()
+        assert first.status_code == 201
+        assert second.status_code == 201
+        assert client.post(f"/api/sales/{first.json['item']['id']}/complete").status_code == 200
+        blocked = client.post(f"/api/sales/{second.json['item']['id']}/complete")
+        assert blocked.status_code == 400
+        assert "Insufficient available stock" in blocked.json["error"]
+        stock = client.get("/api/inventory").json["items"][0]
+        assert stock["on_hand"] == "0.000"
+        assert stock["status"] == "Sold"
+    finally:
+        with application.app_context():
+            db.session.remove()
+            db.drop_all()
+
+
+def test_inventory_rejects_receipt_into_expired_batch():
+    application, client = make_client("admin")
+    try:
+        product = client.post("/api/products", json={
+            "sku": "INV-EXPIRED-1", "name": "Expired Inventory Product",
+            "unit_price": "100.00", "track_inventory": True, "currency": "TZS",
+        })
+        batch = client.post("/api/inventory/batches", json={
+            "product_id": product.json["item"]["id"],
+            "batch_code": "LOT-EXPIRED-001",
+            "expiry_date": "2020-01-01",
+        })
+        assert batch.status_code == 201
+        response = client.post("/api/inventory/movements", json={
+            "product_id": product.json["item"]["id"],
+            "batch_id": batch.json["item"]["id"],
+            "movement_type": "received", "quantity": "1.000",
+            "reason": "Expired stock should not be received.",
+        })
+        assert response.status_code == 400
+        stock = client.get("/api/inventory").json["items"][0]
+        assert stock["on_hand"] == "0.000"
+        assert stock["status"] == "Out of stock"
+    finally:
+        with application.app_context():
+            db.session.remove()
+            db.drop_all()
