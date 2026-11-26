@@ -1,14 +1,17 @@
 """Company-scoped customer, product, sales, and dashboard APIs."""
 
 import csv
+import hashlib
 import io
 from datetime import date, datetime, timedelta, timezone
 from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal, InvalidOperation
 from uuid import UUID, uuid4
 
-from flask import Blueprint, Response, g, jsonify, request, session
+from flask import Blueprint, Response, current_app, g, jsonify, request, send_file, session
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
+from cryptography.fernet import Fernet, InvalidToken
+from werkzeug.utils import secure_filename
 
 from .audit import record_audit_event
 from .auth import login_required
@@ -16,6 +19,7 @@ from .extensions import db
 from .models import (
     AppNotification,
     CategoryCompliancePolicy,
+    ComplianceEvidenceFile,
     Company,
     CompanyMembership,
     Customer,
@@ -839,6 +843,181 @@ def list_stock_batches(_user, product_id):
 
 
 
+def _compliance_evidence_cipher():
+    key = current_app.config.get("COMPLIANCE_EVIDENCE_ENCRYPTION_KEY")
+    if not isinstance(key, str) or not key:
+        return None
+    try:
+        return Fernet(key.encode("ascii"))
+    except (ValueError, UnicodeEncodeError):
+        return None
+
+
+def _detect_compliance_evidence_type(content):
+    if content.startswith(b"%PDF-"):
+        return "application/pdf"
+    if content.startswith(b"\\x89PNG\\r\\n\\x1a\\n"):
+        return "image/png"
+    if content.startswith(b"\\xff\\xd8\\xff"):
+        return "image/jpeg"
+    if len(content) >= 12 and content[:4] == b"RIFF" and content[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
+@sales_bp.post("/stock-batches/<uuid:batch_id>/evidence")
+@login_required
+@company_permission_required("manage_inventory")
+def upload_stock_batch_compliance_evidence(user, batch_id):
+    """Store encrypted, private evidence for one company-owned stock batch."""
+    company_id = _company_id()
+    if g.company_membership.role not in {"admin", "manager"}:
+        return jsonify({"error": "Only authorised compliance verifiers can upload evidence."}), 403
+    cipher = _compliance_evidence_cipher()
+    if cipher is None:
+        return jsonify({"error": "Private evidence storage is not configured."}), 503
+    batch = db.session.scalar(
+        select(StockBatch).where(
+            StockBatch.id == batch_id,
+            StockBatch.company_id == company_id,
+        ).with_for_update()
+    )
+    if batch is None:
+        return jsonify({"error": "Stock batch not found."}), 404
+    upload = request.files.get("file")
+    if upload is None or not upload.filename:
+        return jsonify({"error": "Choose a certificate or evidence file."}), 400
+    filename = secure_filename(upload.filename)[:180]
+    if not filename:
+        return jsonify({"error": "The evidence filename is invalid."}), 400
+    content = upload.stream.read(8 * 1024 * 1024 + 1)
+    if not content or len(content) > 8 * 1024 * 1024:
+        return jsonify({"error": "Evidence files must be between 1 byte and 8 MB."}), 400
+    content_type = _detect_compliance_evidence_type(content)
+    expected_extensions = {
+        "application/pdf": {".pdf"},
+        "image/jpeg": {".jpg", ".jpeg"},
+        "image/png": {".png"},
+        "image/webp": {".webp"},
+    }
+    extension = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    if not content_type or extension not in expected_extensions.get(content_type, set()):
+        return jsonify({"error": "Upload a genuine PDF, JPEG, PNG or WebP file with a matching extension."}), 400
+
+    evidence = ComplianceEvidenceFile(
+        company_id=company_id,
+        batch_id=batch.id,
+        uploaded_by_user_id=user.id,
+        original_filename=filename,
+        content_type=content_type,
+        size_bytes=len(content),
+        sha256=hashlib.sha256(content).hexdigest(),
+        encrypted_content=cipher.encrypt(content),
+    )
+    db.session.add(evidence)
+    db.session.flush()
+    record_audit_event(
+        db.session, user.id, "product_compliance_evidence_uploaded", company_id,
+        {
+            "batch_id": str(batch.id),
+            "evidence_file_id": str(evidence.id),
+            "content_type": content_type,
+            "size_bytes": len(content),
+            "sha256": evidence.sha256,
+        },
+    )
+    result = {
+        "id": str(evidence.id),
+        "filename": evidence.original_filename,
+        "content_type": evidence.content_type,
+        "size_bytes": evidence.size_bytes,
+        "sha256": evidence.sha256,
+        "created_at": evidence.created_at.isoformat() if evidence.created_at else None,
+    }
+    db.session.commit()
+    return jsonify({"item": result}), 201
+
+
+@sales_bp.get("/stock-batches/<uuid:batch_id>/evidence")
+@login_required
+@company_permission_required("manage_inventory")
+def list_stock_batch_compliance_evidence(_user, batch_id):
+    company_id = _company_id()
+    if g.company_membership.role not in {"admin", "manager"}:
+        return jsonify({"error": "Only authorised compliance verifiers can view evidence."}), 403
+    batch = db.session.scalar(
+        select(StockBatch).where(
+            StockBatch.id == batch_id,
+            StockBatch.company_id == company_id,
+        )
+    )
+    if batch is None:
+        return jsonify({"error": "Stock batch not found."}), 404
+    rows = db.session.scalars(
+        select(ComplianceEvidenceFile).where(
+            ComplianceEvidenceFile.company_id == company_id,
+            ComplianceEvidenceFile.batch_id == batch_id,
+        ).order_by(ComplianceEvidenceFile.created_at.desc(), ComplianceEvidenceFile.id.desc())
+    ).all()
+    return jsonify({"items": [
+        {
+            "id": str(row.id),
+            "filename": row.original_filename,
+            "content_type": row.content_type,
+            "size_bytes": row.size_bytes,
+            "sha256": row.sha256,
+            "created_at": row.created_at.isoformat(),
+            "download_url": f"/api/stock-batches/{batch_id}/evidence/{row.id}",
+        }
+        for row in rows
+    ]})
+
+
+@sales_bp.get("/stock-batches/<uuid:batch_id>/evidence/<uuid:evidence_id>")
+@login_required
+@company_permission_required("manage_inventory")
+def download_stock_batch_compliance_evidence(user, batch_id, evidence_id):
+    company_id = _company_id()
+    if g.company_membership.role not in {"admin", "manager"}:
+        return jsonify({"error": "Only authorised compliance verifiers can download evidence."}), 403
+    evidence = db.session.scalar(
+        select(ComplianceEvidenceFile).where(
+            ComplianceEvidenceFile.id == evidence_id,
+            ComplianceEvidenceFile.batch_id == batch_id,
+            ComplianceEvidenceFile.company_id == company_id,
+        )
+    )
+    if evidence is None:
+        return jsonify({"error": "Evidence file not found."}), 404
+    cipher = _compliance_evidence_cipher()
+    if cipher is None:
+        return jsonify({"error": "Private evidence storage is not configured."}), 503
+    try:
+        content = cipher.decrypt(evidence.encrypted_content)
+    except InvalidToken:
+        current_app.logger.error("Compliance evidence decryption failed for an authorised tenant record.")
+        return jsonify({"error": "Evidence file is unavailable."}), 500
+    if hashlib.sha256(content).hexdigest() != evidence.sha256:
+        current_app.logger.error("Compliance evidence integrity check failed for an authorised tenant record.")
+        return jsonify({"error": "Evidence file is unavailable."}), 500
+    record_audit_event(
+        db.session, user.id, "product_compliance_evidence_downloaded", company_id,
+        {"batch_id": str(batch_id), "evidence_file_id": str(evidence_id)},
+    )
+    db.session.commit()
+    response = send_file(
+        io.BytesIO(content),
+        mimetype=evidence.content_type,
+        as_attachment=True,
+        download_name=evidence.original_filename,
+        conditional=False,
+        max_age=0,
+    )
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
+
+
 @sales_bp.post("/stock-batches/<uuid:batch_id>/compliance")
 @login_required
 @company_permission_required("manage_inventory")
@@ -891,9 +1070,16 @@ def verify_stock_batch_compliance(user, batch_id):
             certificate_reference = _text(
                 data, "certificate_reference", 160, required=True
             )
-            evidence_reference = _text(
-                data, "evidence_reference", 500, required=True
+            evidence_file_id = UUID(_text(data, "evidence_file_id", 36, required=True))
+            evidence_file = db.session.scalar(
+                select(ComplianceEvidenceFile).where(
+                    ComplianceEvidenceFile.id == evidence_file_id,
+                    ComplianceEvidenceFile.company_id == company_id,
+                    ComplianceEvidenceFile.batch_id == batch.id,
+                )
             )
+            if evidence_file is None:
+                raise ValueError("Upload private evidence for this batch before approval.")
             standard_reference = _text(data, "standard_reference", 160)
             if (
                 policy
@@ -907,7 +1093,7 @@ def verify_stock_batch_compliance(user, batch_id):
             batch.authority_name = authority_name
             batch.authority_country = authority_country
             batch.certificate_reference = certificate_reference
-            batch.evidence_reference = evidence_reference
+            batch.evidence_reference = f"private-evidence:{evidence_file.id}"
             batch.standard_reference = standard_reference
             batch.compliance_status = "approved"
             event_type = "product_compliance_verified"
@@ -932,6 +1118,7 @@ def verify_stock_batch_compliance(user, batch_id):
                 "certificate_reference": batch.certificate_reference,
                 "qr_code_present": bool(batch.qr_code),
                 "evidence_reference_present": bool(batch.evidence_reference),
+                "evidence_file_id": str(evidence_file.id) if decision == "approve" else None,
                 "notes": notes,
             },
         )
@@ -943,6 +1130,7 @@ def verify_stock_batch_compliance(user, batch_id):
             "authority_country": batch.authority_country,
             "certificate_reference": batch.certificate_reference,
             "verified_at": batch.verified_at.isoformat(),
+            "evidence_file_id": str(evidence_file.id) if decision == "approve" else None,
         }
         db.session.commit()
     except ValueError:
