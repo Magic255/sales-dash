@@ -329,7 +329,9 @@ def create_inventory_batch(user):
         db.session.commit()
     except (ValueError, TypeError):
         db.session.rollback()
-        return jsonify({"error": "Invalid batch details. Check the product, code, and expiry date."}), 400
+        return jsonify({
+            "error": "Invalid batch details. Check the product, code, and expiry date."
+        }), 400
     except IntegrityError:
         db.session.rollback()
         return jsonify({"error": "That batch code already exists for this product."}), 409
@@ -375,7 +377,9 @@ def create_inventory_movement(user):
         quantity_delta = Decimal("0.000")
         reserved_delta = Decimal("0.000")
         if movement_type == "adjusted":
-            quantity_delta = _decimal(data.get("quantity_delta"), "quantity_delta", allow_negative=True)
+            quantity_delta = _decimal(
+                data.get("quantity_delta"), "quantity_delta", allow_negative=True
+            )
             if quantity_delta == 0:
                 raise ValueError("quantity_delta cannot be zero.")
         else:
@@ -417,5 +421,7 @@ def create_inventory_movement(user):
         db.session.commit()
     except (ValueError, TypeError):
         db.session.rollback()
-        return jsonify({"error": "Invalid stock movement. Check the quantity, batch, and reason."}), 400
+        return jsonify({
+            "error": "Invalid stock movement. Check the quantity, batch, and reason."
+        }), 400
     return jsonify({"item": result, "inventory": inventory}), 201
