@@ -1,46 +1,49 @@
 # Product compliance and inventory quarantine
 
-## First backend phase
+## Current implementation
 
-An Admin can mark a product as requiring standards compliance. When enabled, newly received batches enter `pending_verification` quarantine. The physical receipt and quantity are still recorded in the append-only stock ledger, but quarantined stock is counted separately and excluded from available stock and FIFO sales allocation.
+An Admin can configure product compliance directly and define reusable category/market policies for a company. Policies are scoped to a category key and a two-letter market country. Product records carry both fields.
 
-Existing batches without independent verification evidence are moved to pending verification when compliance is enabled on a product. Previously verified batches are not automatically reset.
+When a product requires compliance, physical receipts are still recorded in the append-only stock ledger, but new batches enter `pending_verification` quarantine. Their quantities remain visible as on-hand/quarantined stock and are excluded from available stock and FIFO sale allocation.
 
-An Admin or Manager can review a batch through the compliance endpoint. The receiver cannot verify their own batch. Approval requires a QR/traceability value, issuing authority and country, certificate reference, and evidence reference. Rejection and recall keep the batch blocked. Decisions are recorded in the company audit log.
+Pending, rejected, recalled and expired batches cannot be sold. Only `approved` batches are normally sellable. An `exception_approved` batch is sellable only when its category/market policy explicitly enables Admin exceptions and an Admin records a reason. Sale completion rechecks eligible stock on the server.
 
-## Authority and evidence boundaries
+## Category and market policy
 
-TBS is supported as one authority among others. The recorded authority and country identify the issuer; the app does not claim that every certificate is recognised in every country. A QR code is a traceability input, not proof by itself. This phase records an authorised staff member's evidence-backed decision; it does not perform live global authority lookups or grant certification.
-
-The evidence reference is metadata only in this phase. Private document upload/storage and official authority integrations require separate implementation. Do not paste public or sensitive document URLs into this field.
-
-## Expiry
-
-Expiry remains optional and batch-specific. It must be sourced from verified manufacturer or competent-authority information. The existing 30-day expiry indicator is only an alert lead-time and must not be interpreted as product shelf-life.
-
-## Configuration boundary
-
-This initial backend phase exposes a per-product Admin control. Full reusable category/country policy configuration and the compliance user interface are subsequent work. Until then, configure only products that the business has confirmed require approval. Tests use synthetic records only.
-
-
-## Category and market policies
-
-Admins can configure one policy for each company category key and market country (two-letter ISO country code). Product records carry both fields. When a category/market rule requires approval, the server forces compliance on for matching products; the product cannot avoid the rule by omitting its market country once that category has market rules configured.
-
-Supported modes:
+Admins can configure one policy for each company category key and market country:
 
 - `required`: stock is quarantined until independently verified.
 - `admin_exception`: stock is quarantined; only an Admin can release a batch through a separately audited, reason-required exception. This is a business exception, not standards certification.
 - `not_required`: the policy does not require approval; an Admin may still require it on an individual product.
 
-A policy carries a company-managed list of accepted authority names. Strict `required` policies must list at least one authority; an `admin_exception` policy may leave the list empty, in which case normal standards approval is blocked and only the separately audited Admin exception can release stock. When a list is present, approval is rejected unless the entered authority matches it. This is a tenant's internal allow-list only. It is not a global registry, does not establish that an authority is recognised in every country, and does not validate the certificate or QR destination. TBS may be listed where applicable, alongside other competent authorities the business has verified for the specific market and product category.
+A strict `required` policy must list at least one accepted authority. An `admin_exception` policy may leave the list empty, in which case ordinary standards approval is blocked and only the separately audited Admin exception can release stock. Where a list is configured, the entered authority name must match it.
 
-Changing a category/market rule to require approval moves existing approved batches for matching products back to quarantine so they can be reviewed against the new rule. Changing a product's category or market under a required rule also triggers re-review of its existing eligible batches.
+If a category has market-specific policies, a product in that category must specify its market country so the policy cannot be bypassed by omitting the country. Applying or changing a policy that requires approval moves matching previously approved batches back into quarantine for review against the new policy. Changing a product's category or market under a required policy also triggers re-review of its existing eligible batches.
 
-## Remaining verification boundaries
+## Authority, QR and evidence boundaries
 
-- Country and category rules are explicitly configured by each company; the app does not guess regulated categories or destination markets.
-- The accepted-authority list is maintained by the company Admin. A reliable global authority registry or official QR/certificate validation requires a vetted integration and jurisdiction-specific source data.
-- Evidence references are still metadata, not uploaded private documents. Do not store public links or sensitive certificate contents in the reference field.
-- Product expiry remains optional and batch-specific, sourced from manufacturer or competent-authority evidence. No shelf-life is inferred from category or country.
-- These controls record the company's review decision; they do not issue legal certification or replace a regulator's determination.
+TBS (Tanzania Bureau of Standards) is one authority name a company may configure where applicable. Other standards bodies or regulators may also be configured for the relevant product category and market.
+
+The accepted-authority list is maintained by the company Admin. It is a tenant-managed allow-list, not a global recognition registry. It does not prove that an authority or certificate is legally recognised in every jurisdiction, and it does not validate a certificate's scope, product identity or current status.
+
+A QR value is currently required as a traceability input for approval, but this version does not decode QR images or resolve QR destinations against official registries. A QR code alone is not proof of approval. Certificate and evidence references are metadata only in this phase; private document upload/storage and official authority integrations are not included. Do not paste public or sensitive document URLs into the evidence-reference field.
+
+The receiver cannot verify their own batch. Admins and Managers can record approve, reject or recall decisions. An Admin exception is separate from a standards approval and requires an enabled policy plus a reason.
+
+SALES DASH records the business's evidence and staff verification decision. It does not issue legal certification, independently establish regulatory recognition, or replace a competent authority's determination.
+
+## Expiry
+
+Expiry remains optional and batch-specific. It must come from verified manufacturer documentation or an applicable competent-authority source. The app must not invent an expiry date or infer shelf-life from product category or country.
+
+The existing 30-day indicator is only a warning lead-time for a supplied expiry date. It is not a shelf-life rule. Configurable warning lead-times by business/category remain future work.
+
+## Remaining work
+
+- Private evidence document upload and access-controlled storage; current evidence references are metadata only.
+- Trusted QR decoding and official certificate/authority verification integrations, where suitable sources and permissions exist.
+- Evidence scope and product/manufacturer identity checks, certificate validity/revocation handling, and batch-level inspection reporting.
+- Configurable expiry warning lead-times and recall traceability reporting.
+- Additional synthetic tests for cross-company evidence access, revocation/expiry, product-scope mismatch, concurrency and all sale paths.
+
+All tests use synthetic data. No deployment, production resource provisioning or real customer data is part of this work.
