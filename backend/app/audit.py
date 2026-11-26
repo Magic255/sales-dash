@@ -41,6 +41,9 @@ def record_audit_event(
         "discount_approval_decided",
         "price_floor_override",
         "discount_applied",
+        "product_compliance_verified",
+        "product_compliance_rejected",
+        "product_compliance_recalled",
     }
     if event_type not in allowed_events:
         raise ValueError("Unsupported audit event.")
