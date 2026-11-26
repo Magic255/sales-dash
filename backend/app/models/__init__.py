@@ -4,7 +4,7 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 from uuid import UUID, uuid4
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, String, Uuid, func
+from sqlalchemy import (CheckConstraint, DateTime, ForeignKey, Integer, LargeBinary, String, Uuid, func)
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
 from ..company_invitation import CompanyInvitation  # noqa: F401
@@ -390,6 +390,46 @@ class StockBatch(db.Model):
     verified_by_user_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True))
     verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     verification_notes: Mapped[str | None] = mapped_column(String(1000))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class ComplianceEvidenceFile(db.Model):
+    """Encrypted, tenant-scoped certificate evidence attached to one stock batch."""
+
+    __tablename__ = "compliance_evidence_files"
+    __table_args__ = (
+        db.UniqueConstraint("company_id", "id", name="uq_compliance_evidence_company_id"),
+        db.ForeignKeyConstraint(
+            ["company_id", "batch_id"],
+            ["stock_batches.company_id", "stock_batches.id"],
+            ondelete="NO ACTION",
+            name="fk_compliance_evidence_batch_same_company",
+        ),
+        db.ForeignKeyConstraint(
+            ["company_id", "uploaded_by_user_id"],
+            ["company_memberships.company_id", "company_memberships.user_id"],
+            ondelete="NO ACTION",
+            name="fk_compliance_evidence_uploader_membership",
+        ),
+        CheckConstraint("length(trim(original_filename)) > 0", name="filename_not_empty"),
+        CheckConstraint("content_type IN ('application/pdf', 'image/jpeg', 'image/png', 'image/webp')",
+                        name="content_type_supported"),
+        CheckConstraint("size_bytes > 0 AND size_bytes <= 8388608", name="size_bytes_supported"),
+        CheckConstraint("length(sha256) = 64", name="sha256_length"),
+        db.Index("ix_compliance_evidence_company_batch", "company_id", "batch_id", "created_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    company_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    batch_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    uploaded_by_user_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    original_filename: Mapped[str] = mapped_column(String(180), nullable=False)
+    content_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    encrypted_content: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
