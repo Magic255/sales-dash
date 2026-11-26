@@ -13,7 +13,7 @@ function workspaceMessage(message) {
 async function workspaceRequest(path, options = {}) {
   const method = (options.method || "GET").toUpperCase();
   const headers = new Headers(options.headers || {});
-  if (options.body) headers.set("Content-Type", "application/json");
+  if (options.body && !(options.body instanceof FormData)) headers.set("Content-Type", "application/json");
   if (!["GET", "HEAD", "OPTIONS"].includes(method)) {
     if (!csrfToken) await refreshCsrfToken();
     headers.set("X-CSRFToken", csrfToken);
@@ -699,9 +699,28 @@ async function loadInventoryBatches(productId, generation = workspaceGeneration)
           if (payload.authority_country === null) return;
           payload.certificate_reference = window.prompt("Certificate reference", "");
           if (payload.certificate_reference === null) return;
-          payload.evidence_reference = window.prompt("Internal evidence reference (do not use a public document URL)", "");
-          if (payload.evidence_reference === null) return;
           payload.standard_reference = window.prompt("Standard / regulation reference (optional)", "") || "";
+          const fileInput = document.createElement("input");
+          fileInput.type = "file";
+          fileInput.accept = ".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp";
+          fileInput.style.position = "fixed";
+          fileInput.style.left = "-10000px";
+          document.body.append(fileInput);
+          const selectedFile = new Promise((resolve) => {
+            fileInput.addEventListener("change", () => resolve(fileInput.files[0] || null), {once: true});
+            fileInput.addEventListener("cancel", () => resolve(null), {once: true});
+          });
+          fileInput.click();
+          const evidenceFile = await selectedFile;
+          fileInput.remove();
+          if (!evidenceFile) return;
+          const evidenceForm = new FormData();
+          evidenceForm.append("file", evidenceFile);
+          const uploadedEvidence = await workspaceRequest(
+            "/api/stock-batches/" + encodeURIComponent(batch.id) + "/evidence",
+            {method: "POST", body: evidenceForm},
+          );
+          payload.evidence_file_id = uploadedEvidence.item.id;
         } else {
           payload.notes = window.prompt("Reason for " + normalized + " (required)", "");
           if (payload.notes === null || !payload.notes.trim()) return;
@@ -712,7 +731,7 @@ async function loadInventoryBatches(productId, generation = workspaceGeneration)
             method: "POST", body: JSON.stringify(payload),
           });
           await loadInventory();
-          workspaceMessage("Batch compliance decision recorded. QR values are traceability inputs; verify evidence with the issuing authority before approval.");
+          workspaceMessage("Batch compliance decision recorded. The uploaded file is stored privately; QR values remain traceability inputs and do not prove official approval.");
         } catch (error) {
           workspaceMessage(error.message);
           review.disabled = false;
