@@ -283,7 +283,7 @@ def inventory_summary(_user):
 
 @inventory_bp.get("/movements")
 @login_required
-@company_permission_required("view_reports")
+@company_permission_required("manage_inventory")
 def inventory_movements(_user):
     company_id = _company_id()
     rows = db.session.execute(
