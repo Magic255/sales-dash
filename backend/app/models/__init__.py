@@ -483,6 +483,50 @@ class DiscountApprovalRequest(db.Model):
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class AppNotification(db.Model):
+    """Tenant-scoped in-app notification visible only to its recipient."""
+
+    __tablename__ = "app_notifications"
+    __table_args__ = (
+        db.ForeignKeyConstraint(
+            ["company_id", "recipient_user_id"],
+            ["company_memberships.company_id", "company_memberships.user_id"],
+            ondelete="NO ACTION",
+            name="fk_app_notifications_recipient_membership",
+        ),
+        db.ForeignKeyConstraint(
+            ["company_id", "related_sale_id"],
+            ["sales.company_id", "sales.id"],
+            ondelete="CASCADE",
+            name="fk_app_notifications_sale_same_company",
+        ),
+        CheckConstraint(
+            "notification_type IN ('discount_approval_requested', 'discount_approval_decided')",
+            name="notification_type_is_supported",
+        ),
+        CheckConstraint("length(trim(title)) > 0", name="title_not_empty"),
+        CheckConstraint("length(trim(message)) > 0", name="message_not_empty"),
+        db.Index(
+            "ix_app_notifications_recipient_unread",
+            "company_id", "recipient_user_id", "read_at", "created_at",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    company_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False
+    )
+    recipient_user_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    related_sale_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True))
+    notification_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    title: Mapped[str] = mapped_column(String(160), nullable=False)
+    message: Mapped[str] = mapped_column(String(500), nullable=False)
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 class SaleItem(db.Model):
     """A line item with immutable product details captured at sale time."""
 
