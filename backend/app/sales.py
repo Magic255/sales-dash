@@ -1486,7 +1486,7 @@ def complete_sale(user, sale_id):
 @sales_bp.post("/sales/<uuid:sale_id>/void")
 @login_required
 @company_permission_required("delete_sales")
-def void_sale(_user, sale_id):
+def void_sale(user, sale_id):
     item = db.session.scalar(select(Sale).where(
         Sale.id == sale_id, Sale.company_id == _company_id()
     ))
@@ -1494,6 +1494,39 @@ def void_sale(_user, sale_id):
         return jsonify({"error": "Sale not found."}), 404
     if item.status == "void":
         return jsonify({"error": "This sale is already void."}), 409
+    if item.status == "completed":
+        lines = db.session.scalars(
+            select(SaleItem).where(
+                SaleItem.company_id == item.company_id,
+                SaleItem.sale_id == item.id,
+            )
+        ).all()
+        product_ids = {line.product_id for line in lines}
+        tracked_products = db.session.scalars(
+            select(Product).where(
+                Product.company_id == item.company_id,
+                Product.id.in_(product_ids),
+            ).order_by(Product.id).with_for_update()
+        ).all() if product_ids else []
+        tracked_ids = {
+            product.id for product in tracked_products if product.track_inventory
+        }
+        returned = {}
+        for line in lines:
+            if line.product_id in tracked_ids:
+                returned[line.product_id] = (
+                    returned.get(line.product_id, Decimal("0.000")) + line.quantity
+                )
+        for product_id, quantity in returned.items():
+            db.session.add(StockMovement(
+                company_id=item.company_id,
+                product_id=product_id,
+                actor_user_id=user.id,
+                movement_type="returned",
+                quantity=quantity,
+                reason="Stock returned because sale " + item.sale_number + " was voided",
+                reference=item.sale_number,
+            ))
     item.status = "void"
     db.session.flush()
     result = _sale_json(item)
