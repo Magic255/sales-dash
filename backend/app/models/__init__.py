@@ -367,6 +367,10 @@ class StockMovement(db.Model):
         ),
         db.Index("ix_stock_movements_company_batch", "company_id", "batch_id"),
         db.Index("ix_stock_movements_company_product", "company_id", "product_id"),
+        db.Index(
+            "ix_stock_movements_company_created",
+            "company_id", "created_at",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
