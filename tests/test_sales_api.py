@@ -1572,3 +1572,162 @@ def test_discount_approval_notifications_are_recipient_scoped_and_readable():
         with application.app_context():
             db.session.remove()
             db.drop_all()
+
+
+def test_inventory_expiry_notifications_are_deduplicated_and_role_scoped():
+    application, admin_client = make_client("admin")
+    try:
+        password = "a-very-strong-test-password"
+        with application.app_context():
+            company = db.session.query(Company).filter_by(
+                slug="sales-api-admin"
+            ).one()
+            members = []
+            for role in ("manager", "salesperson"):
+                member = User(
+                    email=f"expiry-{role}@example.test",
+                    password_hash=PasswordHasher().hash(password),
+                    email_verified=True,
+                )
+                db.session.add(member)
+                db.session.flush()
+                db.session.add(CompanyMembership(
+                    user_id=member.id,
+                    company_id=company.id,
+                    role=role,
+                    status="active",
+                ))
+                members.append((role, str(member.id)))
+            company_id = str(company.id)
+            db.session.commit()
+
+        clients = {"admin": admin_client}
+        for role in ("manager", "salesperson"):
+            client = application.test_client()
+            login = client.post("/api/auth/login", json={
+                "email": f"expiry-{role}@example.test",
+                "password": password,
+            })
+            assert login.status_code == 200
+            selected = client.post(
+                "/api/auth/company", json={"company_id": company_id}
+            )
+            assert selected.status_code == 200
+            clients[role] = client
+
+        product = admin_client.post("/api/products", json={
+            "sku": "EXPIRY-ALERT-1",
+            "name": "Expiry Alert Product",
+            "unit_price": "20.00",
+            "currency": "TZS",
+            "track_inventory": True,
+        })
+        assert product.status_code == 201
+        product_id = product.json["item"]["id"]
+
+        expiring = admin_client.post(
+            f"/api/products/{product_id}/stock-movements",
+            json={
+                "movement_type": "received",
+                "quantity": "5",
+                "batch_code": "ALERT-EXPIRING",
+                "expiry_date": (date.today() + timedelta(days=30)).isoformat(),
+                "reason": "Synthetic stock for expiry alert test.",
+            },
+        )
+        expired = admin_client.post(
+            f"/api/products/{product_id}/stock-movements",
+            json={
+                "movement_type": "received",
+                "quantity": "3",
+                "batch_code": "ALERT-EXPIRED",
+                "expiry_date": (date.today() - timedelta(days=1)).isoformat(),
+                "reason": "Synthetic expired stock for alert test.",
+            },
+        )
+        assert expiring.status_code == 201
+        assert expired.status_code == 201
+
+        depleted_product = admin_client.post("/api/products", json={
+            "sku": "EXPIRY-ALERT-EMPTY",
+            "name": "Depleted Expiry Product",
+            "unit_price": "20.00",
+            "currency": "TZS",
+            "track_inventory": True,
+        })
+        depleted_id = depleted_product.json["item"]["id"]
+        received = admin_client.post(
+            f"/api/products/{depleted_id}/stock-movements",
+            json={
+                "movement_type": "received",
+                "quantity": "2",
+                "batch_code": "ALERT-EMPTY",
+                "expiry_date": (date.today() + timedelta(days=2)).isoformat(),
+                "reason": "Synthetic stock that will be depleted.",
+            },
+        )
+        damaged = admin_client.post(
+            f"/api/products/{depleted_id}/stock-movements",
+            json={
+                "movement_type": "damaged",
+                "quantity": "2",
+                "reason": "Deplete synthetic test batch.",
+            },
+        )
+        assert received.status_code == 201
+        assert damaged.status_code == 201
+
+        discontinued_product = admin_client.post("/api/products", json={
+            "sku": "EXPIRY-ALERT-ARCHIVED",
+            "name": "Discontinued Expiry Product",
+            "unit_price": "20.00",
+            "currency": "TZS",
+            "track_inventory": True,
+        })
+        discontinued_id = discontinued_product.json["item"]["id"]
+        archived_receipt = admin_client.post(
+            f"/api/products/{discontinued_id}/stock-movements",
+            json={
+                "movement_type": "received",
+                "quantity": "4",
+                "batch_code": "ALERT-ARCHIVED",
+                "expiry_date": (date.today() + timedelta(days=3)).isoformat(),
+                "reason": "Synthetic stock for discontinued product test.",
+            },
+        )
+        archived = admin_client.patch(
+            f"/api/products/{discontinued_id}", json={"is_active": False}
+        )
+        assert archived_receipt.status_code == 201
+        assert archived.status_code == 200
+
+        first_summary = admin_client.get("/api/inventory")
+        second_summary = admin_client.get("/api/inventory")
+        assert first_summary.status_code == 200
+        assert second_summary.status_code == 200
+
+        for role in ("admin", "manager"):
+            notifications = clients[role].get("/api/notifications")
+            assert notifications.status_code == 200
+            assert notifications.json["unread_count"] == 2
+            kinds = {
+                item["notification_type"] for item in notifications.json["items"]
+            }
+            assert kinds == {
+                "inventory_batch_expiring",
+                "inventory_batch_expired",
+            }
+            messages = " ".join(
+                item["message"] for item in notifications.json["items"]
+            )
+            assert "EXPIRY-ALERT-1" in messages
+            assert "ALERT-EXPIRING" in messages
+            assert "ALERT-EXPIRED" in messages
+
+        salesperson_notifications = clients["salesperson"].get("/api/notifications")
+        assert salesperson_notifications.status_code == 200
+        assert salesperson_notifications.json["unread_count"] == 0
+    finally:
+        with application.app_context():
+            db.session.remove()
+            db.drop_all()
