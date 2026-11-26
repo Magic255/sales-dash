@@ -75,6 +75,10 @@ def test_sign_in_company_selection_and_dashboard_controls_work_in_browser(browse
             }
         elif path in ("/api/customers", "/api/products", "/api/reports/sales"):
             data = {"items": []}
+        elif path == "/api/inventory":
+            data = {"items": []}
+        elif path == "/api/inventory/movements":
+            data = {"items": []}
         elif path == "/api/sales-targets":
             data = {"company_targets": [], "salesperson_targets": [], "salespeople": []}
         elif path == "/api/dashboard/analytics":
