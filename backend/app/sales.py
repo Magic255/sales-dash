@@ -2,7 +2,7 @@
 
 import csv
 import io
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal, InvalidOperation
 from uuid import UUID, uuid4
 
@@ -21,6 +21,7 @@ from .models import (
     Product,
     Sale,
     SaleItem,
+    StockBatch,
     StockMovement,
     User,
 )
@@ -419,35 +420,133 @@ def update_customer(_user, customer_id):
     return jsonify({"item": result})
 
 
-def _stock_balance(company_id, product_id):
-    """Calculate on-hand and reserved quantities from the immutable ledger."""
+def _batch_balances(company_id, product_id):
+    """Return FIFO-ordered batch balances calculated from the append-only ledger."""
+    batches = db.session.scalars(
+        select(StockBatch)
+        .where(
+            StockBatch.company_id == company_id,
+            StockBatch.product_id == product_id,
+        )
+        .order_by(StockBatch.created_at, StockBatch.id)
+    ).all()
+    if not batches:
+        return []
+    totals = {
+        batch.id: {
+            "on_hand": Decimal("0.000"),
+            "reserved": Decimal("0.000"),
+            "sold": Decimal("0.000"),
+            "inflows": Decimal("0.000"),
+            "writeoffs": Decimal("0.000"),
+        }
+        for batch in batches
+    }
     rows = db.session.execute(
-        select(StockMovement.movement_type, func.sum(StockMovement.quantity))
+        select(
+            StockMovement.batch_id,
+            StockMovement.movement_type,
+            func.sum(StockMovement.quantity),
+        )
         .where(
             StockMovement.company_id == company_id,
             StockMovement.product_id == product_id,
+            StockMovement.batch_id.in_(list(totals)),
         )
-        .group_by(StockMovement.movement_type)
+        .group_by(StockMovement.batch_id, StockMovement.movement_type)
     ).all()
-    on_hand = Decimal("0.000")
-    reserved = Decimal("0.000")
-    for movement_type, total in rows:
+    for batch_id, movement_type, total in rows:
         quantity = Decimal(str(total or 0))
         if movement_type in {"received", "returned", "adjustment_increase"}:
-            on_hand += quantity
-        elif movement_type in {"sold", "damaged", "adjustment_decrease"}:
-            on_hand -= quantity
+            totals[batch_id]["on_hand"] += quantity
+            totals[batch_id]["inflows"] += quantity
+        elif movement_type == "sold":
+            totals[batch_id]["on_hand"] -= quantity
+            totals[batch_id]["sold"] += quantity
+        elif movement_type in {"damaged", "adjustment_decrease"}:
+            totals[batch_id]["on_hand"] -= quantity
+            totals[batch_id]["writeoffs"] += quantity
         elif movement_type == "reserved":
-            reserved += quantity
+            totals[batch_id]["reserved"] += quantity
         elif movement_type == "released":
-            reserved -= quantity
-    return on_hand, reserved, on_hand - reserved
+            totals[batch_id]["reserved"] -= quantity
+    today = date.today()
+    return [
+        {
+            "batch": batch,
+            "on_hand": totals[batch.id]["on_hand"],
+            "reserved": totals[batch.id]["reserved"],
+            "sold": totals[batch.id]["sold"],
+            "inflows": totals[batch.id]["inflows"],
+            "writeoffs": totals[batch.id]["writeoffs"],
+            "available": totals[batch.id]["on_hand"] - totals[batch.id]["reserved"],
+            "expired": batch.expiry_date is not None and batch.expiry_date < today,
+            "expiring_soon": (
+                batch.expiry_date is not None
+                and today <= batch.expiry_date <= today + timedelta(days=30)
+            ),
+        }
+        for batch in batches
+    ]
 
 
-def _stock_movement_json(item):
+def _stock_balance(company_id, product_id):
+    """Return total on-hand/reserved and sellable stock (excluding expired batches)."""
+    balances = _batch_balances(company_id, product_id)
+    on_hand = sum((item["on_hand"] for item in balances), Decimal("0.000"))
+    reserved = sum((item["reserved"] for item in balances), Decimal("0.000"))
+    available = sum(
+        (
+            item["available"] for item in balances
+            if not item["expired"]
+        ),
+        Decimal("0.000"),
+    )
+    return on_hand, reserved, available
+
+
+def _allocate_fifo_movements(
+    company_id, product_id, quantity, movement_type, actor_user_id,
+    reason, reference=None, allow_expired=False,
+):
+    """Allocate a negative/reservation movement across oldest eligible batches."""
+    balances = _batch_balances(company_id, product_id)
+    remaining = quantity
+    created = []
+    for item in balances:
+        if item["expired"] and not allow_expired:
+            continue
+        capacity = item["reserved"] if movement_type == "released" else item["available"]
+        if capacity <= 0:
+            continue
+        take = min(capacity, remaining)
+        movement = StockMovement(
+            company_id=company_id,
+            product_id=product_id,
+            batch_id=item["batch"].id,
+            actor_user_id=actor_user_id,
+            movement_type=movement_type,
+            quantity=take,
+            reason=reason,
+            reference=reference,
+        )
+        db.session.add(movement)
+        created.append(movement)
+        remaining -= take
+        if remaining <= 0:
+            break
+    if remaining > 0:
+        raise ValueError("The movement exceeds eligible batch stock.")
+    return created
+
+
+def _stock_movement_json(item, batch=None):
     return {
         "id": str(item.id),
         "product_id": str(item.product_id),
+        "batch_id": str(item.batch_id) if item.batch_id else None,
+        "batch_code": batch.batch_code if batch else None,
+        "expiry_date": batch.expiry_date.isoformat() if batch and batch.expiry_date else None,
         "movement_type": item.movement_type,
         "quantity": str(item.quantity),
         "reason": item.reason,
@@ -468,39 +567,44 @@ def inventory_summary(_user):
             Product.track_inventory.is_(True),
         ).order_by(Product.name)
     ).all()
-    product_ids = [product.id for product in products]
-    grouped = db.session.execute(
-        select(
-            StockMovement.product_id,
-            StockMovement.movement_type,
-            func.sum(StockMovement.quantity),
-        )
-        .where(
-            StockMovement.company_id == company_id,
-            StockMovement.product_id.in_(product_ids),
-        )
-        .group_by(StockMovement.product_id, StockMovement.movement_type)
-    ).all() if product_ids else []
-    totals = {
-        product_id: {"on_hand": Decimal("0.000"), "reserved": Decimal("0.000")}
-        for product_id in product_ids
-    }
-    for product_id, movement_type, total in grouped:
-        quantity = Decimal(str(total or 0))
-        if movement_type in {"received", "returned", "adjustment_increase"}:
-            totals[product_id]["on_hand"] += quantity
-        elif movement_type in {"sold", "damaged", "adjustment_decrease"}:
-            totals[product_id]["on_hand"] -= quantity
-        elif movement_type == "reserved":
-            totals[product_id]["reserved"] += quantity
-        elif movement_type == "released":
-            totals[product_id]["reserved"] -= quantity
     items = []
     for product in products:
-        balance = totals[product.id]
-        available = balance["on_hand"] - balance["reserved"]
+        balances = _batch_balances(company_id, product.id)
+        on_hand = sum((row["on_hand"] for row in balances), Decimal("0.000"))
+        reserved = sum((row["reserved"] for row in balances), Decimal("0.000"))
+        expired_quantity = sum(
+            (
+                max(row["on_hand"], Decimal("0.000"))
+                for row in balances if row["expired"]
+            ),
+            Decimal("0.000"),
+        )
+        available = sum(
+            (
+                row["available"] for row in balances
+                if not row["expired"]
+            ),
+            Decimal("0.000"),
+        )
+        expiring_soon_quantity = sum(
+            (
+                max(row["available"], Decimal("0.000"))
+                for row in balances if row["expiring_soon"]
+            ),
+            Decimal("0.000"),
+        )
+        sold_total = sum((row["sold"] for row in balances), Decimal("0.000"))
+        inflows_total = sum((row["inflows"] for row in balances), Decimal("0.000"))
+        writeoffs_total = sum((row["writeoffs"] for row in balances), Decimal("0.000"))
         status = (
-            "out_of_stock" if available <= 0
+            "discontinued" if not product.is_active
+            else "expired" if available <= 0 and expired_quantity > 0
+            else "reserved" if available <= 0 and reserved > 0 and on_hand > 0
+            else "sold" if (
+                on_hand <= 0 and sold_total > 0
+                and sold_total >= inflows_total and writeoffs_total == 0
+            )
+            else "out_of_stock" if available <= 0
             else "low_stock" if available <= product.low_stock_threshold
             else "available"
         )
@@ -509,11 +613,59 @@ def inventory_summary(_user):
             "sku": product.sku,
             "name": product.name,
             "currency": product.currency,
-            "stock_on_hand": str(balance["on_hand"]),
-            "reserved_quantity": str(balance["reserved"]),
+            "stock_on_hand": str(on_hand),
+            "reserved_quantity": str(reserved),
             "available_quantity": str(available),
+            "expired_quantity": str(expired_quantity),
+            "expiring_soon_quantity": str(expiring_soon_quantity),
             "low_stock_threshold": str(product.low_stock_threshold),
             "status": status,
+        })
+    return jsonify({"items": items})
+
+
+@sales_bp.get("/products/<uuid:product_id>/stock-batches")
+@login_required
+@company_permission_required("manage_inventory")
+def list_stock_batches(_user, product_id):
+    company_id = _company_id()
+    product = db.session.scalar(
+        select(Product).where(
+            Product.id == product_id, Product.company_id == company_id
+        )
+    )
+    if product is None:
+        return jsonify({"error": "Product not found."}), 404
+    if not product.track_inventory:
+        return jsonify({"error": "Inventory tracking is not enabled for this product."}), 409
+    items = []
+    for row in _batch_balances(company_id, product_id):
+        batch = row["batch"]
+        items.append({
+            "id": str(batch.id),
+            "batch_code": batch.batch_code,
+            "expiry_date": batch.expiry_date.isoformat() if batch.expiry_date else None,
+            "stock_on_hand": str(row["on_hand"]),
+            "reserved_quantity": str(row["reserved"]),
+            "available_quantity": str(
+                Decimal("0.000") if row["expired"] else row["available"]
+            ),
+            "expired_quantity": str(
+                max(row["on_hand"], Decimal("0.000")) if row["expired"]
+                else Decimal("0.000")
+            ),
+            "status": (
+                "expired" if row["expired"] and row["on_hand"] > 0
+                else "reserved" if row["available"] <= 0 and row["reserved"] > 0
+                else "sold" if (
+                    row["on_hand"] <= 0 and row["sold"] > 0
+                    and row["sold"] >= row["inflows"] and row["writeoffs"] == 0
+                )
+                else "out_of_stock" if row["available"] <= 0
+                else "expiring_soon" if row["expiring_soon"]
+                else "available"
+            ),
+            "received_at": batch.created_at.isoformat(),
         })
     return jsonify({"items": items})
 
@@ -542,8 +694,19 @@ def list_stock_movements(_user, product_id):
         .limit(200)
     ).all()
     on_hand, reserved, available = _stock_balance(company_id, product_id)
+    batch_ids = {item.batch_id for item in rows if item.batch_id}
+    batches = db.session.scalars(
+        select(StockBatch).where(
+            StockBatch.company_id == company_id,
+            StockBatch.id.in_(batch_ids),
+        )
+    ).all() if batch_ids else []
+    batch_by_id = {batch.id: batch for batch in batches}
     return jsonify({
-        "items": [_stock_movement_json(item) for item in rows],
+        "items": [
+            _stock_movement_json(item, batch_by_id.get(item.batch_id))
+            for item in rows
+        ],
         "balance": {
             "stock_on_hand": str(on_hand),
             "reserved_quantity": str(reserved),
@@ -585,34 +748,67 @@ def create_stock_movement(user, product_id):
         )
         reason = _text(data, "reason", 1000, required=True)
         reference = _text(data, "reference", 120)
-        on_hand, reserved, available = _stock_balance(company_id, product_id)
-        if movement_type in {"damaged", "adjustment_decrease", "reserved"}:
-            if quantity > available:
-                return jsonify({"error": "The movement exceeds available stock."}), 409
-        if movement_type == "released" and quantity > reserved:
-            return jsonify({"error": "The release exceeds reserved stock."}), 409
-        movement = StockMovement(
-            company_id=company_id,
-            product_id=product_id,
-            actor_user_id=user.id,
-            movement_type=movement_type,
-            quantity=quantity,
-            reason=reason,
-            reference=reference,
-        )
-        db.session.add(movement)
+        created = []
+        if movement_type in {"received", "returned", "adjustment_increase"}:
+            batch_code = _text(data, "batch_code", 80, required=True)
+            raw_expiry = data.get("expiry_date")
+            if raw_expiry in (None, ""):
+                expiry_date = None
+            elif not isinstance(raw_expiry, str):
+                raise ValueError("Expiry date must use YYYY-MM-DD.")
+            else:
+                try:
+                    expiry_date = date.fromisoformat(raw_expiry)
+                except ValueError:
+                    raise ValueError("Expiry date must use YYYY-MM-DD.") from None
+            batch = StockBatch(
+                company_id=company_id,
+                product_id=product_id,
+                batch_code=batch_code,
+                expiry_date=expiry_date,
+                created_at=datetime.now(timezone.utc),
+            )
+            db.session.add(batch)
+            db.session.flush()
+            created.append(StockMovement(
+                company_id=company_id,
+                product_id=product_id,
+                batch_id=batch.id,
+                actor_user_id=user.id,
+                movement_type=movement_type,
+                quantity=quantity,
+                reason=reason,
+                reference=reference,
+            ))
+        else:
+            created.extend(_allocate_fifo_movements(
+                company_id,
+                product_id,
+                quantity,
+                movement_type,
+                user.id,
+                reason,
+                reference,
+                allow_expired=movement_type in {
+                    "damaged", "adjustment_decrease", "released"
+                },
+            ))
+        db.session.add_all(created)
         db.session.flush()
         on_hand, reserved, available = _stock_balance(company_id, product_id)
-        result = _stock_movement_json(movement)
+        result = [_stock_movement_json(movement) for movement in created]
         db.session.commit()
     except ValueError as error:
         db.session.rollback()
         return jsonify({"error": str(error)}), 400
     except IntegrityError:
         db.session.rollback()
-        return jsonify({"error": "The stock movement could not be recorded."}), 409
+        return jsonify({
+            "error": "The batch code already exists or the stock movement could not be recorded."
+        }), 409
     return jsonify({
-        "item": result,
+        "item": result[0] if result else None,
+        "items": result,
         "balance": {
             "stock_on_hand": str(on_hand),
             "reserved_quantity": str(reserved),
@@ -1444,6 +1640,8 @@ def complete_sale(user, sale_id):
         return jsonify({
             "error": "A product on this sale is no longer available for price validation."
         }), 409
+    if any(not product.is_active for product in current_products):
+        return jsonify({"error": "Discontinued products cannot be sold."}), 409
     line_discount_total = sum(
         (line.discount_amount for line in sale_lines), Decimal("0.00")
     )
@@ -1480,19 +1678,24 @@ def complete_sale(user, sale_id):
         )
         if required_quantity > available:
             return jsonify({
-                "error": "Insufficient available stock for "
+                "error": "Insufficient available stock in non-expired batches for "
                 + products_by_id[tracked_product_id].sku + "."
             }), 409
-    for tracked_product_id, sold_quantity in tracked_quantities.items():
-        db.session.add(StockMovement(
-            company_id=item.company_id,
-            product_id=tracked_product_id,
-            actor_user_id=user.id,
-            movement_type="sold",
-            quantity=sold_quantity,
-            reason="Stock issued for completed sale " + item.sale_number,
-            reference=item.sale_number,
-        ))
+    try:
+        for tracked_product_id, sold_quantity in tracked_quantities.items():
+            _allocate_fifo_movements(
+                item.company_id,
+                tracked_product_id,
+                sold_quantity,
+                "sold",
+                user.id,
+                "Stock issued for completed sale " + item.sale_number,
+                item.sale_number,
+                allow_expired=False,
+            )
+    except ValueError as error:
+        db.session.rollback()
+        return jsonify({"error": str(error)}), 409
     item.status = "completed"
     db.session.flush()
     result = _sale_json(item)
@@ -1528,20 +1731,24 @@ def void_sale(user, sale_id):
         tracked_ids = {
             product.id for product in tracked_products if product.track_inventory
         }
-        returned = {}
-        for line in lines:
-            if line.product_id in tracked_ids:
-                returned[line.product_id] = (
-                    returned.get(line.product_id, Decimal("0.000")) + line.quantity
-                )
-        for product_id, quantity in returned.items():
+        sold_movements = db.session.scalars(
+            select(StockMovement).where(
+                StockMovement.company_id == item.company_id,
+                StockMovement.reference == item.sale_number,
+                StockMovement.movement_type == "sold",
+                StockMovement.product_id.in_(tracked_ids),
+            ).order_by(StockMovement.created_at, StockMovement.id)
+        ).all() if tracked_ids else []
+        for sold in sold_movements:
             db.session.add(StockMovement(
                 company_id=item.company_id,
-                product_id=product_id,
+                product_id=sold.product_id,
+                batch_id=sold.batch_id,
                 actor_user_id=user.id,
                 movement_type="returned",
-                quantity=quantity,
-                reason="Stock returned because sale " + item.sale_number + " was voided",
+                quantity=sold.quantity,
+                reason="Stock returned to original batch because sale "
+                + item.sale_number + " was voided",
                 reference=item.sale_number,
             ))
     item.status = "void"

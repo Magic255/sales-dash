@@ -36,12 +36,38 @@ INSERT only; UPDATE, DELETE, and TRUNCATE are explicitly revoked. PostgreSQL Row
 Security is enabled and forced with the current-company transaction context. Product
 and actor foreign keys enforce same-company references.
 
-## Current scope
+## Batches, expiry and FIFO
 
-The inventory screen shows on-hand, reserved, available, low-stock threshold, and
-available/low-stock/out-of-stock status. Movement history is visible to Admins and
-Managers.
+Every stock receipt, return, and Admin stock increase is assigned a batch code. An
+optional expiry date is stored on the batch. Existing ledger movements are migrated
+into a non-expiring `LEGACY-...` batch so balances and history are preserved.
 
-Batch-level quantities, expiry-date tracking, automatic expiry status, and FIFO batch
-allocation are not part of this ledger phase and must be added before claiming batch
-or expiry management is complete.
+- Batch balances are calculated from the same append-only movement ledger.
+- Sales allocate from the oldest eligible batch first (FIFO).
+- Expired batches are excluded from sale availability and reservations.
+- Batches expiring within 30 days are flagged as `expiring_soon` with a separate quantity in the inventory summary.
+- Expired stock remains visible in on-hand totals and is shown separately.
+- A product with only expired stock is shown as `expired`.
+- Voiding a completed sale returns each sold quantity to its original batch, preserving
+  its expiry date.
+- Damaged stock and Admin decrease adjustments may be allocated from expired batches
+  so expired or unusable quantities can be written off.
+- Batch records are tenant-isolated and the runtime database role can only SELECT/INSERT.
+  Stock movement rows remain append-only.
+
+Product-level inventory states distinguish `available`, `low_stock`, `reserved`,
+`out_of_stock`, `expired`, `sold` (all received stock sold without write-offs), and
+`discontinued`. Discontinued products cannot be sold, including drafts created before
+the product was discontinued. Individual batches also distinguish sold-out and
+reserved stock rather than labelling a product sold after only a partial sale.
+
+The inventory screen exposes batch codes, expiry dates, batch balances, expired and
+expiring-soon quantities, and lifecycle states. Admins and Managers can review batches
+and movement history.
+
+## Current scope boundaries
+
+Expiry is evaluated against the server's current calendar date when inventory is read
+or a sale is completed; no scheduled job is required for the status to update. Expiry
+notifications, supplier integrations, barcode scanning, and automatic disposal workflows
+are not included. This phase does not deploy or provision external infrastructure.

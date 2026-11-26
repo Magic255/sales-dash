@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from uuid import UUID
 
@@ -1121,7 +1121,7 @@ def test_inventory_ledger_receives_reserves_sells_and_restores_voided_sales():
 
         received = client.post(
             f"/api/products/{product_id}/stock-movements",
-            json={"movement_type": "received", "quantity": "5",
+            json={"movement_type": "received", "quantity": "5", "batch_code": "INV-BATCH-1",
                   "reason": "Opening stock received."},
         )
         assert received.status_code == 201
@@ -1163,7 +1163,7 @@ def test_inventory_ledger_receives_reserves_sells_and_restores_voided_sales():
         assert summary.json["items"][0]["stock_on_hand"] == "2.000"
         assert summary.json["items"][0]["reserved_quantity"] == "2.000"
         assert summary.json["items"][0]["available_quantity"] == "0.000"
-        assert summary.json["items"][0]["status"] == "out_of_stock"
+        assert summary.json["items"][0]["status"] == "reserved"
 
         voided = client.post(f"/api/sales/{sale.json['item']['id']}/void")
         assert voided.status_code == 200
@@ -1205,7 +1205,7 @@ def test_manager_can_receive_stock_but_cannot_make_inventory_adjustments():
 
         received = client.post(
             f"/api/products/{product_id}/stock-movements",
-            json={"movement_type": "received", "quantity": "4",
+            json={"movement_type": "received", "quantity": "4", "batch_code": "MANAGER-BATCH-1",
                   "reason": "Supplier delivery received."},
         )
         assert received.status_code == 201
@@ -1237,7 +1237,7 @@ def test_inventory_tracking_cannot_be_disabled_while_stock_exists():
         product_id = product.json["item"]["id"]
         received = client.post(
             f"/api/products/{product_id}/stock-movements",
-            json={"movement_type": "received", "quantity": "1",
+            json={"movement_type": "received", "quantity": "1", "batch_code": "DISABLE-BATCH-1",
                   "reason": "Opening quantity."},
         )
         assert received.status_code == 201
@@ -1278,6 +1278,7 @@ def test_admin_can_make_reasoned_stock_adjustments():
         increase = client.post(
             f"/api/products/{product_id}/stock-movements",
             json={"movement_type": "adjustment_increase", "quantity": "2",
+                  "batch_code": "ADJUST-BATCH-1",
                   "reason": "Physical count found two extra units."},
         )
         assert increase.status_code == 201
@@ -1289,6 +1290,179 @@ def test_admin_can_make_reasoned_stock_adjustments():
         assert decrease.status_code == 201
         assert decrease.json["balance"]["stock_on_hand"] == "1.000"
         assert decrease.json["balance"]["available_quantity"] == "1.000"
+    finally:
+        with application.app_context():
+            db.session.remove()
+            db.drop_all()
+
+
+def test_inventory_batches_exclude_expired_stock_and_allocate_fifo():
+    application, client = make_client("admin")
+    try:
+        customer = client.post("/api/customers", json={"name": "Batch FIFO Customer"})
+        product = client.post("/api/products", json={
+            "sku": "BATCH-FIFO-1", "name": "Batch FIFO Product",
+            "unit_price": "20.00", "currency": "TZS",
+            "track_inventory": True, "low_stock_threshold": "1.000",
+        })
+        assert customer.status_code == 201
+        assert product.status_code == 201
+        product_id = product.json["item"]["id"]
+        yesterday = (date.today() - timedelta(days=1)).isoformat()
+
+        expired = client.post(
+            f"/api/products/{product_id}/stock-movements",
+            json={
+                "movement_type": "received", "quantity": "4",
+                "batch_code": "EXPIRED-BATCH", "expiry_date": yesterday,
+                "reason": "Expired stock from synthetic test fixture.",
+            },
+        )
+        assert expired.status_code == 201
+        first = client.post(
+            f"/api/products/{product_id}/stock-movements",
+            json={
+                "movement_type": "received", "quantity": "2",
+                "batch_code": "FIFO-OLD", "expiry_date": (
+                    date.today() + timedelta(days=30)
+                ).isoformat(),
+                "reason": "First valid delivery.",
+            },
+        )
+        assert first.status_code == 201
+        second = client.post(
+            f"/api/products/{product_id}/stock-movements",
+            json={
+                "movement_type": "received", "quantity": "3",
+                "batch_code": "FIFO-NEW", "expiry_date": (
+                    date.today() + timedelta(days=90)
+                ).isoformat(),
+                "reason": "Second valid delivery.",
+            },
+        )
+        assert second.status_code == 201
+
+        summary = client.get("/api/inventory")
+        item = summary.json["items"][0]
+        assert item["stock_on_hand"] == "9.000"
+        assert item["expired_quantity"] == "4.000"
+        assert item["expiring_soon_quantity"] == "2.000"
+        assert item["available_quantity"] == "5.000"
+        assert item["status"] == "available"
+
+        batches = client.get(f"/api/products/{product_id}/stock-batches")
+        assert batches.status_code == 200
+        batch_by_code = {row["batch_code"]: row for row in batches.json["items"]}
+        assert batch_by_code["EXPIRED-BATCH"]["status"] == "expired"
+        assert batch_by_code["EXPIRED-BATCH"]["available_quantity"] == "0.000"
+        assert batch_by_code["FIFO-OLD"]["status"] == "expiring_soon"
+
+        sale = client.post("/api/sales", json={
+            "customer_id": customer.json["item"]["id"],
+            "currency": "TZS",
+            "items": [{"product_id": product_id, "quantity": "3"}],
+        })
+        assert sale.status_code == 201
+        completed = client.post(f"/api/sales/{sale.json['item']['id']}/complete")
+        assert completed.status_code == 200
+
+        history = client.get(f"/api/products/{product_id}/stock-movements")
+        sold = [row for row in history.json["items"] if row["movement_type"] == "sold"]
+        sold_batch_ids = {row["batch_id"] for row in sold}
+        sold_batches = client.get(f"/api/products/{product_id}/stock-batches")
+        sold_by_code = {
+            row["batch_code"]: row for row in sold_batches.json["items"]
+        }
+        assert sold_by_code["FIFO-OLD"]["status"] == "sold"
+        assert sold_by_code["FIFO-NEW"]["status"] == "available"
+        assert len(sold) == 2
+        assert batch_by_code["EXPIRED-BATCH"]["id"] not in sold_batch_ids
+        assert sum(Decimal(row["quantity"]) for row in sold) == Decimal("3.000")
+
+        voided = client.post(f"/api/sales/{sale.json['item']['id']}/void")
+        assert voided.status_code == 200
+        restored = client.get(f"/api/products/{product_id}/stock-batches")
+        restored_by_code = {row["batch_code"]: row for row in restored.json["items"]}
+        assert restored_by_code["FIFO-OLD"]["stock_on_hand"] == "2.000"
+        assert restored_by_code["FIFO-NEW"]["stock_on_hand"] == "3.000"
+        assert restored_by_code["EXPIRED-BATCH"]["stock_on_hand"] == "4.000"
+    finally:
+        with application.app_context():
+            db.session.remove()
+            db.drop_all()
+
+
+def test_expired_only_inventory_is_reported_and_cannot_complete_sales():
+    application, client = make_client("admin")
+    try:
+        customer = client.post("/api/customers", json={"name": "Expired Stock Customer"})
+        product = client.post("/api/products", json={
+            "sku": "EXPIRED-ONLY-1", "name": "Expired Only Product",
+            "unit_price": "15.00", "currency": "TZS", "track_inventory": True,
+        })
+        product_id = product.json["item"]["id"]
+        received = client.post(
+            f"/api/products/{product_id}/stock-movements",
+            json={
+                "movement_type": "received", "quantity": "2",
+                "batch_code": "ONLY-EXPIRED",
+                "expiry_date": (date.today() - timedelta(days=1)).isoformat(),
+                "reason": "Expired test stock.",
+            },
+        )
+        assert received.status_code == 201
+        summary = client.get("/api/inventory")
+        assert summary.json["items"][0]["status"] == "expired"
+        assert summary.json["items"][0]["available_quantity"] == "0.000"
+        assert summary.json["items"][0]["expired_quantity"] == "2.000"
+        sale = client.post("/api/sales", json={
+            "customer_id": customer.json["item"]["id"],
+            "currency": "TZS",
+            "items": [{"product_id": product_id, "quantity": "1"}],
+        })
+        assert sale.status_code == 201
+        blocked = client.post(f"/api/sales/{sale.json['item']['id']}/complete")
+        assert blocked.status_code == 409
+        assert "non-expired" in blocked.json["error"]
+    finally:
+        with application.app_context():
+            db.session.remove()
+            db.drop_all()
+
+
+def test_discontinued_inventory_is_labelled_and_cannot_be_sold():
+    application, client = make_client("admin")
+    try:
+        customer = client.post("/api/customers", json={"name": "Discontinued Customer"})
+        product = client.post("/api/products", json={
+            "sku": "DISCONTINUED-1", "name": "Discontinued Product",
+            "unit_price": "10.00", "currency": "TZS", "track_inventory": True,
+        })
+        product_id = product.json["item"]["id"]
+        received = client.post(
+            f"/api/products/{product_id}/stock-movements",
+            json={
+                "movement_type": "received", "quantity": "2",
+                "batch_code": "DISCONTINUED-BATCH",
+                "reason": "Synthetic stock receipt.",
+            },
+        )
+        assert received.status_code == 201
+        sale = client.post("/api/sales", json={
+            "customer_id": customer.json["item"]["id"],
+            "currency": "TZS",
+            "items": [{"product_id": product_id, "quantity": "1"}],
+        })
+        assert sale.status_code == 201
+        archived = client.patch(
+            f"/api/products/{product_id}", json={"is_active": False}
+        )
+        assert archived.status_code == 200
+        summary = client.get("/api/inventory")
+        assert summary.json["items"][0]["status"] == "discontinued"
+        blocked = client.post(f"/api/sales/{sale.json['item']['id']}/complete")
+        assert blocked.status_code == 409
+        assert "Discontinued products" in blocked.json["error"]
     finally:
         with application.app_context():
             db.session.remove()
