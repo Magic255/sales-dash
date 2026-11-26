@@ -1527,7 +1527,7 @@ def test_discount_approval_notifications_are_recipient_scoped_and_readable():
             "customer_id": customer_id,
             "currency": "TZS",
             "discount_amount": "10.00",
-            "discount_approval_reason": "Customer volume discount request.",
+            "approval_reason": "Customer volume discount request.",
             "items": [{"product_id": product_id, "quantity": "1"}],
         })
         assert sale.status_code == 201
