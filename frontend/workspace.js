@@ -691,7 +691,7 @@ async function loadInventoryBatches(productId, generation = workspaceGeneration)
         }
         const payload = {decision: normalized};
         try {
-        if (normalized === "approve") {
+          if (normalized === "approve") {
           payload.qr_code = window.prompt("QR / traceability value (required)", "");
           if (payload.qr_code === null) return;
           payload.authority_name = window.prompt("Issuing standards authority (for example TBS)", batch.authority_name || "");
