@@ -36,7 +36,21 @@ IAF CertSearch is limited to accredited management-system certificates; it must 
 
 A QR value is currently required as a traceability input for approval, but this version does not decode QR images or resolve QR destinations against official registries. A QR code alone is not proof of approval. Approval now requires an actual evidence file uploaded against that exact batch; a typed URL or arbitrary evidence reference is not accepted.
 
-The receiver cannot verify their own batch. Admins and Managers can record approve, reject or recall decisions. An Admin exception is separate from a standards approval and requires an enabled policy plus a reason.
+For each approval, the verifier must also record the issuer's role, the verification method, the exact product/brand/model identity checked, and the certificate's product/standard/market scope. Official-register and accreditation-scope checks require an HTTPS source URL. Accreditation-scope checks also require the accreditation body name. Issuer-confirmation checks require a confirmation reference. These are records of a human verifier's check: the application does not fetch, authenticate or certify the URL, and it does not independently decide whether the issuer or scope is legally recognised.
+
+### Tanzania reference sources
+
+For Tanzania-market products, the inventory screen provides direct links to two official sources:
+
+- TBS certified-product register: https://tbs.go.tz/certified-product-companies . Use it to compare the licence number, product, brand, standard, issue date and expiry date shown by TBS.
+- SADCAS product-certification-body directory: https://www.sadcas.org/accredited-organisations/product-certification-bodies . It lists TBS Product Certification Services as accreditation PROD-CERT 003 and publishes its approval status and accreditation validity.
+- SADCAS schedule of accreditation: https://www.sadcas.org/sites/default/files/2024-10/TBS-Prod%20Certification%20Cert%20%26%20SoA%20%28Issue%2001%29%202024.pdf . Check the specific product-certification scope, not just the organisation name.
+
+These sources answer different questions. The TBS register is for individual TBS product licences. The SADCAS directory and schedule concern TBS's competence/accreditation scope as a product-certification body; they do not prove that a particular product's licence is current. A verifier must match both the individual certificate and the applicable scope. TBS's published product-certification accreditation page describes ISO/IEC 17065 and ISO/IEC 17067 coverage for specified product categories.
+
+For other countries and authorities, use the relevant regulator/issuer's official register and the appropriate accreditation body's current directory and scope. Global ACI's MRA covers several distinct conformity-assessment scopes; a member listing alone is not enough. For example, product certification, testing and inspection must not be treated as interchangeable. The app stores the source and scope the verifier checked but does not yet connect to or automatically validate any of these registries.
+
+The receiver cannot verify their own batch. Admins and Managers can record approve, reject or recall decisions. An Admin exception is separate from a standards approval and requires an enabled policy plus a reason. For an ordinary approval, the reviewer records issuer role, verification method, source, product identity and scope.
 
 SALES DASH records the business's evidence and staff verification decision. It does not issue legal certification, independently establish regulatory recognition, or replace a competent authority's determination.
 
