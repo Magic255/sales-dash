@@ -526,6 +526,7 @@ def _stock_movement_json(item):
     return {
         "id": str(item.id),
         "product_id": str(item.product_id),
+        "batch_id": str(item.batch_id) if item.batch_id else None,
         "movement_type": item.movement_type,
         "quantity": str(item.quantity),
         "reason": item.reason,
@@ -546,39 +547,28 @@ def inventory_summary(_user):
             Product.track_inventory.is_(True),
         ).order_by(Product.name)
     ).all()
-    product_ids = [product.id for product in products]
-    grouped = db.session.execute(
-        select(
-            StockMovement.product_id,
-            StockMovement.movement_type,
-            func.sum(StockMovement.quantity),
-        )
-        .where(
-            StockMovement.company_id == company_id,
-            StockMovement.product_id.in_(product_ids),
-        )
-        .group_by(StockMovement.product_id, StockMovement.movement_type)
-    ).all() if product_ids else []
-    totals = {
-        product_id: {"on_hand": Decimal("0.000"), "reserved": Decimal("0.000")}
-        for product_id in product_ids
-    }
-    for product_id, movement_type, total in grouped:
-        quantity = Decimal(str(total or 0))
-        if movement_type in {"received", "returned", "adjustment_increase"}:
-            totals[product_id]["on_hand"] += quantity
-        elif movement_type in {"sold", "damaged", "adjustment_decrease"}:
-            totals[product_id]["on_hand"] -= quantity
-        elif movement_type == "reserved":
-            totals[product_id]["reserved"] += quantity
-        elif movement_type == "released":
-            totals[product_id]["reserved"] -= quantity
     items = []
     for product in products:
-        balance = totals[product.id]
-        available = balance["on_hand"] - balance["reserved"]
+        balances = _batch_balances(company_id, product.id)
+        on_hand = sum((row["on_hand"] for row in balances), Decimal("0.000"))
+        reserved = sum((row["reserved"] for row in balances), Decimal("0.000"))
+        expired_quantity = sum(
+            (
+                max(row["available"], Decimal("0.000"))
+                for row in balances if row["expired"]
+            ),
+            Decimal("0.000"),
+        )
+        available = sum(
+            (
+                row["available"] for row in balances
+                if not row["expired"]
+            ),
+            Decimal("0.000"),
+        )
         status = (
-            "out_of_stock" if available <= 0
+            "expired" if available <= 0 and expired_quantity > 0
+            else "out_of_stock" if available <= 0
             else "low_stock" if available <= product.low_stock_threshold
             else "available"
         )
@@ -587,11 +577,52 @@ def inventory_summary(_user):
             "sku": product.sku,
             "name": product.name,
             "currency": product.currency,
-            "stock_on_hand": str(balance["on_hand"]),
-            "reserved_quantity": str(balance["reserved"]),
+            "stock_on_hand": str(on_hand),
+            "reserved_quantity": str(reserved),
             "available_quantity": str(available),
+            "expired_quantity": str(expired_quantity),
             "low_stock_threshold": str(product.low_stock_threshold),
             "status": status,
+        })
+    return jsonify({"items": items})
+
+
+@sales_bp.get("/products/<uuid:product_id>/stock-batches")
+@login_required
+@company_permission_required("manage_inventory")
+def list_stock_batches(_user, product_id):
+    company_id = _company_id()
+    product = db.session.scalar(
+        select(Product).where(
+            Product.id == product_id, Product.company_id == company_id
+        )
+    )
+    if product is None:
+        return jsonify({"error": "Product not found."}), 404
+    if not product.track_inventory:
+        return jsonify({"error": "Inventory tracking is not enabled for this product."}), 409
+    items = []
+    for row in _batch_balances(company_id, product_id):
+        batch = row["batch"]
+        items.append({
+            "id": str(batch.id),
+            "batch_code": batch.batch_code,
+            "expiry_date": batch.expiry_date.isoformat() if batch.expiry_date else None,
+            "stock_on_hand": str(row["on_hand"]),
+            "reserved_quantity": str(row["reserved"]),
+            "available_quantity": str(
+                Decimal("0.000") if row["expired"] else row["available"]
+            ),
+            "expired_quantity": str(
+                max(row["available"], Decimal("0.000")) if row["expired"]
+                else Decimal("0.000")
+            ),
+            "status": (
+                "expired" if row["expired"] and row["on_hand"] > 0
+                else "out_of_stock" if row["available"] <= 0
+                else "available"
+            ),
+            "received_at": batch.created_at.isoformat(),
         })
     return jsonify({"items": items})
 
