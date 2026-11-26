@@ -63,12 +63,23 @@ def test_compliance_required_stock_is_received_to_quarantine_until_independent_v
                 password_hash=PasswordHasher().hash("a-very-strong-test-password"),
                 email_verified=True,
             )
-            db.session.add_all([customer, verifier])
+            salesperson = User(
+                email="evidence-salesperson@example.test",
+                password_hash=PasswordHasher().hash("a-very-strong-test-password"),
+                email_verified=True,
+            )
+            db.session.add_all([customer, verifier, salesperson])
             db.session.flush()
-            db.session.add(CompanyMembership(
-                user_id=verifier.id, company_id=company.id,
-                role="manager", status="active",
-            ))
+            db.session.add_all([
+                CompanyMembership(
+                    user_id=verifier.id, company_id=company.id,
+                    role="manager", status="active",
+                ),
+                CompanyMembership(
+                    user_id=salesperson.id, company_id=company.id,
+                    role="salesperson", status="active",
+                ),
+            ])
             product = Product(
                 company_id=company.id, created_by_user_id=admin.id,
                 sku="REGULATED-001", name="Synthetic regulated item",
@@ -149,6 +160,13 @@ def test_compliance_required_stock_is_received_to_quarantine_until_independent_v
         )
         assert missing_qr.status_code == 400
 
+        invalid_upload = verifier_client.post(
+            f"/api/stock-batches/{batch_id}/evidence",
+            data={"file": (BytesIO(b"not a real PDF"), "fake.pdf")},
+            content_type="multipart/form-data",
+        )
+        assert invalid_upload.status_code == 400
+
         uploaded = verifier_client.post(
             f"/api/stock-batches/{batch_id}/evidence",
             data={"file": (BytesIO(b"%PDF-1.7\\nsynthetic certificate evidence\\n"), "certificate.pdf")},
@@ -166,6 +184,31 @@ def test_compliance_required_stock_is_received_to_quarantine_until_independent_v
         assert downloaded.status_code == 200
         assert downloaded.data.startswith(b"%PDF-1.7")
         assert downloaded.headers["Cache-Control"] == "no-store"
+        evidence_list = verifier_client.get(
+            f"/api/stock-batches/{batch_id}/evidence"
+        )
+        assert evidence_list.status_code == 200
+        assert evidence_list.json["items"][0]["id"] == evidence_file_id
+
+        salesperson_client = app.test_client()
+        _login(salesperson_client, "evidence-salesperson@example.test", company_id)
+        denied_download = salesperson_client.get(
+            f"/api/stock-batches/{batch_id}/evidence/{evidence_file_id}"
+        )
+        assert denied_download.status_code == 403
+
+        wrong_evidence = verifier_client.post(
+            f"/api/stock-batches/{batch_id}/compliance",
+            json={
+                "decision": "approve",
+                "qr_code": "QR-SYNTHETIC-001",
+                "authority_name": "Tanzania Bureau of Standards",
+                "authority_country": "TZ",
+                "certificate_reference": "TBS-SYNTHETIC-123",
+                "evidence_file_id": "00000000-0000-0000-0000-000000000000",
+            },
+        )
+        assert wrong_evidence.status_code == 400
 
         approved = verifier_client.post(
             f"/api/stock-batches/{batch_id}/compliance",
