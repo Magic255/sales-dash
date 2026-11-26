@@ -53,6 +53,14 @@ def _country_code(value, *, required=False):
 
 def _category_compliance_policy(company_id, category_key, market_country):
     if not market_country:
+        category_has_market_rules = db.session.scalar(
+            select(func.count()).select_from(CategoryCompliancePolicy).where(
+                CategoryCompliancePolicy.company_id == company_id,
+                CategoryCompliancePolicy.category_key == category_key,
+            )
+        )
+        if category_has_market_rules:
+            raise ValueError("Select the product's market country to apply its category compliance policy.")
         return None
     return db.session.scalar(
         select(CategoryCompliancePolicy).where(
@@ -1175,8 +1183,9 @@ def save_category_compliance_policy(user):
                     select(StockBatch).where(
                         StockBatch.company_id == company_id,
                         StockBatch.product_id == product.id,
-                        StockBatch.compliance_status == "approved",
-                        StockBatch.verified_by_user_id.is_(None),
+                        StockBatch.compliance_status.in_(
+                            ["approved", "exception_approved"]
+                        ),
                     ).with_for_update()
                 ).all()
                 for batch in batches:
@@ -1189,14 +1198,15 @@ def save_category_compliance_policy(user):
                 "affected_products": len(affected),
             },
         )
-        db.session.commit()
-        return jsonify({"item": {
+        result = {
             "category_key": policy.category_key,
             "market_country": policy.market_country,
             "approval_mode": policy.approval_mode,
             "accepted_authorities": policy.accepted_authorities,
             "affected_products": len(affected),
-        }})
+        }
+        db.session.commit()
+        return jsonify({"item": result})
     except ValueError:
         db.session.rollback()
         return jsonify({"error": "Invalid category compliance policy."}), 400
