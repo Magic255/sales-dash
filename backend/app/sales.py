@@ -361,9 +361,6 @@ def create_customer(user):
         db.session.flush()
         result = _customer_json(item)
         db.session.commit()
-    except PriceFloorError as error:
-        db.session.rollback()
-        return jsonify({"error": str(error)}), 400
     except ValueError:
         db.session.rollback()
         return jsonify({"error": "Invalid input. Check the submitted fields and try again."}), 400
@@ -695,6 +692,9 @@ def create_sale(user):
             approval_request.status if approval_request else None
         )
         db.session.commit()
+    except PriceFloorError as error:
+        db.session.rollback()
+        return jsonify({"error": str(error)}), 400
     except ValueError:
         db.session.rollback()
         return jsonify({"error": "Invalid input. Check the submitted fields and try again."}), 400
