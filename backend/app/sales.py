@@ -21,6 +21,7 @@ from .models import (
     Product,
     Sale,
     SaleItem,
+    StockMovement,
     User,
 )
 from .permissions import company_permission_required
@@ -296,6 +297,8 @@ def _product_json(item, *, include_cost=False):
         "description": item.description, "unit_price": str(item.unit_price),
         "currency": item.currency, "is_active": item.is_active,
         "minimum_selling_price": str(item.minimum_selling_price),
+        "track_inventory": item.track_inventory,
+        "low_stock_threshold": str(item.low_stock_threshold),
         "created_at": item.created_at.isoformat(),
     }
     if include_cost:
@@ -453,6 +456,10 @@ def create_product(user):
                 data.get("minimum_selling_price", data.get("cost_price", "0")),
                 "minimum_selling_price",
             ),
+            track_inventory=_boolean(data.get("track_inventory", False), "track_inventory"),
+            low_stock_threshold=_decimal(
+                data.get("low_stock_threshold", "0"), "low_stock_threshold"
+            ),
         )
         if len(item.currency) != 3:
             raise ValueError("Currency must be a 3-letter code, such as TZS.")
@@ -460,6 +467,8 @@ def create_product(user):
             raise ValueError("Minimum selling price cannot be below product cost.")
         if item.unit_price < item.minimum_selling_price:
             raise ValueError("Unit price cannot be below the minimum selling price.")
+        if item.low_stock_threshold < 0:
+            raise ValueError("Low-stock threshold cannot be negative.")
         db.session.add(item)
         db.session.flush()
         record_audit_event(
@@ -498,6 +507,8 @@ def update_product(user, product_id):
         "sku": item.sku, "name": item.name, "description": item.description,
         "unit_price": str(item.unit_price), "cost_price": str(item.cost_price),
         "minimum_selling_price": str(item.minimum_selling_price),
+        "track_inventory": item.track_inventory,
+        "low_stock_threshold": str(item.low_stock_threshold),
         "currency": item.currency, "is_active": item.is_active,
     }
     try:
@@ -515,6 +526,14 @@ def update_product(user, product_id):
             item.minimum_selling_price = _decimal(
                 data["minimum_selling_price"], "minimum_selling_price"
             )
+        if "track_inventory" in data:
+            item.track_inventory = _boolean(data["track_inventory"], "track_inventory")
+        if "low_stock_threshold" in data:
+            item.low_stock_threshold = _decimal(
+                data["low_stock_threshold"], "low_stock_threshold"
+            )
+        if item.low_stock_threshold < 0:
+            raise ValueError("Low-stock threshold cannot be negative.")
         if item.minimum_selling_price < item.cost_price:
             raise ValueError("Minimum selling price cannot be below product cost.")
         if item.unit_price < item.minimum_selling_price:
