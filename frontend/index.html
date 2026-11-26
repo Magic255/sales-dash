@@ -285,6 +285,8 @@
               <option value="adjustment_increase" data-admin-only>Admin stock increase adjustment</option>
               <option value="adjustment_decrease" data-admin-only>Admin stock decrease adjustment</option>
             </select>
+            <label for="inventory-batch-code">Batch code (required for stock receipts, returns and increases)</label><input id="inventory-batch-code" maxlength="80" placeholder="Supplier batch / lot number">
+            <label for="inventory-expiry-date">Expiry date (optional)</label><input id="inventory-expiry-date" type="date">
             <label for="inventory-quantity">Quantity</label><input id="inventory-quantity" type="number" min="0.001" step="0.001" required>
             <label for="inventory-reason">Reason</label><textarea id="inventory-reason" maxlength="1000" rows="2" required></textarea>
             <label for="inventory-reference">Reference (optional)</label><input id="inventory-reference" maxlength="120">
@@ -292,8 +294,13 @@
           </form>
           <p id="inventory-message" class="form-message" role="status" aria-live="polite"></p>
           <div class="table-wrap"><table class="data-table">
-            <thead><tr><th>SKU</th><th>Product</th><th>On hand</th><th>Reserved</th><th>Available</th><th>Low-stock threshold</th><th>Status</th></tr></thead>
-            <tbody id="inventory-rows"><tr><td colspan="7">Loading inventory…</td></tr></tbody>
+            <thead><tr><th>SKU</th><th>Product</th><th>On hand</th><th>Reserved</th><th>Available</th><th>Expired</th><th>Low-stock threshold</th><th>Status</th></tr></thead>
+            <tbody id="inventory-rows"><tr><td colspan="8">Loading inventory…</td></tr></tbody>
+          </table></div>
+          <h4>Stock batches and expiry</h4>
+          <div class="table-wrap"><table class="data-table">
+            <thead><tr><th>Batch</th><th>Expiry date</th><th>On hand</th><th>Reserved</th><th>Available</th><th>Status</th></tr></thead>
+            <tbody id="inventory-batches-rows"><tr><td colspan="6">Select a tracked product to view batches.</td></tr></tbody>
           </table></div>
           <h4>Recent stock movements</h4>
           <div class="table-wrap"><table class="data-table">
