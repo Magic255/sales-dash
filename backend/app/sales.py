@@ -1621,19 +1621,24 @@ def complete_sale(user, sale_id):
         )
         if required_quantity > available:
             return jsonify({
-                "error": "Insufficient available stock for "
+                "error": "Insufficient non-expired available stock for "
                 + products_by_id[tracked_product_id].sku + "."
             }), 409
-    for tracked_product_id, sold_quantity in tracked_quantities.items():
-        db.session.add(StockMovement(
-            company_id=item.company_id,
-            product_id=tracked_product_id,
-            actor_user_id=user.id,
-            movement_type="sold",
-            quantity=sold_quantity,
-            reason="Stock issued for completed sale " + item.sale_number,
-            reference=item.sale_number,
-        ))
+    try:
+        for tracked_product_id, sold_quantity in tracked_quantities.items():
+            _allocate_fifo_movements(
+                item.company_id,
+                tracked_product_id,
+                sold_quantity,
+                "sold",
+                user.id,
+                "Stock issued for completed sale " + item.sale_number,
+                item.sale_number,
+                allow_expired=False,
+            )
+    except ValueError as error:
+        db.session.rollback()
+        return jsonify({"error": str(error)}), 409
     item.status = "completed"
     db.session.flush()
     result = _sale_json(item)
@@ -1669,20 +1674,24 @@ def void_sale(user, sale_id):
         tracked_ids = {
             product.id for product in tracked_products if product.track_inventory
         }
-        returned = {}
-        for line in lines:
-            if line.product_id in tracked_ids:
-                returned[line.product_id] = (
-                    returned.get(line.product_id, Decimal("0.000")) + line.quantity
-                )
-        for product_id, quantity in returned.items():
+        sold_movements = db.session.scalars(
+            select(StockMovement).where(
+                StockMovement.company_id == item.company_id,
+                StockMovement.reference == item.sale_number,
+                StockMovement.movement_type == "sold",
+                StockMovement.product_id.in_(tracked_ids),
+            ).order_by(StockMovement.created_at, StockMovement.id)
+        ).all() if tracked_ids else []
+        for sold in sold_movements:
             db.session.add(StockMovement(
                 company_id=item.company_id,
-                product_id=product_id,
+                product_id=sold.product_id,
+                batch_id=sold.batch_id,
                 actor_user_id=user.id,
                 movement_type="returned",
-                quantity=quantity,
-                reason="Stock returned because sale " + item.sale_number + " was voided",
+                quantity=sold.quantity,
+                reason="Stock returned to original batch because sale "
+                + item.sale_number + " was voided",
                 reference=item.sale_number,
             ))
     item.status = "void"
