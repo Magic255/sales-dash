@@ -1163,7 +1163,7 @@ def test_inventory_ledger_receives_reserves_sells_and_restores_voided_sales():
         assert summary.json["items"][0]["stock_on_hand"] == "2.000"
         assert summary.json["items"][0]["reserved_quantity"] == "2.000"
         assert summary.json["items"][0]["available_quantity"] == "0.000"
-        assert summary.json["items"][0]["status"] == "out_of_stock"
+        assert summary.json["items"][0]["status"] == "reserved"
 
         voided = client.post(f"/api/sales/{sale.json['item']['id']}/void")
         assert voided.status_code == 200
