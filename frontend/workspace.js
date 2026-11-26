@@ -348,6 +348,10 @@ async function editProduct(item) {
     "Low-stock threshold", item.low_stock_threshold || "0.000"
   );
   if (lowStockThreshold === null) return;
+  const categoryKey = window.prompt("Product category key", item.category_key || "general");
+  if (categoryKey === null) return;
+  const marketCountry = window.prompt("Market country (2-letter code, blank if not set)", item.market_country || "");
+  if (marketCountry === null) return;
   const complianceRequired = window.prompt(
     "Require standards approval before sale? Enter yes or no",
     item.compliance_required ? "yes" : "no"
@@ -366,6 +370,7 @@ async function editProduct(item) {
         cost_price: costPrice, minimum_selling_price: minimumSellingPrice,
         track_inventory: trackInventory.trim().toLowerCase() === "yes",
         compliance_required: complianceRequired.trim().toLowerCase() === "yes",
+        category_key: categoryKey, market_country: marketCountry.trim().toUpperCase() || null,
         low_stock_threshold: lowStockThreshold, currency,
       }),
     });
@@ -418,11 +423,13 @@ function renderCustomers() {
 function renderProducts() {
   const body = document.querySelector("#product-rows");
   body.replaceChildren();
-  if (!products.length) return emptyRow(body, 9, "No products yet. Add the first product above.");
+  if (!products.length) return emptyRow(body, 11, "No products yet. Add the first product above.");
   for (const item of products) {
     const row = document.createElement("tr");
     textCell(row, item.sku);
     textCell(row, item.name);
+    textCell(row, item.category_key || "general");
+    textCell(row, item.market_country || "—");
     textCell(row, amount(item.currency, item.unit_price));
     textCell(row, amount(item.currency, item.minimum_selling_price));
     textCell(row, item.currency);
@@ -760,6 +767,29 @@ async function loadInventory(generation = workspaceGeneration) {
 }
 
 
+
+async function loadCompliancePolicies(generation = workspaceGeneration) {
+  const body = document.querySelector("#compliance-policy-rows");
+  const message = document.querySelector("#compliance-policy-message");
+  if (workspaceRole !== "admin") return;
+  message.textContent = "";
+  const data = await workspaceRequest("/api/compliance-policies");
+  if (generation !== workspaceGeneration) return;
+  body.replaceChildren();
+  if (!data.items.length) {
+    emptyRow(body, 4, "No category rules configured.");
+    return;
+  }
+  for (const policy of data.items) {
+    const row = document.createElement("tr");
+    textCell(row, policy.category_key);
+    textCell(row, policy.market_country);
+    textCell(row, policy.approval_mode.replaceAll("_", " "));
+    textCell(row, policy.accepted_authorities.join(", ") || "No authority allow-list");
+    body.append(row);
+  }
+}
+
 async function loadWorkspace() {
   const generation = workspaceGeneration;
   workspaceMessage("Loading company data…");
@@ -781,6 +811,8 @@ async function loadWorkspace() {
     renderCustomers();
     renderProducts();
     fillSaleChoices();
+    if (workspaceRole === "admin") await loadCompliancePolicies(generation);
+    else emptyRow(document.querySelector("#compliance-policy-rows"), 4, "Category compliance rules are managed by company Admins.");
     await loadSales(generation);
     await loadNotifications(generation);
     await loadSalesTargets(generation);
@@ -1020,6 +1052,7 @@ document.addEventListener("salesdash:company-selected", (event) => {
   workspace.hidden = false;
   document.querySelector("#customer-form").hidden = workspaceRole === "viewer";
   document.querySelector("#product-form").hidden = !canManageProducts();
+  document.querySelector("#compliance-policy-form").hidden = workspaceRole !== "admin";
   document.querySelector("#sale-form").hidden = workspaceRole === "viewer";
   document.querySelector("#sale-floor-override").hidden = workspaceRole !== "admin";
   document.querySelector("#team-tab").hidden = workspaceRole !== "admin";
@@ -1210,6 +1243,37 @@ document.querySelector("#customer-form").addEventListener("submit", async (event
   }
 });
 
+
+document.querySelector("#compliance-policy-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (workspaceRole !== "admin") return;
+  const form = event.currentTarget;
+  const button = form.querySelector("button");
+  const message = document.querySelector("#compliance-policy-message");
+  const authorities = document.querySelector("#policy-authorities").value
+    .split("\n").map((value) => value.trim()).filter(Boolean);
+  button.disabled = true;
+  message.textContent = "";
+  try {
+    await workspaceRequest("/api/compliance-policies", {
+      method: "POST",
+      body: JSON.stringify({
+        category_key: document.querySelector("#policy-category-key").value,
+        market_country: document.querySelector("#policy-market-country").value.trim().toUpperCase(),
+        approval_mode: document.querySelector("#policy-approval-mode").value,
+        accepted_authorities: authorities,
+      }),
+    });
+    message.textContent = "Category compliance rule saved.";
+    await loadCompliancePolicies();
+    await loadWorkspace();
+  } catch (error) {
+    message.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+});
+
 document.querySelector("#product-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = event.currentTarget;
@@ -1226,6 +1290,8 @@ document.querySelector("#product-form").addEventListener("submit", async (event)
         minimum_selling_price: document.querySelector("#product-minimum-price").value,
         track_inventory: document.querySelector("#product-track-inventory").checked,
         compliance_required: document.querySelector("#product-compliance-required").checked,
+        category_key: document.querySelector("#product-category-key").value,
+        market_country: document.querySelector("#product-market-country").value.trim().toUpperCase() || null,
         low_stock_threshold: document.querySelector("#product-low-stock-threshold").value,
         currency: document.querySelector("#product-currency").value,
       }),
