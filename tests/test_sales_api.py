@@ -1582,7 +1582,6 @@ def test_inventory_expiry_notifications_are_deduplicated_and_role_scoped():
             company = db.session.query(Company).filter_by(
                 slug="sales-api-admin"
             ).one()
-            members = []
             for role in ("manager", "salesperson"):
                 member = User(
                     email=f"expiry-{role}@example.test",
@@ -1597,7 +1596,6 @@ def test_inventory_expiry_notifications_are_deduplicated_and_role_scoped():
                     role=role,
                     status="active",
                 ))
-                members.append((role, str(member.id)))
             company_id = str(company.id)
             db.session.commit()
 
