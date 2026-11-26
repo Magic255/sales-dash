@@ -276,10 +276,15 @@ async function editProduct(item) {
     "Minimum selling price", item.minimum_selling_price || "0.00"
   );
   if (minimumSellingPrice === null) return;
-  const trackInventory = window.confirm(
-    "Track stock and batches for this product? Current setting: " +
-    (item.track_inventory ? "enabled" : "disabled")
+  const trackInventoryAnswer = window.prompt(
+    "Track stock and batches? Enter yes or no",
+    item.track_inventory ? "yes" : "no"
   );
+  if (trackInventoryAnswer === null) return;
+  const trackInventory = trackInventoryAnswer.trim().toLowerCase();
+  if (!["yes", "no"].includes(trackInventory)) {
+    return workspaceMessage("Enter yes or no for inventory tracking.");
+  }
   const reorderLevel = window.prompt(
     "Low-stock alert level", item.reorder_level || "0.000"
   );
@@ -292,7 +297,7 @@ async function editProduct(item) {
       body: JSON.stringify({
         sku, name, description, unit_price: unitPrice,
         cost_price: costPrice, minimum_selling_price: minimumSellingPrice,
-        track_inventory: trackInventory, reorder_level: reorderLevel, currency,
+        track_inventory: trackInventory === "yes", reorder_level: reorderLevel, currency,
       }),
     });
     await loadWorkspace();
