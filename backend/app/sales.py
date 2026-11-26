@@ -13,7 +13,11 @@ from sqlalchemy.exc import IntegrityError
 from .audit import record_audit_event
 from .auth import login_required
 from .extensions import db
-from .inventory import record_sale_stock_movements, validate_sale_batch
+from .inventory import (
+    InventoryStockError,
+    record_sale_stock_movements,
+    validate_sale_batch,
+)
 from .models import (
     Company,
     CompanyMembership,
@@ -742,7 +746,7 @@ def create_sale(user):
             approval_request.status if approval_request else None
         )
         db.session.commit()
-    except PriceFloorError as error:
+    except (PriceFloorError, InventoryStockError) as error:
         db.session.rollback()
         return jsonify({"error": str(error)}), 400
     except ValueError:
@@ -1103,7 +1107,7 @@ def update_draft_sale(user, sale_id):
             approval_request.status if approval_request else None
         )
         db.session.commit()
-    except PriceFloorError as error:
+    except (PriceFloorError, InventoryStockError) as error:
         db.session.rollback()
         return jsonify({"error": str(error)}), 400
     except (ValueError, TypeError):
