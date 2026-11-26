@@ -22,8 +22,10 @@ members of that same company. The runtime database role can SELECT and INSERT, a
 can UPDATE only the `read_at` column; it cannot delete or truncate notifications.
 
 Notifications reference a sale in the same company and the recipient must be an active
-company membership at creation time. Synthetic tests cover recipient isolation and
-read-state changes.
+company membership at creation time. The only membership visibility expansion is the
+active Admin user IDs in the selected company, allowing the application to route approval
+alerts without exposing other members' membership details. Synthetic tests cover
+recipient isolation and read-state changes.
 
 ## Delivery limits
 
