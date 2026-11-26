@@ -32,6 +32,11 @@ def upgrade():
         "products",
         "market_country IS NULL OR "
         "(market_country = upper(market_country) AND length(market_country) = 2)",
+    );
+    op.create_check_constraint(
+        "category_key_normalized",
+        "products",
+        "category_key = lower(trim(category_key)) AND length(category_key) > 0",
     )
     op.execute(
         "GRANT UPDATE (category_key, market_country) ON products TO sales_dash_app"
@@ -182,6 +187,7 @@ def downgrade():
     op.execute(
         "REVOKE UPDATE (category_key, market_country) ON products FROM sales_dash_app"
     )
+    op.drop_constraint("category_key_normalized", "products", type_="check")
     op.drop_constraint("market_country_iso_code", "products", type_="check")
     op.drop_column("products", "market_country")
     op.drop_column("products", "category_key")
