@@ -46,6 +46,8 @@ def record_audit_event(
         "product_compliance_recalled",
         "product_compliance_exception",
         "product_compliance_policy_updated",
+        "product_compliance_evidence_uploaded",
+        "product_compliance_evidence_downloaded",
     }
     if event_type not in allowed_events:
         raise ValueError("Unsupported audit event.")
