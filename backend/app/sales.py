@@ -885,7 +885,7 @@ def verify_stock_batch_compliance(user, batch_id):
         elif decision == "approve":
             qr_code = _text(data, "qr_code", 500, required=True)
             authority_name = _text(data, "authority_name", 160, required=True)
-            authority_country = _text(data, "authority_country", 2, required=True, upper=True)
+            authority_country = _country_code(data.get("authority_country"), required=True)
             certificate_reference = _text(
                 data, "certificate_reference", 160, required=True
             )
@@ -1288,6 +1288,9 @@ def create_product(user):
              "unit_price": str(item.unit_price), "cost_price": str(item.cost_price),
              "minimum_selling_price": str(item.minimum_selling_price),
              "track_inventory": item.track_inventory,
+             "category_key": item.category_key,
+             "market_country": item.market_country,
+             "compliance_required": item.compliance_required,
              "low_stock_threshold": str(item.low_stock_threshold),
              "currency": item.currency},
         )
@@ -1365,18 +1368,32 @@ def update_product(user, product_id):
             item.compliance_required = _boolean(
                 data["compliance_required"], "compliance_required"
             )
-        _apply_category_compliance_policy(item)
+        policy = _apply_category_compliance_policy(item)
         if item.compliance_required:
-                existing_batches = db.session.scalars(
-                    select(StockBatch).where(
-                        StockBatch.company_id == item.company_id,
-                        StockBatch.product_id == item.id,
-                        StockBatch.compliance_status == "approved",
-                        StockBatch.verified_by_user_id.is_(None),
-                    ).with_for_update()
-                ).all()
-                for batch in existing_batches:
-                    batch.compliance_status = "pending_verification"
+            reclassified = "category_key" in data or "market_country" in data
+            if (
+                policy and policy.approval_mode in {"required", "admin_exception"}
+                and reclassified
+            ):
+                eligible_statuses = ["approved", "exception_approved"]
+                require_unverified = False
+            else:
+                eligible_statuses = ["approved"]
+                require_unverified = True
+            batch_query = select(StockBatch).where(
+                StockBatch.company_id == item.company_id,
+                StockBatch.product_id == item.id,
+                StockBatch.compliance_status.in_(eligible_statuses),
+            )
+            if require_unverified:
+                batch_query = batch_query.where(
+                    StockBatch.verified_by_user_id.is_(None)
+                )
+            existing_batches = db.session.scalars(
+                batch_query.with_for_update()
+            ).all()
+            for batch in existing_batches:
+                batch.compliance_status = "pending_verification"
         if "low_stock_threshold" in data:
             item.low_stock_threshold = _decimal(
                 data["low_stock_threshold"], "low_stock_threshold", places=MILLI
