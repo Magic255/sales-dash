@@ -244,6 +244,12 @@ def _json_object():
     return data if isinstance(data, dict) else None
 
 
+def _boolean(value, field):
+    if not isinstance(value, bool):
+        raise ValueError(f"{field.replace('_', ' ').capitalize()} must be true or false.")
+    return value
+
+
 def _text(data, field, maximum, *, required=False, lower=False, upper=False):
     value = data.get(field)
     if value is None:
