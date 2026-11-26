@@ -846,6 +846,7 @@ document.addEventListener("salesdash:company-selected", (event) => {
   workspaceUserId = event.detail.userId;
   customers = [];
   products = [];
+  inventorySummary = [];
   salespersonTargets = [];
   renderCustomers();
   renderProducts();
