@@ -734,6 +734,12 @@ def test_product_minimum_price_requires_admin_override_reason():
             "cost_price": "70.00", "minimum_selling_price": "90.00", "currency": "TZS",
         })
         assert product.status_code == 201
+        invalid_catalog_price = client.post("/api/products", json={
+            "sku": "FLOOR-INVALID", "name": "Invalid Floor Product",
+            "unit_price": "80.00", "cost_price": "70.00",
+            "minimum_selling_price": "90.00", "currency": "TZS",
+        })
+        assert invalid_catalog_price.status_code == 400
         item = product.json["item"]
         assert item["minimum_selling_price"] == "90.00"
         assert item["cost_price"] == "70.00"
