@@ -251,6 +251,12 @@ class Product(db.Model):
     minimum_selling_price: Mapped[Decimal] = mapped_column(
         db.Numeric(12, 2), nullable=False, default=0, server_default="0"
     )
+    track_inventory: Mapped[bool] = mapped_column(
+        nullable=False, default=False, server_default="false"
+    )
+    low_stock_threshold: Mapped[Decimal] = mapped_column(
+        db.Numeric(12, 3), nullable=False, default=0, server_default="0"
+    )
     currency: Mapped[str] = mapped_column(
         String(3), nullable=False, default="TZS", server_default="TZS"
     )
