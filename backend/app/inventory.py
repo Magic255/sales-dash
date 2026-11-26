@@ -182,6 +182,10 @@ def _inventory_rows(company_id):
                 (StockMovement.movement_type == "sold", -StockMovement.quantity_delta),
                 else_=0,
             )), 0),
+            func.coalesce(func.sum(case(
+                (StockMovement.quantity_delta > 0, StockMovement.quantity_delta),
+                else_=0,
+            )), 0),
         )
         .where(StockMovement.company_id == company_id)
         .group_by(StockMovement.batch_id)
@@ -191,12 +195,15 @@ def _inventory_rows(company_id):
             Decimal(str(on_hand)),
             Decimal(str(reserved)),
             Decimal(str(sold)),
+            Decimal(str(total_in)),
         )
-        for batch_id, on_hand, reserved, sold in balances
+        for batch_id, on_hand, reserved, sold, total_in in balances
     }
     by_product = {}
     for batch in batches:
-        on_hand, reserved, sold = by_batch.get(batch.id, (ZERO, ZERO, ZERO))
+        on_hand, reserved, sold, total_in = by_batch.get(
+            batch.id, (ZERO, ZERO, ZERO, ZERO)
+        )
         by_product.setdefault(batch.product_id, []).append({
             "id": str(batch.id),
             "batch_code": batch.batch_code,
@@ -204,6 +211,7 @@ def _inventory_rows(company_id):
             "on_hand": on_hand,
             "reserved": reserved,
             "sold": sold,
+            "total_in": total_in,
         })
     result = []
     today = date.today()
@@ -221,9 +229,10 @@ def _inventory_rows(company_id):
             if not batch["expiry_date"] or date.fromisoformat(batch["expiry_date"]) >= today
         ), ZERO)
         sold = sum((batch["sold"] for batch in product_batches), ZERO)
+        total_in = sum((batch["total_in"] for batch in product_batches), ZERO)
         if not product.is_active:
             status = "Discontinued"
-        elif on_hand <= 0 and sold > 0:
+        elif on_hand <= 0 and sold > 0 and sold >= total_in:
             status = "Sold"
         elif on_hand <= 0:
             status = "Out of stock"
