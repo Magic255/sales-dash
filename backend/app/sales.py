@@ -21,6 +21,7 @@ from .models import (
     Product,
     Sale,
     SaleItem,
+    StockBatch,
     StockMovement,
     User,
 )
@@ -419,29 +420,106 @@ def update_customer(_user, customer_id):
     return jsonify({"item": result})
 
 
-def _stock_balance(company_id, product_id):
-    """Calculate on-hand and reserved quantities from the immutable ledger."""
+def _batch_balances(company_id, product_id):
+    """Return FIFO-ordered batch balances calculated from the append-only ledger."""
+    batches = db.session.scalars(
+        select(StockBatch)
+        .where(
+            StockBatch.company_id == company_id,
+            StockBatch.product_id == product_id,
+        )
+        .order_by(StockBatch.created_at, StockBatch.id)
+    ).all()
+    if not batches:
+        return []
+    totals = {
+        batch.id: {"on_hand": Decimal("0.000"), "reserved": Decimal("0.000")}
+        for batch in batches
+    }
     rows = db.session.execute(
-        select(StockMovement.movement_type, func.sum(StockMovement.quantity))
+        select(
+            StockMovement.batch_id,
+            StockMovement.movement_type,
+            func.sum(StockMovement.quantity),
+        )
         .where(
             StockMovement.company_id == company_id,
             StockMovement.product_id == product_id,
+            StockMovement.batch_id.in_(list(totals)),
         )
-        .group_by(StockMovement.movement_type)
+        .group_by(StockMovement.batch_id, StockMovement.movement_type)
     ).all()
-    on_hand = Decimal("0.000")
-    reserved = Decimal("0.000")
-    for movement_type, total in rows:
+    for batch_id, movement_type, total in rows:
         quantity = Decimal(str(total or 0))
         if movement_type in {"received", "returned", "adjustment_increase"}:
-            on_hand += quantity
+            totals[batch_id]["on_hand"] += quantity
         elif movement_type in {"sold", "damaged", "adjustment_decrease"}:
-            on_hand -= quantity
+            totals[batch_id]["on_hand"] -= quantity
         elif movement_type == "reserved":
-            reserved += quantity
+            totals[batch_id]["reserved"] += quantity
         elif movement_type == "released":
-            reserved -= quantity
-    return on_hand, reserved, on_hand - reserved
+            totals[batch_id]["reserved"] -= quantity
+    today = date.today()
+    return [
+        {
+            "batch": batch,
+            "on_hand": totals[batch.id]["on_hand"],
+            "reserved": totals[batch.id]["reserved"],
+            "available": totals[batch.id]["on_hand"] - totals[batch.id]["reserved"],
+            "expired": batch.expiry_date is not None and batch.expiry_date < today,
+        }
+        for batch in batches
+    ]
+
+
+def _stock_balance(company_id, product_id):
+    """Return total on-hand/reserved and sellable stock (excluding expired batches)."""
+    balances = _batch_balances(company_id, product_id)
+    on_hand = sum((item["on_hand"] for item in balances), Decimal("0.000"))
+    reserved = sum((item["reserved"] for item in balances), Decimal("0.000"))
+    available = sum(
+        (
+            item["available"] for item in balances
+            if not item["expired"]
+        ),
+        Decimal("0.000"),
+    )
+    return on_hand, reserved, available
+
+
+def _allocate_fifo_movements(
+    company_id, product_id, quantity, movement_type, actor_user_id,
+    reason, reference=None, allow_expired=False,
+):
+    """Allocate a negative/reservation movement across oldest eligible batches."""
+    balances = _batch_balances(company_id, product_id)
+    remaining = quantity
+    created = []
+    for item in balances:
+        if item["expired"] and not allow_expired:
+            continue
+        capacity = item["reserved"] if movement_type == "released" else item["available"]
+        if capacity <= 0:
+            continue
+        take = min(capacity, remaining)
+        movement = StockMovement(
+            company_id=company_id,
+            product_id=product_id,
+            batch_id=item["batch"].id,
+            actor_user_id=actor_user_id,
+            movement_type=movement_type,
+            quantity=take,
+            reason=reason,
+            reference=reference,
+        )
+        db.session.add(movement)
+        created.append(movement)
+        remaining -= take
+        if remaining <= 0:
+            break
+    if remaining > 0:
+        raise ValueError("The movement exceeds eligible batch stock.")
+    return created
 
 
 def _stock_movement_json(item):
