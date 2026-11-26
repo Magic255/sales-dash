@@ -451,16 +451,52 @@ async function loadSales(generation) {
         if (quantity === null) return;
         const lineDiscounts = sale.items.reduce((sum, item) => sum + Number(item.discount_amount), 0);
         const orderDiscount = Math.max(0, Number(sale.discount_amount) - lineDiscounts);
+        const updatedItems = [];
+        for (let index = 0; index < sale.items.length; index += 1) {
+          const item = sale.items[index];
+          const product = products.find((entry) => entry.id === item.product_id);
+          let batchId = null;
+          if (product && product.track_inventory) {
+            const inventory = inventorySummary.find(
+              (entry) => entry.product_id === product.id
+            );
+            const availableBatches = (inventory?.batches || []).filter((batch) =>
+              Number(batch.on_hand) > Number(batch.reserved) &&
+              (!batch.expiry_date || batch.expiry_date >= localDate())
+            );
+            if (!availableBatches.length) {
+              return workspaceMessage("No unexpired stock is currently available for " + product.name + ".");
+            }
+            const currentBatch = availableBatches.find(
+              (batch) => batch.id === item.batch_id
+            );
+            const batchCode = window.prompt(
+              "Available batches for " + product.name + ": " +
+              availableBatches.map((batch) => batch.batch_code).join(", ") +
+              ". Enter the batch code:",
+              currentBatch?.batch_code || availableBatches[0].batch_code
+            );
+            if (batchCode === null) return;
+            const selectedBatch = availableBatches.find(
+              (batch) => batch.batch_code.toLowerCase() === batchCode.trim().toLowerCase()
+            );
+            if (!selectedBatch) {
+              return workspaceMessage("Choose one of the available batch codes shown.");
+            }
+            batchId = selectedBatch.id;
+          }
+          updatedItems.push({
+            product_id: item.product_id,
+            quantity: index === 0 ? quantity : item.quantity,
+            discount_amount: item.discount_amount,
+            batch_id: batchId,
+          });
+        }
         const payload = {
           customer_id: sale.customer_id, currency: sale.currency, sale_date: sale.sale_date,
           discount_amount: orderDiscount.toFixed(2), tax_amount: sale.tax_amount,
           notes: sale.notes || "",
-          items: sale.items.map((item, index) => ({
-            product_id: item.product_id,
-            quantity: index === 0 ? quantity : item.quantity,
-            discount_amount: item.discount_amount,
-            batch_id: item.batch_id || null,
-          })),
+          items: updatedItems,
         };
         edit.disabled = true;
         try {
