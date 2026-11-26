@@ -555,7 +555,7 @@ def update_product(user, product_id):
                 )
                 if pending_drafts:
                     raise ValueError(
-                        "Complete or cancel existing draft sales before enabling inventory tracking."
+                        "Complete or cancel draft sales before enabling inventory tracking."
                     )
             item.track_inventory = data["track_inventory"]
         if "reorder_level" in data:
