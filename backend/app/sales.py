@@ -434,6 +434,8 @@ def _product_json(item, *, include_cost=False):
         "minimum_selling_price": str(item.minimum_selling_price),
         "track_inventory": item.track_inventory,
         "compliance_required": item.compliance_required,
+        "category_key": item.category_key,
+        "market_country": item.market_country,
         "low_stock_threshold": str(item.low_stock_threshold),
         "created_at": item.created_at.isoformat(),
     }
@@ -1063,6 +1065,121 @@ def create_stock_movement(user, product_id):
     }), 201
 
 
+
+
+@sales_bp.get("/compliance-policies")
+@login_required
+@company_permission_required("manage_product_catalog")
+def list_category_compliance_policies(_user):
+    rows = db.session.scalars(
+        select(CategoryCompliancePolicy)
+        .where(CategoryCompliancePolicy.company_id == _company_id())
+        .order_by(
+            CategoryCompliancePolicy.market_country,
+            CategoryCompliancePolicy.category_key,
+        )
+    ).all()
+    return jsonify({"items": [
+        {
+            "id": str(row.id),
+            "category_key": row.category_key,
+            "market_country": row.market_country,
+            "approval_mode": row.approval_mode,
+            "accepted_authorities": row.accepted_authorities,
+            "updated_at": row.updated_at.isoformat(),
+        }
+        for row in rows
+    ]})
+
+
+@sales_bp.post("/compliance-policies")
+@login_required
+@company_permission_required("manage_product_catalog")
+def save_category_compliance_policy(user):
+    data = _json_object()
+    if data is None:
+        return jsonify({"error": "Send a JSON object."}), 400
+    try:
+        category_key = _text(data, "category_key", 80, required=True, lower=True)
+        if not all(char.isascii() and (char.isalnum() or char in "-_") for char in category_key):
+            raise ValueError("Invalid category key.")
+        market_country = _country_code(data.get("market_country"), required=True)
+        approval_mode = _text(data, "approval_mode", 24, required=True, lower=True)
+        if approval_mode not in {"required", "admin_exception", "not_required"}:
+            raise ValueError("Unsupported category approval mode.")
+        authorities = data.get("accepted_authorities", [])
+        if not isinstance(authorities, list) or len(authorities) > 30:
+            raise ValueError("Accepted authorities must be a list of up to 30 names.")
+        cleaned = []
+        for authority in authorities:
+            if not isinstance(authority, str) or not authority.strip() or len(authority.strip()) > 160:
+                raise ValueError("Each authority must have a valid name.")
+            name = authority.strip()
+            if name.casefold() not in {entry.casefold() for entry in cleaned}:
+                cleaned.append(name)
+        company_id = _company_id()
+        policy = db.session.scalar(
+            select(CategoryCompliancePolicy).where(
+                CategoryCompliancePolicy.company_id == company_id,
+                CategoryCompliancePolicy.category_key == category_key,
+                CategoryCompliancePolicy.market_country == market_country,
+            ).with_for_update()
+        )
+        if policy is None:
+            policy = CategoryCompliancePolicy(
+                company_id=company_id, category_key=category_key,
+                market_country=market_country, approval_mode=approval_mode,
+                accepted_authorities=cleaned, updated_by_user_id=user.id,
+            )
+            db.session.add(policy)
+        else:
+            policy.approval_mode = approval_mode
+            policy.accepted_authorities = cleaned
+            policy.updated_by_user_id = user.id
+        affected = db.session.scalars(
+            select(Product).where(
+                Product.company_id == company_id,
+                Product.category_key == category_key,
+                Product.market_country == market_country,
+            ).with_for_update()
+        ).all()
+        if approval_mode in {"required", "admin_exception"}:
+            for product in affected:
+                product.compliance_required = True
+                batches = db.session.scalars(
+                    select(StockBatch).where(
+                        StockBatch.company_id == company_id,
+                        StockBatch.product_id == product.id,
+                        StockBatch.compliance_status == "approved",
+                        StockBatch.verified_by_user_id.is_(None),
+                    ).with_for_update()
+                ).all()
+                for batch in batches:
+                    batch.compliance_status = "pending_verification"
+        record_audit_event(
+            db.session, user.id, "product_compliance_policy_updated", company_id,
+            {
+                "category_key": category_key, "market_country": market_country,
+                "approval_mode": approval_mode, "accepted_authorities": cleaned,
+                "affected_products": len(affected),
+            },
+        )
+        db.session.commit()
+        return jsonify({"item": {
+            "category_key": policy.category_key,
+            "market_country": policy.market_country,
+            "approval_mode": policy.approval_mode,
+            "accepted_authorities": policy.accepted_authorities,
+            "affected_products": len(affected),
+        }})
+    except ValueError:
+        db.session.rollback()
+        return jsonify({"error": "Invalid category compliance policy."}), 400
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({"error": "A category policy already exists for this market."}), 409
+
+
 @sales_bp.get("/products")
 @login_required
 @company_permission_required("view_reports")
@@ -1110,11 +1227,16 @@ def create_product(user):
             compliance_required=_boolean(
                 data.get("compliance_required", False), "compliance_required"
             ),
+            category_key=_text(data, "category_key", 80, lower=True) or "general",
+            market_country=_country_code(data.get("market_country")),
             low_stock_threshold=_decimal(
                 data.get("low_stock_threshold", "0"), "low_stock_threshold",
                 places=MILLI,
             ),
         )
+        if not all(char.isascii() and (char.isalnum() or char in "-_") for char in item.category_key):
+            raise ValueError("Category must use letters, numbers, hyphens or underscores.")
+        _apply_category_compliance_policy(item)
         if len(item.currency) != 3:
             raise ValueError("Currency must be a 3-letter code, such as TZS.")
         if item.minimum_selling_price < item.cost_price:
@@ -1176,6 +1298,8 @@ def update_product(user, product_id):
         "minimum_selling_price": str(item.minimum_selling_price),
         "track_inventory": item.track_inventory,
         "compliance_required": item.compliance_required,
+        "category_key": item.category_key,
+        "market_country": item.market_country,
         "low_stock_threshold": str(item.low_stock_threshold),
         "currency": item.currency, "is_active": item.is_active,
     }
@@ -1196,11 +1320,18 @@ def update_product(user, product_id):
             )
         if "track_inventory" in data:
             item.track_inventory = _boolean(data["track_inventory"], "track_inventory")
+        if "category_key" in data:
+            item.category_key = _text(data, "category_key", 80, required=True, lower=True)
+            if not all(char.isascii() and (char.isalnum() or char in "-_") for char in item.category_key):
+                raise ValueError("Category must use letters, numbers, hyphens or underscores.")
+        if "market_country" in data:
+            item.market_country = _country_code(data["market_country"])
         if "compliance_required" in data:
             item.compliance_required = _boolean(
                 data["compliance_required"], "compliance_required"
             )
-            if item.compliance_required:
+        _apply_category_compliance_policy(item)
+        if item.compliance_required:
                 existing_batches = db.session.scalars(
                     select(StockBatch).where(
                         StockBatch.company_id == item.company_id,
@@ -1236,6 +1367,8 @@ def update_product(user, product_id):
             "minimum_selling_price": str(item.minimum_selling_price),
             "track_inventory": item.track_inventory,
             "compliance_required": item.compliance_required,
+            "category_key": item.category_key,
+            "market_country": item.market_country,
             "low_stock_threshold": str(item.low_stock_threshold),
             "currency": item.currency, "is_active": item.is_active,
         }
