@@ -739,6 +739,79 @@ def _csv_safe(value):
     return text
 
 
+@sales_bp.get("/reports/discounts/weekly")
+@login_required
+@company_permission_required("view_reports")
+def weekly_discount_report(_user):
+    """Summarize completed-sale discount use by credited seller for one calendar week."""
+    if g.company_membership.role not in {"admin", "manager"}:
+        return jsonify({"error": "You are not allowed to view team discount performance."}), 403
+    today = date.today()
+    default_week_start = today - timedelta(days=today.weekday())
+    try:
+        week_start = date.fromisoformat(
+            request.args.get("week_start", default_week_start.isoformat())
+        )
+        if week_start.weekday() != 0:
+            raise ValueError
+    except (TypeError, ValueError):
+        return jsonify({
+            "error": "Choose a valid Monday as the start of the reporting week."
+        }), 400
+    week_end = week_start + timedelta(days=6)
+    company_id = _company_id()
+    rows = db.session.execute(
+        select(
+            Sale.salesperson_user_id,
+            User.display_name,
+            User.email,
+            Sale.currency,
+            func.count(Sale.id),
+            func.coalesce(func.sum(Sale.subtotal), 0),
+            func.coalesce(func.sum(Sale.discount_amount), 0),
+            func.coalesce(func.sum(Sale.total_amount), 0),
+        )
+        .join(User, User.id == Sale.salesperson_user_id)
+        .where(
+            Sale.company_id == company_id,
+            Sale.status == "completed",
+            Sale.sale_date >= week_start,
+            Sale.sale_date <= week_end,
+        )
+        .group_by(
+            Sale.salesperson_user_id, User.display_name, User.email, Sale.currency
+        )
+        .order_by(User.email, Sale.currency)
+    ).all()
+    salespeople = {}
+    for seller_id, display_name, email, currency, count, subtotal, discount, revenue in rows:
+        seller = salespeople.setdefault(str(seller_id), {
+            "user_id": str(seller_id),
+            "name": display_name or email,
+            "email": email,
+            "by_currency": [],
+        })
+        discount_rate = (
+            (Decimal(str(discount)) * Decimal("100") / Decimal(str(subtotal)))
+            .quantize(CENT, rounding=ROUND_HALF_UP)
+            if Decimal(str(subtotal)) > 0 else Decimal("0.00")
+        )
+        seller["by_currency"].append({
+            "currency": currency,
+            "completed_sales": count,
+            "subtotal": str(subtotal),
+            "discount_total": str(discount),
+            "discount_rate_percent": str(discount_rate),
+            "revenue_after_discount": str(revenue),
+        })
+    return jsonify({
+        "week_start": week_start.isoformat(),
+        "week_end": week_end.isoformat(),
+        "salespeople": list(salespeople.values()),
+        "note": "Conversion rate is not included because this workspace does not yet track leads or opportunities.",
+    })
+
+
 @sales_bp.get("/reports/sales.csv")
 @login_required
 @company_permission_required("view_reports")
