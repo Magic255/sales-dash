@@ -961,6 +961,17 @@ document.querySelector("#inventory-product").addEventListener("change", async (e
   }
 });
 
+function updateInventoryBatchRequirement() {
+  const movement = document.querySelector("#inventory-movement-type").value;
+  document.querySelector("#inventory-batch-code").required =
+    ["received", "returned", "adjustment_increase"].includes(movement);
+}
+
+document.querySelector("#inventory-movement-type").addEventListener(
+  "change", updateInventoryBatchRequirement
+);
+updateInventoryBatchRequirement();
+
 document.querySelector("#inventory-movement-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = event.currentTarget;
