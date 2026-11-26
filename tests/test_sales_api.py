@@ -838,6 +838,15 @@ def test_weekly_discount_report_groups_completed_sales_by_seller_and_currency():
             "net_sales_after_discount": "90.00",
         }]
         assert "does not yet track leads" in report.json["note"]
+        audit = client.get("/api/audit-logs?limit=20")
+        discount_event = next(
+            event for event in audit.json["items"]
+            if event["event_type"] == "discount_applied"
+        )
+        assert discount_event["details"]["old_discount_amount"] == "0.00"
+        assert discount_event["details"]["new_discount_amount"] == "10.00"
+        assert discount_event["details"]["items"][0]["base_unit_price"] == "100.00"
+        assert discount_event["details"]["items"][0]["effective_unit_price"] == "90.00"
         invalid = client.get(
             "/api/reports/discounts/weekly?week_start=2026-11-11"
         )
