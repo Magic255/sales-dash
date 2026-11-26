@@ -21,6 +21,17 @@ from app.models import (
 TEST_EVIDENCE_KEY = Fernet.generate_key().decode("ascii")
 
 
+def _verification_details(source_url="https://tbs.go.tz/certified-product-companies"):
+    return {
+        "authority_role": "standards_body",
+        "verification_method": "official_registry",
+        "verification_source_url": source_url,
+        "verification_reference": "TBS-SYNTHETIC-123",
+        "verified_product_identifier": "Synthetic regulated item / REGULATED-001",
+        "verified_scope": "Product identity, standard and Tanzania market matched",
+    }
+
+
 def _login(client, email, company_id):
     response = client.post("/api/auth/login", json={
         "email": email,
@@ -211,10 +222,25 @@ def test_compliance_required_stock_is_received_to_quarantine_until_independent_v
                 "authority_name": "Tanzania Bureau of Standards",
                 "authority_country": "TZ",
                 "certificate_reference": "TBS-SYNTHETIC-123",
+                **_verification_details(),
                 "evidence_file_id": "00000000-0000-0000-0000-000000000000",
             },
         )
         assert wrong_evidence.status_code == 400
+
+        invalid_source = verifier_client.post(
+            f"/api/stock-batches/{batch_id}/compliance",
+            json={
+                "decision": "approve",
+                "qr_code": "QR-SYNTHETIC-001",
+                "authority_name": "Tanzania Bureau of Standards",
+                "authority_country": "TZ",
+                "certificate_reference": "TBS-SYNTHETIC-123",
+                **_verification_details("http://tbs.go.tz/certified-product-companies"),
+                "evidence_file_id": evidence_file_id,
+            },
+        )
+        assert invalid_source.status_code == 400
 
         approved = verifier_client.post(
             f"/api/stock-batches/{batch_id}/compliance",
@@ -225,6 +251,7 @@ def test_compliance_required_stock_is_received_to_quarantine_until_independent_v
                 "authority_country": "TZ",
                 "standard_reference": "TZS-SYNTHETIC-001",
                 "certificate_reference": "TBS-SYNTHETIC-123",
+                **_verification_details(),
                 "evidence_file_id": evidence_file_id,
             },
         )
@@ -354,6 +381,7 @@ def test_category_market_policy_enforces_quarantine_authorities_and_admin_except
                 "decision": "approve", "qr_code": "SYNTHETIC-QR-FOOD",
                 "authority_name": "Unlisted Authority", "authority_country": "TZ",
                 "certificate_reference": "SYNTHETIC-CERT-1",
+                **_verification_details(),
                 "evidence_file_id": uploaded.json["item"]["id"],
             },
         )
@@ -365,6 +393,7 @@ def test_category_market_policy_enforces_quarantine_authorities_and_admin_except
                 "decision": "approve", "qr_code": "SYNTHETIC-QR-FOOD",
                 "authority_name": "Tanzania Bureau of Standards", "authority_country": "TZ",
                 "certificate_reference": "SYNTHETIC-CERT-1",
+                **_verification_details(),
                 "evidence_file_id": uploaded.json["item"]["id"],
             },
         )
