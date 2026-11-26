@@ -411,6 +411,13 @@ def create_inventory_movement(user):
                 reserved_delta = -quantity
         if movement_type == "received" and batch.expiry_date and batch.expiry_date < date.today():
             raise ValueError("Cannot receive stock into an expired batch.")
+        if (
+            movement_type == "adjusted"
+            and quantity_delta > 0
+            and batch.expiry_date
+            and batch.expiry_date < date.today()
+        ):
+            raise ValueError("Cannot add stock to an expired batch.")
         new_on_hand = on_hand + quantity_delta
         new_reserved = reserved + reserved_delta
         if new_on_hand < 0 or new_reserved < 0 or new_reserved > new_on_hand:
