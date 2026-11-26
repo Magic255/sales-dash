@@ -994,3 +994,58 @@ def test_manager_can_view_weekly_team_discount_report():
         with application.app_context():
             db.session.remove()
             db.drop_all()
+
+
+def test_weekly_discount_report_excludes_drafts_and_separates_currencies():
+    application, client = make_client("admin")
+    try:
+        customer = client.post("/api/customers", json={"name": "Multi Currency Weekly"})
+        assert customer.status_code == 201
+        product_ids = {}
+        for sku, currency in (("WEEK-TZS", "TZS"), ("WEEK-USD", "USD")):
+            response = client.post("/api/products", json={
+                "sku": sku, "name": sku, "unit_price": "100.00",
+                "currency": currency,
+            })
+            assert response.status_code == 201
+            product_ids[currency] = response.json["item"]["id"]
+
+        for currency in ("TZS", "USD"):
+            sale = client.post("/api/sales", json={
+                "customer_id": customer.json["item"]["id"],
+                "currency": currency,
+                "sale_date": "2026-11-24",
+                "discount_amount": "5.00",
+                "items": [{"product_id": product_ids[currency], "quantity": "1"}],
+            })
+            assert sale.status_code == 201
+            completed = client.post(f"/api/sales/{sale.json['item']['id']}/complete")
+            assert completed.status_code == 200
+
+        draft = client.post("/api/sales", json={
+            "customer_id": customer.json["item"]["id"],
+            "currency": "TZS",
+            "sale_date": "2026-11-25",
+            "discount_amount": "50.00",
+            "items": [{"product_id": product_ids["TZS"], "quantity": "1"}],
+        })
+        assert draft.status_code == 201
+
+        report = client.get(
+            "/api/reports/discounts/weekly?week_start=2026-11-23"
+        )
+        assert report.status_code == 200
+        assert len(report.json["salespeople"]) == 1
+        by_currency = {
+            row["currency"]: row
+            for row in report.json["salespeople"][0]["by_currency"]
+        }
+        assert set(by_currency) == {"TZS", "USD"}
+        assert by_currency["TZS"]["completed_sales"] == 1
+        assert by_currency["TZS"]["discount_total"] == "5.00"
+        assert by_currency["USD"]["completed_sales"] == 1
+        assert by_currency["USD"]["discount_total"] == "5.00"
+    finally:
+        with application.app_context():
+            db.session.remove()
+            db.drop_all()
