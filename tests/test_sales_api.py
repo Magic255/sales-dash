@@ -1474,9 +1474,6 @@ def test_discount_approval_notifications_are_recipient_scoped_and_readable():
     try:
         password = "a-very-strong-test-password"
         with application.app_context():
-            salesperson = db.session.query(User).filter_by(
-                email="salesperson@example.test"
-            ).one()
             company = db.session.query(Company).filter_by(
                 slug="sales-api-salesperson"
             ).one()
