@@ -4,7 +4,16 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 from uuid import UUID, uuid4
 
-from sqlalchemy import (CheckConstraint, DateTime, ForeignKey, Integer, LargeBinary, String, Uuid, func)
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Integer,
+    LargeBinary,
+    String,
+    Uuid,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
 from ..company_invitation import CompanyInvitation  # noqa: F401
