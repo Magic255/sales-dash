@@ -60,7 +60,9 @@ def _category_compliance_policy(company_id, category_key, market_country):
             )
         )
         if category_has_market_rules:
-            raise ValueError("Select the product's market country to apply its category compliance policy.")
+            raise ValueError(
+                "Select the product's market country to apply its category compliance policy."
+            )
         return None
     return db.session.scalar(
         select(CategoryCompliancePolicy).where(
@@ -1145,7 +1147,11 @@ def save_category_compliance_policy(user):
             raise ValueError("Accepted authorities must be a list of up to 30 names.")
         cleaned = []
         for authority in authorities:
-            if not isinstance(authority, str) or not authority.strip() or len(authority.strip()) > 160:
+            if (
+                not isinstance(authority, str)
+                or not authority.strip()
+                or len(authority.strip()) > 160
+            ):
                 raise ValueError("Each authority must have a valid name.")
             name = authority.strip()
             if name.casefold() not in {entry.casefold() for entry in cleaned}:
@@ -1269,7 +1275,10 @@ def create_product(user):
                 places=MILLI,
             ),
         )
-        if not all(char.isascii() and (char.isalnum() or char in "-_") for char in item.category_key):
+        if not all(
+            char.isascii() and (char.isalnum() or char in "-_")
+            for char in item.category_key
+        ):
             raise ValueError("Category must use letters, numbers, hyphens or underscores.")
         _apply_category_compliance_policy(item)
         if len(item.currency) != 3:
@@ -1360,7 +1369,10 @@ def update_product(user, product_id):
             item.track_inventory = _boolean(data["track_inventory"], "track_inventory")
         if "category_key" in data:
             item.category_key = _text(data, "category_key", 80, required=True, lower=True)
-            if not all(char.isascii() and (char.isalnum() or char in "-_") for char in item.category_key):
+            if not all(
+                char.isascii() and (char.isalnum() or char in "-_")
+                for char in item.category_key
+            ):
                 raise ValueError("Category must use letters, numbers, hyphens or underscores.")
         if "market_country" in data:
             item.market_country = _country_code(data["market_country"])
