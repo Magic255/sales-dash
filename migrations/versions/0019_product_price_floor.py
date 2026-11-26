@@ -4,8 +4,8 @@ Revision ID: 0019_product_price_floor
 Revises: 0018_discount_approvals
 """
 
-import sqlalchemy as sa
 from alembic import op
+import sqlalchemy as sa
 
 
 revision = "0019_product_price_floor"
