@@ -739,8 +739,9 @@ def create_sale(user):
             sale, customer.name,
             [{"product_name": p.name, "sku": p.sku, "quantity": str(q),
               "unit_price": str(price), "discount_amount": str(discount),
+              "batch_id": str(batch_id) if batch_id else None,
               "line_total": str(line_total)}
-             for p, q, price, discount, line_total in prepared],
+             for p, q, price, discount, line_total, batch_id in prepared],
         )
         result["approval_status"] = (
             approval_request.status if approval_request else None
