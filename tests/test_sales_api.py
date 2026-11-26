@@ -1049,3 +1049,56 @@ def test_weekly_discount_report_excludes_drafts_and_separates_currencies():
         with application.app_context():
             db.session.remove()
             db.drop_all()
+
+
+def test_weekly_discount_report_is_scoped_to_active_company():
+    application, client = make_client("manager")
+    try:
+        with application.app_context():
+            other_user = User(
+                email="other-tenant-seller@example.test",
+                email_verified=True,
+            )
+            other_company = Company(
+                name="Other Tenant", slug="other-weekly-report-tenant"
+            )
+            db.session.add_all([other_user, other_company])
+            db.session.flush()
+            db.session.add(CompanyMembership(
+                user_id=other_user.id,
+                company_id=other_company.id,
+                role="salesperson",
+                status="active",
+            ))
+            other_customer = Customer(
+                company_id=other_company.id,
+                created_by_user_id=other_user.id,
+                name="Other Tenant Customer",
+            )
+            db.session.add(other_customer)
+            db.session.flush()
+            db.session.add(Sale(
+                company_id=other_company.id,
+                sale_number="OTHER-WEEK-001",
+                customer_id=other_customer.id,
+                salesperson_user_id=other_user.id,
+                created_by_user_id=other_user.id,
+                status="completed",
+                sale_date=date(2026, 11, 24),
+                currency="TZS",
+                subtotal=Decimal("1000.00"),
+                discount_amount=Decimal("500.00"),
+                tax_amount=Decimal("0.00"),
+                total_amount=Decimal("500.00"),
+            ))
+            db.session.commit()
+
+        response = client.get(
+            "/api/reports/discounts/weekly?week_start=2026-11-23"
+        )
+        assert response.status_code == 200
+        assert response.json["salespeople"] == []
+    finally:
+        with application.app_context():
+            db.session.remove()
+            db.drop_all()
