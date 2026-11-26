@@ -181,6 +181,10 @@ def _create_discount_approval_if_needed(sale, user, discount_percent, reason):
 
 
 
+class PriceFloorError(ValueError):
+    """A sale violates the configured product minimum selling price."""
+
+
 def _check_price_floor(prepared, order_discount, user, override_reason, sale_id):
     """Check each line after its line discount and proportional order discount."""
     remaining = []
@@ -223,10 +227,10 @@ def _check_price_floor(prepared, order_discount, user, override_reason, sale_id)
         return
     # The authoritative role is the active company membership, not a client field.
     if getattr(getattr(g, "company_membership", None), "role", None) != "admin":
-        raise ValueError("The discount would take a product below its minimum selling price.")
+        raise PriceFloorError("The discount would take a product below its minimum selling price.")
     reason = (override_reason or "").strip()
     if not reason:
-        raise ValueError("An Admin price-floor override requires a reason.")
+        raise PriceFloorError("An Admin price-floor override requires a reason.")
     record_audit_event(
         db.session, user.id, "price_floor_override", _company_id(),
         {"sale_id": str(sale_id) if sale_id else None,
@@ -357,6 +361,9 @@ def create_customer(user):
         db.session.flush()
         result = _customer_json(item)
         db.session.commit()
+    except PriceFloorError as error:
+        db.session.rollback()
+        return jsonify({"error": str(error)}), 400
     except ValueError:
         db.session.rollback()
         return jsonify({"error": "Invalid input. Check the submitted fields and try again."}), 400
@@ -1038,6 +1045,9 @@ def update_draft_sale(user, sale_id):
             approval_request.status if approval_request else None
         )
         db.session.commit()
+    except PriceFloorError as error:
+        db.session.rollback()
+        return jsonify({"error": str(error)}), 400
     except (ValueError, TypeError):
         db.session.rollback()
         return jsonify({"error": "Invalid input. Check the submitted fields and try again."}), 400
