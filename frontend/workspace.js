@@ -536,7 +536,7 @@ async function loadInventoryHistory(productId, generation = workspaceGeneration)
   const body = document.querySelector("#inventory-history-rows");
   body.replaceChildren();
   if (!productId) {
-    emptyRow(body, 6, "Select a tracked product to view its movement history.");
+    emptyRow(body, 8, "Select a tracked product to view its movement history.");
     return;
   }
   const data = await workspaceRequest(
@@ -544,7 +544,7 @@ async function loadInventoryHistory(productId, generation = workspaceGeneration)
   );
   if (generation !== workspaceGeneration) return;
   if (!data.items.length) {
-    emptyRow(body, 6, "No stock movements have been recorded yet.");
+    emptyRow(body, 8, "No stock movements have been recorded yet.");
     return;
   }
   for (const item of data.items) {
@@ -555,9 +555,38 @@ async function loadInventoryHistory(productId, generation = workspaceGeneration)
     const product = products.find((entry) => entry.id === item.product_id);
     textCell(row, product ? product.name : item.product_id);
     textCell(row, inventoryMovementLabels[item.movement_type] || item.movement_type);
+    textCell(row, item.batch_code || "—");
+    textCell(row, item.expiry_date || "—");
     textCell(row, item.quantity);
     textCell(row, item.reason);
     textCell(row, item.reference || "—");
+    body.append(row);
+  }
+}
+
+async function loadInventoryBatches(productId, generation = workspaceGeneration) {
+  const body = document.querySelector("#inventory-batches-rows");
+  body.replaceChildren();
+  if (!productId) {
+    emptyRow(body, 6, "Select a tracked product to view batches.");
+    return;
+  }
+  const data = await workspaceRequest(
+    "/api/products/" + encodeURIComponent(productId) + "/stock-batches"
+  );
+  if (generation !== workspaceGeneration) return;
+  if (!data.items.length) {
+    emptyRow(body, 6, "No batches have been recorded for this product.");
+    return;
+  }
+  for (const batch of data.items) {
+    const row = document.createElement("tr");
+    textCell(row, batch.batch_code);
+    textCell(row, batch.expiry_date || "No expiry date");
+    textCell(row, batch.stock_on_hand);
+    textCell(row, batch.reserved_quantity);
+    textCell(row, batch.available_quantity);
+    textCell(row, batch.status.replaceAll("_", " "));
     body.append(row);
   }
 }
@@ -589,18 +618,23 @@ async function loadInventory(generation = workspaceGeneration) {
     textCell(row, item.stock_on_hand);
     textCell(row, item.reserved_quantity);
     textCell(row, item.available_quantity);
+    textCell(row, item.expired_quantity || "0.000");
     textCell(row, item.low_stock_threshold);
     textCell(row, item.status.replaceAll("_", " "));
     body.append(row);
   }
   if (!data.items.length) {
-    emptyRow(body, 7, "No products currently have inventory tracking enabled.");
+    emptyRow(body, 8, "No products currently have inventory tracking enabled.");
   }
   const current = trackedProducts.some((product) => product.id === previousProductId)
     ? previousProductId : (trackedProducts[0] ? trackedProducts[0].id : "");
   select.value = current;
-  await loadInventoryHistory(current, generation);
+  await Promise.all([
+    loadInventoryHistory(current, generation),
+    loadInventoryBatches(current, generation),
+  ]);
 }
+
 
 async function loadWorkspace() {
   const generation = workspaceGeneration;
@@ -898,6 +932,7 @@ document.addEventListener("salesdash:signed-out", () => {
   document.querySelector("#inventory-message").textContent = "";
   document.querySelector("#inventory-rows").replaceChildren();
   document.querySelector("#inventory-history-rows").replaceChildren();
+  document.querySelector("#inventory-batches-rows").replaceChildren();
   document.querySelector("#discount-approvals-message").textContent = "";
   document.querySelector("#audit-message").textContent = "";
   emptyRow(document.querySelector("#audit-rows"), 4, "Select a company to view activity.");
@@ -917,7 +952,10 @@ document.querySelectorAll("[data-workspace-tab]").forEach((button) => {
 
 document.querySelector("#inventory-product").addEventListener("change", async (event) => {
   try {
-    await loadInventoryHistory(event.currentTarget.value);
+    await Promise.all([
+      loadInventoryHistory(event.currentTarget.value),
+      loadInventoryBatches(event.currentTarget.value),
+    ]);
   } catch (error) {
     document.querySelector("#inventory-message").textContent = error.message;
   }
@@ -944,11 +982,15 @@ document.querySelector("#inventory-movement-form").addEventListener("submit", as
           quantity: document.querySelector("#inventory-quantity").value,
           reason: document.querySelector("#inventory-reason").value,
           reference: document.querySelector("#inventory-reference").value,
+          batch_code: document.querySelector("#inventory-batch-code").value,
+          expiry_date: document.querySelector("#inventory-expiry-date").value || null,
         }),
       }
     );
     document.querySelector("#inventory-reason").value = "";
     document.querySelector("#inventory-reference").value = "";
+    document.querySelector("#inventory-batch-code").value = "";
+    document.querySelector("#inventory-expiry-date").value = "";
     document.querySelector("#inventory-quantity").value = "";
     document.querySelector("#inventory-message").textContent =
       "Stock movement recorded in the inventory ledger.";
