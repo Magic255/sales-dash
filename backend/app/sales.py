@@ -1420,7 +1420,7 @@ def complete_sale(user, sale_id):
         select(Product).where(
             Product.company_id == item.company_id,
             Product.id.in_(product_ids),
-        )
+        ).order_by(Product.id).with_for_update()
     ).all() if product_ids else []
     products_by_id = {product.id: product for product in current_products}
     if len(products_by_id) != len(product_ids):
@@ -1449,6 +1449,33 @@ def complete_sale(user, sale_id):
         )
     except ValueError as error:
         return jsonify({"error": str(error)}), 400
+    tracked_quantities = {}
+    for line in sale_lines:
+        product = products_by_id[line.product_id]
+        if product.track_inventory:
+            tracked_quantities[line.product_id] = (
+                tracked_quantities.get(line.product_id, Decimal("0.000"))
+                + line.quantity
+            )
+    for tracked_product_id, required_quantity in tracked_quantities.items():
+        _on_hand, _reserved, available = _stock_balance(
+            item.company_id, tracked_product_id
+        )
+        if required_quantity > available:
+            return jsonify({
+                "error": "Insufficient available stock for "
+                + products_by_id[tracked_product_id].sku + "."
+            }), 409
+    for tracked_product_id, sold_quantity in tracked_quantities.items():
+        db.session.add(StockMovement(
+            company_id=item.company_id,
+            product_id=tracked_product_id,
+            actor_user_id=user.id,
+            movement_type="sold",
+            quantity=sold_quantity,
+            reason="Stock issued for completed sale " + item.sale_number,
+            reference=item.sale_number,
+        ))
     item.status = "completed"
     db.session.flush()
     result = _sale_json(item)
