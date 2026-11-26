@@ -121,6 +121,7 @@ async function loadDiscountApprovals() {
   if (workspaceRole !== "admin") {
     panel.hidden = true;
     document.querySelector("#discount-approvals-tab").hidden = true;
+  document.querySelector("#weekly-discount-report").hidden = true;
     return;
   }
   message.textContent = "";
@@ -727,6 +728,8 @@ document.addEventListener("salesdash:company-selected", (event) => {
   document.querySelector("#team-tab").hidden = workspaceRole !== "admin";
   document.querySelector("#company-settings-tab").hidden = workspaceRole !== "admin";
   document.querySelector("#discount-approvals-tab").hidden = workspaceRole !== "admin";
+  document.querySelector("#weekly-discount-report").hidden =
+    !["admin", "manager"].includes(workspaceRole);
   const auditPanel = document.querySelector("#audit-panel");
   auditPanel.hidden = workspaceRole !== "admin";
   if (workspaceRole === "admin") {
@@ -944,6 +947,45 @@ async function loadSalesReport() {
     ? "Showing the first 500 matching sales. Narrow the date range for a complete view."
     : data.count + " matching sales.";
 }
+
+async function loadWeeklyDiscountReport() {
+  const weekStart = document.querySelector("#discount-week-start").value;
+  const params = new URLSearchParams();
+  if (weekStart) params.set("week_start", weekStart);
+  const data = await workspaceRequest(
+    "/api/reports/discounts/weekly?" + params.toString()
+  );
+  const body = document.querySelector("#weekly-discount-rows");
+  body.replaceChildren();
+  document.querySelector("#weekly-discount-note").textContent =
+    "Week: " + data.week_start + " to " + data.week_end + ". " + data.note;
+  const rows = data.salespeople.flatMap((seller) =>
+    seller.by_currency.map((summary) => ({seller, summary}))
+  );
+  if (!rows.length) {
+    emptyRow(body, 6, "No completed sales were recorded for this week.");
+    return;
+  }
+  for (const {seller, summary} of rows) {
+    const row = document.createElement("tr");
+    textCell(row, seller.name);
+    textCell(row, summary.currency);
+    textCell(row, String(summary.completed_sales));
+    textCell(row, amount(summary.currency, summary.discount_total));
+    textCell(row, summary.discount_rate_percent + "%");
+    textCell(row, amount(summary.currency, summary.revenue_after_discount));
+    body.append(row);
+  }
+}
+
+document.querySelector("#weekly-discount-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  try {
+    await loadWeeklyDiscountReport();
+  } catch (error) {
+    workspaceMessage(error.message);
+  }
+});
 
 document.querySelector("#report-filter-form").addEventListener("submit", async (event) => {
   event.preventDefault();
