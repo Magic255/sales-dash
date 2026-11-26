@@ -244,7 +244,10 @@ def _inventory_rows(company_id):
             "on_hand": str(on_hand),
             "reserved": str(reserved),
             "available": str(available),
-            "status": status if product.track_inventory else "Not tracked",
+            "status": (
+                "Discontinued" if not product.is_active
+                else status if product.track_inventory else "Not tracked"
+            ),
             "batches": [{
                 **batch,
                 "on_hand": str(batch["on_hand"]),
