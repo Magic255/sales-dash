@@ -1,7 +1,7 @@
 # In-app notifications
 
-SALES DASH stores company-scoped notifications for discount approval requests and
-decisions.
+SALES DASH stores company-scoped notifications for discount approval requests,
+decisions, and inventory batch expiry events.
 
 ## Behaviour
 
@@ -12,6 +12,12 @@ decisions.
 - Notifications are visible from the Notifications tab in the company workspace.
 - Users can mark their own notifications as read.
 - The unread count is scoped to the signed-in user and selected company.
+- Active Admins and Managers receive one alert per batch when remaining stock first
+  appears within 30 days of expiry, and one separate alert when remaining stock is
+  expired.
+- Expired stock is already excluded from sale availability; the alert reports it but
+  does not change stock or sale state.
+- Depleted batches and discontinued products do not generate new expiry alerts.
 
 ## Security
 
@@ -21,11 +27,14 @@ limited to the active company so the application can create notifications for ot
 members of that same company. The runtime database role can SELECT and INSERT, and
 can UPDATE only the `read_at` column; it cannot delete or truncate notifications.
 
-Notifications reference a sale in the same company and the recipient must be an active
-company membership at creation time. The only membership visibility expansion is the
-active Admin user IDs in the selected company, allowing the application to route approval
-alerts without exposing other members' membership details. Synthetic tests cover
-recipient isolation and read-state changes.
+Notifications may reference a sale or a stock batch in the same company, and the
+recipient must be an active company membership at creation time. The membership
+visibility policy exposes only active Admin and Manager IDs in the selected company,
+allowing expiry alerts to be routed without exposing other members' membership details.
+A company/recipient/deduplication key uniqueness constraint prevents repeated or
+concurrent inventory refreshes from creating duplicate alerts. Synthetic tests cover
+recipient-role routing, repeated refreshes, depleted/discontinued stock, and private
+read-state changes.
 
 ## Delivery limits
 
