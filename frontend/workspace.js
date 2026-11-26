@@ -394,9 +394,27 @@ async function loadSales(generation) {
       complete.addEventListener("click", async () => {
         complete.disabled = true;
         try {
-          await workspaceRequest("/api/sales/" + encodeURIComponent(sale.id) + "/complete", {
-            method: "POST", body: "{}",
-          });
+          const path = "/api/sales/" + encodeURIComponent(sale.id) + "/complete";
+          try {
+            await workspaceRequest(path, {method: "POST", body: "{}"});
+          } catch (error) {
+            if (
+              workspaceRole !== "admin" ||
+              !error.message.toLowerCase().includes("override requires a reason")
+            ) throw error;
+            const reason = window.prompt(
+              "This draft is now below a product's minimum price. Enter the reason for the Admin override:"
+            );
+            if (reason === null || !reason.trim()) {
+              workspaceMessage("Completion cancelled. An override reason is required.");
+              complete.disabled = false;
+              return;
+            }
+            await workspaceRequest(path, {
+              method: "POST",
+              body: JSON.stringify({price_floor_override_reason: reason.trim()}),
+            });
+          }
           await loadWorkspace();
         } catch (error) {
           workspaceMessage(error.message);
