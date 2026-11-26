@@ -300,6 +300,20 @@
           <p id="report-totals" class="panel-copy">Completed revenue: —</p>
           <p id="report-limit" class="panel-copy"></p>
           <div class="table-wrap"><table class="data-table"><thead><tr><th>Sale</th><th>Date</th><th>Customer</th><th>Status</th><th>Total</th><th>Items</th></tr></thead><tbody id="report-rows"><tr><td colspan="6">Run a report to see sales.</td></tr></tbody></table></div>
+          <section id="weekly-discount-report" class="report-subpanel" hidden>
+            <h3>Weekly salesperson discount report</h3>
+            <p class="panel-copy">Compare completed sales and discount use by salesperson. Revenue is grouped by currency.</p>
+            <form id="weekly-discount-form" class="record-form report-filter-form">
+              <label for="discount-week-start">Week starting (Monday)</label>
+              <input id="discount-week-start" type="date">
+              <button class="secondary-button" type="submit">Run weekly report</button>
+            </form>
+            <p id="weekly-discount-note" class="panel-copy">Choose a week to review discount performance.</p>
+            <div class="table-wrap"><table class="data-table">
+              <thead><tr><th>Salesperson</th><th>Currency</th><th>Completed sales</th><th>Discount total</th><th>Discount rate</th><th>Revenue after discount</th></tr></thead>
+              <tbody id="weekly-discount-rows"><tr><td colspan="6">Run the weekly report to see results.</td></tr></tbody>
+            </table></div>
+          </section>
         </section>
         <section class="module-panel" data-workspace-panel="discount-approvals" hidden>
           <h3>Discount approval requests</h3>
