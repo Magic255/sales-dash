@@ -1380,7 +1380,7 @@ def update_product(user, product_id):
             item.compliance_required = _boolean(
                 data["compliance_required"], "compliance_required"
             )
-        policy = _apply_category_compliance_policy(item)
+        _apply_category_compliance_policy(item)
         if item.compliance_required:
             compliance_enabled = (
                 not before["compliance_required"] and item.compliance_required
