@@ -1,3 +1,4 @@
+# ruff: noqa: I001
 from decimal import Decimal
 from io import BytesIO
 from uuid import UUID
