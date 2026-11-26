@@ -114,6 +114,64 @@ async function loadAuditLogs(generation = workspaceGeneration) {
   }
 }
 
+async function loadNotifications(generation = workspaceGeneration) {
+  const body = document.querySelector("#notification-rows");
+  const message = document.querySelector("#notifications-message");
+  const tab = document.querySelector("#notifications-tab");
+  if (!body || !message || !tab) return;
+  message.textContent = "";
+  try {
+    const data = await workspaceRequest("/api/notifications");
+    if (generation !== workspaceGeneration) return;
+    tab.textContent = data.unread_count
+      ? "Notifications (" + data.unread_count + ")"
+      : "Notifications";
+    body.replaceChildren();
+    if (!data.items.length) {
+      emptyRow(body, 5, "You have no notifications in this company.");
+      return;
+    }
+    for (const item of data.items) {
+      const row = document.createElement("tr");
+      const created = new Date(item.created_at);
+      textCell(row, Number.isNaN(created.getTime())
+        ? item.created_at : created.toLocaleString());
+      textCell(row, item.title);
+      textCell(row, item.message);
+      textCell(row, item.read_at ? "Read" : "Unread");
+      const actions = document.createElement("td");
+      if (!item.read_at) {
+        const markRead = document.createElement("button");
+        markRead.type = "button";
+        markRead.className = "table-action";
+        markRead.textContent = "Mark read";
+        markRead.addEventListener("click", async () => {
+          markRead.disabled = true;
+          try {
+            await workspaceRequest(
+              "/api/notifications/" + encodeURIComponent(item.id) + "/read",
+              {method: "POST", body: "{}"},
+            );
+            await loadNotifications(generation);
+          } catch (error) {
+            message.textContent = error.message;
+            markRead.disabled = false;
+          }
+        });
+        actions.append(markRead);
+      } else {
+        actions.textContent = "—";
+      }
+      row.append(actions);
+      body.append(row);
+    }
+  } catch (error) {
+    if (generation !== workspaceGeneration) return;
+    emptyRow(body, 5, "Notifications could not be loaded.");
+    message.textContent = error.message;
+  }
+}
+
 async function loadDiscountApprovals() {
   const generation = workspaceGeneration;
   const panel = document.querySelector('[data-workspace-panel="discount-approvals"]');
@@ -173,6 +231,7 @@ async function loadDiscountApprovals() {
             message.textContent = decision === "approve"
               ? "Discount approved." : "Discount request rejected.";
             await loadDiscountApprovals();
+            await loadNotifications();
           } catch (error) {
             message.textContent = error.message;
             button.disabled = false;
@@ -659,6 +718,7 @@ async function loadWorkspace() {
     renderProducts();
     fillSaleChoices();
     await loadSales(generation);
+    await loadNotifications(generation);
     await loadSalesTargets(generation);
     await loadDashboardAnalytics(generation);
     await loadDashboardSalespeople(generation);
@@ -935,6 +995,9 @@ document.addEventListener("salesdash:signed-out", () => {
   document.querySelector("#inventory-history-rows").replaceChildren();
   document.querySelector("#inventory-batches-rows").replaceChildren();
   document.querySelector("#discount-approvals-message").textContent = "";
+  document.querySelector("#notifications-message").textContent = "";
+  document.querySelector("#notification-rows").replaceChildren();
+  document.querySelector("#notifications-tab").textContent = "Notifications";
   document.querySelector("#audit-message").textContent = "";
   emptyRow(document.querySelector("#audit-rows"), 4, "Select a company to view activity.");
   workspace.hidden = true;
@@ -1449,6 +1512,8 @@ async function loadCompanySettings() {
 
 document.querySelector("#company-settings-tab").addEventListener("click", loadCompanySettings);
 document.querySelector("#discount-approvals-tab").addEventListener("click", loadDiscountApprovals);
+document.querySelector("#notifications-tab").addEventListener("click", loadNotifications);
+document.querySelector("#notifications-refresh").addEventListener("click", loadNotifications);
 document.querySelector("#discount-approvals-refresh").addEventListener(
   "click", loadDiscountApprovals,
 );
