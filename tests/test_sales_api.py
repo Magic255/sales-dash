@@ -1346,6 +1346,7 @@ def test_inventory_batches_exclude_expired_stock_and_allocate_fifo():
         item = summary.json["items"][0]
         assert item["stock_on_hand"] == "9.000"
         assert item["expired_quantity"] == "4.000"
+        assert item["expiring_soon_quantity"] == "2.000"
         assert item["available_quantity"] == "5.000"
         assert item["status"] == "available"
 
@@ -1354,6 +1355,7 @@ def test_inventory_batches_exclude_expired_stock_and_allocate_fifo():
         batch_by_code = {row["batch_code"]: row for row in batches.json["items"]}
         assert batch_by_code["EXPIRED-BATCH"]["status"] == "expired"
         assert batch_by_code["EXPIRED-BATCH"]["available_quantity"] == "0.000"
+        assert batch_by_code["FIFO-OLD"]["status"] == "expiring_soon"
 
         sale = client.post("/api/sales", json={
             "customer_id": customer.json["item"]["id"],
