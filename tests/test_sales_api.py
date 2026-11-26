@@ -917,7 +917,7 @@ def test_order_level_discount_cannot_bypass_product_minimum_price():
             "items": [{"product_id": product.json["item"]["id"], "quantity": "1"}],
         })
         assert response.status_code == 400
-        assert "below its minimum selling price" in response.json["error"]
+        assert "override requires a reason" in response.json["error"]
     finally:
         with application.app_context():
             db.session.remove()
