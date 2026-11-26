@@ -66,6 +66,35 @@ def batch_balance(company_id, batch_id):
     return Decimal(str(on_hand)), Decimal(str(reserved))
 
 
+def validate_sale_batch(company_id, product, batch_id, quantity):
+    """Validate a selected batch and its current available quantity for a draft."""
+    if not product.track_inventory:
+        if batch_id:
+            raise ValueError("A batch can only be selected for a tracked product.")
+        return None
+    if not batch_id:
+        raise ValueError(f"Choose a batch for tracked product {product.sku}.")
+    try:
+        parsed_batch_id = UUID(str(batch_id))
+    except (ValueError, TypeError):
+        raise ValueError("Choose a valid inventory batch.") from None
+    batch = db.session.scalar(
+        select(ProductBatch).where(
+            ProductBatch.company_id == company_id,
+            ProductBatch.id == parsed_batch_id,
+            ProductBatch.product_id == product.id,
+        )
+    )
+    if batch is None:
+        raise ValueError("The selected batch does not belong to this product.")
+    if batch.expiry_date and batch.expiry_date < date.today():
+        raise ValueError(f"Batch {batch.batch_code} has expired.")
+    on_hand, reserved = batch_balance(company_id, batch.id)
+    if on_hand - reserved < quantity:
+        raise ValueError(f"Insufficient available stock in batch {batch.batch_code}.")
+    return batch.id
+
+
 def record_sale_stock_movements(session_company_id, sale, user, *, returning=False):
     """Consume or restore tracked sale quantities while holding product/batch locks."""
     from .models import SaleItem
