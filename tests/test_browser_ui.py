@@ -296,10 +296,24 @@ def test_admin_sales_reporting_invitation_and_audit_flows_work_in_browser(browse
             member.update(payload)
             data = {"item": member}
         elif path == "/api/company/settings" and method == "GET":
-            data = {"item": {"name": state["company_name"], "slug": "browser-test-company"}}
+            data = {"item": {
+                "name": state["company_name"],
+                "slug": "browser-test-company",
+                "discount_limits": {
+                    "salesperson_percent": "5.00",
+                    "manager_percent": "15.00",
+                },
+            }}
         elif path == "/api/company/settings" and method == "PATCH":
             state["company_name"] = payload["name"]
-            data = {"item": {"name": state["company_name"], "slug": "browser-test-company"}}
+            data = {"item": {
+                "name": state["company_name"],
+                "slug": "browser-test-company",
+                "discount_limits": {
+                    "salesperson_percent": payload["salesperson_discount_limit"],
+                    "manager_percent": payload["manager_discount_limit"],
+                },
+            }}
         elif path == "/api/team/invitations" and method == "POST":
             invitation = {
                 "id": "invitation-1",
