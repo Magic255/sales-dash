@@ -1121,7 +1121,7 @@ def test_inventory_ledger_receives_reserves_sells_and_restores_voided_sales():
 
         received = client.post(
             f"/api/products/{product_id}/stock-movements",
-            json={"movement_type": "received", "quantity": "5",
+            json={"movement_type": "received", "quantity": "5", "batch_code": "INV-BATCH-1",
                   "reason": "Opening stock received."},
         )
         assert received.status_code == 201
@@ -1205,7 +1205,7 @@ def test_manager_can_receive_stock_but_cannot_make_inventory_adjustments():
 
         received = client.post(
             f"/api/products/{product_id}/stock-movements",
-            json={"movement_type": "received", "quantity": "4",
+            json={"movement_type": "received", "quantity": "4", "batch_code": "MANAGER-BATCH-1",
                   "reason": "Supplier delivery received."},
         )
         assert received.status_code == 201
@@ -1237,7 +1237,7 @@ def test_inventory_tracking_cannot_be_disabled_while_stock_exists():
         product_id = product.json["item"]["id"]
         received = client.post(
             f"/api/products/{product_id}/stock-movements",
-            json={"movement_type": "received", "quantity": "1",
+            json={"movement_type": "received", "quantity": "1", "batch_code": "DISABLE-BATCH-1",
                   "reason": "Opening quantity."},
         )
         assert received.status_code == 201
@@ -1278,6 +1278,7 @@ def test_admin_can_make_reasoned_stock_adjustments():
         increase = client.post(
             f"/api/products/{product_id}/stock-movements",
             json={"movement_type": "adjustment_increase", "quantity": "2",
+                  "batch_code": "ADJUST-BATCH-1",
                   "reason": "Physical count found two extra units."},
         )
         assert increase.status_code == 201
