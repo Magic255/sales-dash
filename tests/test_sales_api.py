@@ -1448,18 +1448,18 @@ def test_discontinued_inventory_is_labelled_and_cannot_be_sold():
             },
         )
         assert received.status_code == 201
-        archived = client.patch(
-            f"/api/products/{product_id}", json={"is_active": False}
-        )
-        assert archived.status_code == 200
-        summary = client.get("/api/inventory")
-        assert summary.json["items"][0]["status"] == "discontinued"
         sale = client.post("/api/sales", json={
             "customer_id": customer.json["item"]["id"],
             "currency": "TZS",
             "items": [{"product_id": product_id, "quantity": "1"}],
         })
         assert sale.status_code == 201
+        archived = client.patch(
+            f"/api/products/{product_id}", json={"is_active": False}
+        )
+        assert archived.status_code == 200
+        summary = client.get("/api/inventory")
+        assert summary.json["items"][0]["status"] == "discontinued"
         blocked = client.post(f"/api/sales/{sale.json['item']['id']}/complete")
         assert blocked.status_code == 409
         assert "Discontinued products" in blocked.json["error"]
