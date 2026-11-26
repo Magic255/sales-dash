@@ -299,6 +299,12 @@ class CategoryCompliancePolicy(db.Model):
             "company_id", "category_key", "market_country",
             name="uq_compliance_policy_company_category_country",
         ),
+        db.ForeignKeyConstraint(
+            ["company_id", "updated_by_user_id"],
+            ["company_memberships.company_id", "company_memberships.user_id"],
+            ondelete="NO ACTION",
+            name="fk_compliance_policy_updater_membership",
+        ),
         CheckConstraint(
             "approval_mode IN ('required', 'admin_exception', 'not_required')",
             name="approval_mode_supported",
