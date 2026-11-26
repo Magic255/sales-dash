@@ -56,7 +56,7 @@ Render supplies PostgreSQL URLs in the standard `postgres://` format. The app co
 
 Do **not** add `ADMIN_DATABASE_URL` or `DATABASE_URL` to the web service. The app intentionally reads only `ADMIN_DATABASE_URL` for operator commands and does not fall back to a generic `DATABASE_URL`, which could contain Render's database-owner credentials. Bind the restricted runtime connection explicitly as `APP_DATABASE_URL` only.
 
-Generate the MFA key in a trusted local operator environment:
+Generate the encryption keys in a trusted local operator environment:
 
 ```bash
 python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
