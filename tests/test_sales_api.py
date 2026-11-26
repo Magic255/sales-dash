@@ -1369,6 +1369,12 @@ def test_inventory_batches_exclude_expired_stock_and_allocate_fifo():
         history = client.get(f"/api/products/{product_id}/stock-movements")
         sold = [row for row in history.json["items"] if row["movement_type"] == "sold"]
         sold_batch_ids = {row["batch_id"] for row in sold}
+        sold_batches = client.get(f"/api/products/{product_id}/stock-batches")
+        sold_by_code = {
+            row["batch_code"]: row for row in sold_batches.json["items"]
+        }
+        assert sold_by_code["FIFO-OLD"]["status"] == "sold"
+        assert sold_by_code["FIFO-NEW"]["status"] == "available"
         assert len(sold) == 2
         assert batch_by_code["EXPIRED-BATCH"]["id"] not in sold_batch_ids
         assert sum(Decimal(row["quantity"]) for row in sold) == Decimal("3.000")
@@ -1418,6 +1424,45 @@ def test_expired_only_inventory_is_reported_and_cannot_complete_sales():
         blocked = client.post(f"/api/sales/{sale.json['item']['id']}/complete")
         assert blocked.status_code == 409
         assert "non-expired" in blocked.json["error"]
+    finally:
+        with application.app_context():
+            db.session.remove()
+            db.drop_all()
+
+
+def test_discontinued_inventory_is_labelled_and_cannot_be_sold():
+    application, client = make_client("admin")
+    try:
+        customer = client.post("/api/customers", json={"name": "Discontinued Customer"})
+        product = client.post("/api/products", json={
+            "sku": "DISCONTINUED-1", "name": "Discontinued Product",
+            "unit_price": "10.00", "currency": "TZS", "track_inventory": True,
+        })
+        product_id = product.json["item"]["id"]
+        received = client.post(
+            f"/api/products/{product_id}/stock-movements",
+            json={
+                "movement_type": "received", "quantity": "2",
+                "batch_code": "DISCONTINUED-BATCH",
+                "reason": "Synthetic stock receipt.",
+            },
+        )
+        assert received.status_code == 201
+        archived = client.patch(
+            f"/api/products/{product_id}", json={"is_active": False}
+        )
+        assert archived.status_code == 200
+        summary = client.get("/api/inventory")
+        assert summary.json["items"][0]["status"] == "discontinued"
+        sale = client.post("/api/sales", json={
+            "customer_id": customer.json["item"]["id"],
+            "currency": "TZS",
+            "items": [{"product_id": product_id, "quantity": "1"}],
+        })
+        assert sale.status_code == 201
+        blocked = client.post(f"/api/sales/{sale.json['item']['id']}/complete")
+        assert blocked.status_code == 409
+        assert "Discontinued products" in blocked.json["error"]
     finally:
         with application.app_context():
             db.session.remove()
