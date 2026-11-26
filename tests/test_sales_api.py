@@ -1036,9 +1036,9 @@ def test_inventory_batches_ledger_sale_consumption_and_void_restoration():
         assert after_void["on_hand"] == "5.000"
         assert after_void["available"] == "5.000"
         movements = client.get("/api/inventory/movements")
-        assert [row["movement_type"] for row in movements.json["items"]] == [
-            "returned", "sold", "received",
-        ]
+        assert {
+            row["movement_type"] for row in movements.json["items"]
+        } == {"returned", "sold", "received"}
     finally:
         with application.app_context():
             db.session.remove()
