@@ -520,6 +520,86 @@ async function loadSales(generation) {
   }
 }
 
+const inventoryMovementLabels = {
+  received: "Received",
+  sold: "Sold",
+  returned: "Returned",
+  damaged: "Damaged",
+  adjustment_increase: "Admin adjustment (+)",
+  adjustment_decrease: "Admin adjustment (−)",
+  reserved: "Reserved",
+  released: "Reservation released",
+};
+
+async function loadInventoryHistory(productId, generation = workspaceGeneration) {
+  const body = document.querySelector("#inventory-history-rows");
+  body.replaceChildren();
+  if (!productId) {
+    emptyRow(body, 6, "Select a tracked product to view its movement history.");
+    return;
+  }
+  const data = await workspaceRequest(
+    "/api/products/" + encodeURIComponent(productId) + "/stock-movements"
+  );
+  if (generation !== workspaceGeneration) return;
+  if (!data.items.length) {
+    emptyRow(body, 6, "No stock movements have been recorded yet.");
+    return;
+  }
+  for (const item of data.items) {
+    const row = document.createElement("tr");
+    const created = new Date(item.created_at);
+    textCell(row, Number.isNaN(created.getTime())
+      ? item.created_at : created.toLocaleString());
+    const product = products.find((entry) => entry.id === item.product_id);
+    textCell(row, product ? product.name : item.product_id);
+    textCell(row, inventoryMovementLabels[item.movement_type] || item.movement_type);
+    textCell(row, item.quantity);
+    textCell(row, item.reason);
+    textCell(row, item.reference || "—");
+    body.append(row);
+  }
+}
+
+async function loadInventory(generation = workspaceGeneration) {
+  if (!["admin", "manager"].includes(workspaceRole)) return;
+  const body = document.querySelector("#inventory-rows");
+  const select = document.querySelector("#inventory-product");
+  const data = await workspaceRequest("/api/inventory");
+  if (generation !== workspaceGeneration) return;
+  body.replaceChildren();
+  select.replaceChildren();
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  placeholder.textContent = "Choose a tracked product";
+  select.append(placeholder);
+  const trackedProducts = products.filter((product) => product.track_inventory);
+  for (const product of trackedProducts) {
+    const option = document.createElement("option");
+    option.value = product.id;
+    option.textContent = product.sku + " — " + product.name;
+    select.append(option);
+  }
+  for (const item of data.items) {
+    const row = document.createElement("tr");
+    textCell(row, item.sku);
+    textCell(row, item.name);
+    textCell(row, item.stock_on_hand);
+    textCell(row, item.reserved_quantity);
+    textCell(row, item.available_quantity);
+    textCell(row, item.low_stock_threshold);
+    textCell(row, item.status.replaceAll("_", " "));
+    body.append(row);
+  }
+  if (!data.items.length) {
+    emptyRow(body, 7, "No products currently have inventory tracking enabled.");
+  }
+  const current = trackedProducts.some((product) => product.id === select.value)
+    ? select.value : (trackedProducts[0] ? trackedProducts[0].id : "");
+  select.value = current;
+  await loadInventoryHistory(current, generation);
+}
+
 async function loadWorkspace() {
   const generation = workspaceGeneration;
   workspaceMessage("Loading company data…");
@@ -545,6 +625,9 @@ async function loadWorkspace() {
     await loadSalesTargets(generation);
     await loadDashboardAnalytics(generation);
     await loadDashboardSalespeople(generation);
+    if (["admin", "manager"].includes(workspaceRole)) {
+      await loadInventory(generation);
+    }
     if (generation === workspaceGeneration) {
       workspaceMessage("Company data is up to date.");
     }
