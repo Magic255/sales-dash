@@ -18,11 +18,11 @@ ROLE_PERMISSIONS = {
         "view_dashboard", "view_reports", "create_sales", "edit_sales",
         "delete_sales", "manage_products", "manage_team", "manage_company_settings",
         "view_audit_logs", "manage_customers", "manage_sales_targets",
-        "manage_product_catalog", "manage_discount_approvals",
+        "manage_product_catalog", "manage_discount_approvals", "manage_inventory",
     }),
     "manager": frozenset({
         "view_dashboard", "view_reports", "create_sales", "edit_sales",
-        "manage_products", "manage_customers", "manage_sales_targets",
+        "manage_products", "manage_customers", "manage_sales_targets", "manage_inventory",
     }),
     "salesperson": frozenset({"view_dashboard", "view_reports", "create_sales"}),
     "viewer": frozenset({"view_dashboard", "view_reports"}),
