@@ -399,7 +399,7 @@ def test_admin_sales_reporting_invitation_and_audit_flows_work_in_browser(browse
             page.locator("#company-settings-tab").click()
             expect(page.locator("#company-settings-name")).to_have_value("Browser Test Company")
             page.locator("#company-settings-name").fill("Updated Browser Company")
-            page.get_by_role("button", name="Save company name").click()
+            page.get_by_role("button", name="Save company settings").click()
             expect(page.locator("#company-settings-message")).to_contain_text(
                 "Company name updated."
             )
