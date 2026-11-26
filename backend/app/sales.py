@@ -766,6 +766,8 @@ def update_product(user, product_id):
             "sku": item.sku, "name": item.name, "description": item.description,
             "unit_price": str(item.unit_price), "cost_price": str(item.cost_price),
             "minimum_selling_price": str(item.minimum_selling_price),
+            "track_inventory": item.track_inventory,
+            "low_stock_threshold": str(item.low_stock_threshold),
             "currency": item.currency, "is_active": item.is_active,
         }
         if before != after:
