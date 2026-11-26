@@ -522,6 +522,93 @@ async function loadSales(generation) {
   }
 }
 
+function fillInventoryBatchOptions(select, productId, availableOnly = false) {
+  select.replaceChildren(new Option("Choose a batch", ""));
+  const product = inventorySummary.find((item) => item.product_id === productId);
+  if (!product) return;
+  for (const batch of product.batches) {
+    const available = Number(batch.on_hand) - Number(batch.reserved);
+    const expired = batch.expiry_date && batch.expiry_date < localDate();
+    if (availableOnly && (available <= 0 || expired)) continue;
+    const expiry = batch.expiry_date ? " · expires " + batch.expiry_date : "";
+    select.add(new Option(
+      batch.batch_code + " · available " + available.toFixed(3) + expiry,
+      batch.id,
+    ));
+  }
+}
+
+function fillSaleBatchChoices() {
+  const productId = document.querySelector("#sale-product").value;
+  const product = products.find((item) => item.id === productId);
+  const field = document.querySelector("#sale-batch-field");
+  const select = document.querySelector("#sale-batch");
+  field.hidden = !product || !product.track_inventory;
+  select.required = Boolean(product && product.track_inventory);
+  fillInventoryBatchOptions(select, productId, true);
+}
+
+async function loadInventory(generation = workspaceGeneration) {
+  const data = await workspaceRequest("/api/inventory");
+  if (generation !== workspaceGeneration) return;
+  inventorySummary = data.items;
+  const body = document.querySelector("#inventory-rows");
+  body.replaceChildren();
+  if (!inventorySummary.length) {
+    emptyRow(body, 7, "No products are registered in this company.");
+  } else {
+    for (const item of inventorySummary) {
+      const row = document.createElement("tr");
+      textCell(row, item.sku);
+      textCell(row, item.name);
+      textCell(row, item.track_inventory ? item.on_hand : "—");
+      textCell(row, item.track_inventory ? item.reserved : "—");
+      textCell(row, item.track_inventory ? item.available : "—");
+      textCell(row, item.track_inventory ? item.reorder_level : "—");
+      textCell(row, item.status);
+      body.append(row);
+    }
+  }
+  const trackedProducts = products.filter((item) => item.track_inventory && item.is_active);
+  for (const id of ["inventory-batch-product", "inventory-movement-product"]) {
+    const select = document.querySelector("#" + id);
+    const current = select.value;
+    select.replaceChildren(new Option("Choose a tracked product", ""));
+    trackedProducts.forEach((item) => select.add(new Option(item.name + " · " + item.sku, item.id)));
+    if (trackedProducts.some((item) => item.id === current)) select.value = current;
+  }
+  fillInventoryBatchOptions(
+    document.querySelector("#inventory-movement-batch"),
+    document.querySelector("#inventory-movement-product").value,
+  );
+  fillInventoryBatchOptions(
+    document.querySelector("#inventory-batch-product"),
+    document.querySelector("#inventory-batch-product").value,
+  );
+  fillSaleBatchChoices();
+
+  const movementData = await workspaceRequest("/api/inventory/movements");
+  if (generation !== workspaceGeneration) return;
+  const movementBody = document.querySelector("#inventory-movement-rows");
+  movementBody.replaceChildren();
+  if (!movementData.items.length) {
+    emptyRow(movementBody, 6, "No stock movements have been recorded yet.");
+  } else {
+    for (const movement of movementData.items) {
+      const row = document.createElement("tr");
+      textCell(row, new Date(movement.created_at).toLocaleString());
+      textCell(row, movement.product_name + " · " + movement.sku);
+      textCell(row, movement.batch_code);
+      textCell(row, movement.movement_type);
+      textCell(row, movement.quantity_delta !== "0.000"
+        ? movement.quantity_delta
+        : "Reserved " + movement.reserved_delta);
+      textCell(row, movement.reason);
+      movementBody.append(row);
+    }
+  }
+}
+
 async function loadWorkspace() {
   const generation = workspaceGeneration;
   workspaceMessage("Loading company data…");
@@ -543,6 +630,7 @@ async function loadWorkspace() {
     renderCustomers();
     renderProducts();
     fillSaleChoices();
+    await loadInventory(generation);
     await loadSales(generation);
     await loadSalesTargets(generation);
     await loadDashboardAnalytics(generation);
