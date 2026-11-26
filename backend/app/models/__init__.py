@@ -230,6 +230,7 @@ class Product(db.Model):
         CheckConstraint("cost_price >= 0", name="cost_price_nonnegative"),
         CheckConstraint("minimum_selling_price >= cost_price", name="minimum_price_covers_cost"),
         CheckConstraint("unit_price >= minimum_selling_price", name="unit_price_covers_floor"),
+        CheckConstraint("low_stock_threshold >= 0", name="low_stock_threshold_nonnegative"),
         CheckConstraint(
             "currency = upper(currency) AND length(currency) = 3",
             name="currency_iso_code",
