@@ -1220,3 +1220,32 @@ def test_manager_can_receive_stock_but_cannot_make_inventory_adjustments():
         with application.app_context():
             db.session.remove()
             db.drop_all()
+
+
+def test_inventory_tracking_cannot_be_disabled_while_stock_exists():
+    application, client = make_client("admin")
+    try:
+        product = client.post("/api/products", json={
+            "sku": "INV-DISABLE-1", "name": "Inventory Locked Product",
+            "unit_price": "25.00", "cost_price": "10.00",
+            "minimum_selling_price": "15.00", "currency": "TZS",
+            "track_inventory": True,
+        })
+        assert product.status_code == 201
+        product_id = product.json["item"]["id"]
+        received = client.post(
+            f"/api/products/{product_id}/stock-movements",
+            json={"movement_type": "received", "quantity": "1",
+                  "reason": "Opening quantity."},
+        )
+        assert received.status_code == 201
+        disabled = client.patch(
+            f"/api/products/{product_id}",
+            json={"track_inventory": False},
+        )
+        assert disabled.status_code == 409
+        assert "cannot be disabled" in disabled.json["error"]
+    finally:
+        with application.app_context():
+            db.session.remove()
+            db.drop_all()
