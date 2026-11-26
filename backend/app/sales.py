@@ -17,6 +17,7 @@ from .models import (
     Company,
     CompanyMembership,
     Customer,
+    AppNotification,
     DiscountApprovalRequest,
     Product,
     Sale,
@@ -133,6 +134,19 @@ def _latest_discount_approval(sale_id, company_id):
     )
 
 
+def _queue_notification(
+    company_id, recipient_user_id, notification_type, title, message, sale_id=None
+):
+    db.session.add(AppNotification(
+        company_id=company_id,
+        recipient_user_id=recipient_user_id,
+        related_sale_id=sale_id,
+        notification_type=notification_type,
+        title=title,
+        message=message,
+    ))
+
+
 def _create_discount_approval_if_needed(sale, user, discount_percent, reason):
     company = db.session.get(Company, sale.company_id)
     # Discount authority follows the credited salesperson, not the member
@@ -179,6 +193,25 @@ def _create_discount_approval_if_needed(sale, user, discount_percent, reason):
             "role_limit_percent": str(limit),
         },
     )
+    admins = db.session.scalars(
+        select(CompanyMembership).where(
+            CompanyMembership.company_id == sale.company_id,
+            CompanyMembership.role == "admin",
+            CompanyMembership.status == "active",
+        )
+    ).all()
+    for admin in admins:
+        _queue_notification(
+            sale.company_id,
+            admin.user_id,
+            "discount_approval_requested",
+            "Discount approval needed",
+            (
+                f"Sale {sale.sale_number} needs approval for a "
+                f"{discount_percent}% discount. Reason: {reason}"
+            )[:500],
+            sale.id,
+        )
     return approval
 
 
@@ -1579,6 +1612,17 @@ def decide_discount_approval(user, approval_id):
             "requester_user_id": str(approval.requested_by_user_id),
         },
     )
+    _queue_notification(
+        company_id,
+        approval.requested_by_user_id,
+        "discount_approval_decided",
+        "Discount request " + approval.status,
+        (
+            f"Your discount request for sale {sale.sale_number} was "
+            f"{approval.status} by an Admin."
+        ),
+        sale.id,
+    )
     db.session.commit()
     return jsonify({"item": {
         "id": str(approval.id),
@@ -1586,6 +1630,68 @@ def decide_discount_approval(user, approval_id):
         "approver_user_id": str(approval.approver_user_id),
         "decided_at": approval.decided_at.isoformat(),
     }})
+
+
+def _notification_json(item):
+    return {
+        "id": str(item.id),
+        "notification_type": item.notification_type,
+        "title": item.title,
+        "message": item.message,
+        "related_sale_id": str(item.related_sale_id) if item.related_sale_id else None,
+        "read_at": item.read_at.isoformat() if item.read_at else None,
+        "created_at": item.created_at.isoformat(),
+    }
+
+
+@sales_bp.get("/notifications")
+@login_required
+@company_permission_required("view_dashboard")
+def list_notifications(user):
+    company_id = _company_id()
+    rows = db.session.scalars(
+        select(AppNotification)
+        .where(
+            AppNotification.company_id == company_id,
+            AppNotification.recipient_user_id == user.id,
+        )
+        .order_by(AppNotification.created_at.desc(), AppNotification.id.desc())
+        .limit(50)
+    ).all()
+    unread_count = db.session.scalar(
+        select(func.count()).select_from(AppNotification).where(
+            AppNotification.company_id == company_id,
+            AppNotification.recipient_user_id == user.id,
+            AppNotification.read_at.is_(None),
+        )
+    ) or 0
+    return jsonify({
+        "items": [_notification_json(item) for item in rows],
+        "unread_count": unread_count,
+    })
+
+
+@sales_bp.post("/notifications/<uuid:notification_id>/read")
+@login_required
+@company_permission_required("view_dashboard")
+def mark_notification_read(user, notification_id):
+    item = db.session.scalar(
+        select(AppNotification)
+        .where(
+            AppNotification.id == notification_id,
+            AppNotification.company_id == _company_id(),
+            AppNotification.recipient_user_id == user.id,
+        )
+        .with_for_update()
+    )
+    if item is None:
+        return jsonify({"error": "Notification not found."}), 404
+    if item.read_at is None:
+        item.read_at = datetime.now(timezone.utc)
+        db.session.flush()
+    result = _notification_json(item)
+    db.session.commit()
+    return jsonify({"item": result})
 
 
 @sales_bp.post("/sales/<uuid:sale_id>/complete")
