@@ -773,7 +773,7 @@ def weekly_discount_report(_user):
             func.count(Sale.id),
             func.coalesce(func.sum(Sale.subtotal), 0),
             func.coalesce(func.sum(Sale.discount_amount), 0),
-            func.coalesce(func.sum(Sale.total_amount), 0),
+            func.coalesce(func.sum(Sale.subtotal - Sale.discount_amount), 0),
         )
         .join(User, User.id == Sale.salesperson_user_id)
         .where(
@@ -806,7 +806,7 @@ def weekly_discount_report(_user):
             "subtotal": str(subtotal),
             "discount_total": str(discount),
             "discount_rate_percent": str(discount_rate),
-            "revenue_after_discount": str(revenue),
+            "net_sales_after_discount": str(revenue),
         })
     return jsonify({
         "week_start": week_start.isoformat(),
