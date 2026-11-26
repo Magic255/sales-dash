@@ -50,6 +50,72 @@ def _discount_percent(discount, subtotal):
     return (discount * Decimal("100") / subtotal).quantize(CENT, rounding=ROUND_HALF_UP)
 
 
+def _record_discount_application(
+    sale, user, prepared, order_discount, discount_percent,
+    approval_request, previous_discount_amount,
+):
+    """Write an immutable audit event for every sale discount change."""
+    if sale.discount_amount <= 0 and previous_discount_amount <= 0:
+        return
+    remaining = []
+    for row in prepared:
+        if len(row) == 5:
+            product, quantity, unit_price, line_discount, line_total = row
+        else:
+            product, quantity, line_discount, line_total = row
+            unit_price = product.unit_price
+        remaining.append((
+            product, quantity, unit_price, line_discount, line_total
+        ))
+    remaining_total = sum((row[4] for row in remaining), Decimal("0.00"))
+    allocated = Decimal("0.00")
+    item_details = []
+    for index, (product, quantity, unit_price, line_discount, line_total) in enumerate(remaining):
+        if index == len(remaining) - 1:
+            order_share = order_discount - allocated
+        elif remaining_total > 0:
+            order_share = (
+                order_discount * line_total / remaining_total
+            ).quantize(CENT, rounding=ROUND_DOWN)
+            allocated += order_share
+        else:
+            order_share = Decimal("0.00")
+        effective_unit = (
+            (line_total - order_share) / quantity
+        ).quantize(CENT, rounding=ROUND_DOWN)
+        item_details.append({
+            "product_id": str(product.id),
+            "sku": product.sku,
+            "base_unit_price": str(unit_price),
+            "effective_unit_price": str(effective_unit),
+            "line_discount": str(line_discount),
+            "allocated_order_discount": str(order_share),
+        })
+    record_audit_event(
+        db.session,
+        user.id,
+        "discount_applied",
+        sale.company_id,
+        {
+            "sale_id": str(sale.id),
+            "sale_number": sale.sale_number,
+            "currency": sale.currency,
+            "old_discount_amount": str(previous_discount_amount),
+            "new_discount_amount": str(sale.discount_amount),
+            "discount_percent": str(discount_percent),
+            "approval_request_id": (
+                str(approval_request.id) if approval_request else None
+            ),
+            "approval_status": approval_request.status if approval_request else None,
+            "approver_user_id": (
+                str(approval_request.approver_user_id)
+                if approval_request and approval_request.approver_user_id else None
+            ),
+            "items": item_details,
+        },
+    )
+
+
 def _latest_discount_approval(sale_id, company_id):
     return db.session.scalar(
         select(DiscountApprovalRequest)
@@ -599,6 +665,10 @@ def create_sale(user):
         approval_request = _create_discount_approval_if_needed(
             sale, user, discount_percent, approval_reason
         )
+        _record_discount_application(
+            sale, user, prepared, order_discount, discount_percent,
+            approval_request, Decimal("0.00"),
+        )
         for product, quantity, unit_price, discount, line_total in prepared:
             db.session.add(SaleItem(
                 company_id=company_id, sale_id=sale.id, product_id=product.id,
@@ -923,6 +993,7 @@ def update_draft_sale(user, sale_id):
         sale_date = _parse_report_date(
             data.get("sale_date") or sale.sale_date.isoformat(), "Sale date"
         )
+        previous_discount_amount = sale.discount_amount
         sale.customer_id = customer.id
         sale.currency = currency
         sale.sale_date = sale_date
@@ -939,6 +1010,10 @@ def update_draft_sale(user, sale_id):
         db.session.flush()
         approval_request = _create_discount_approval_if_needed(
             sale, user, discount_percent, approval_reason
+        )
+        _record_discount_application(
+            sale, user, prepared, order_discount, discount_percent,
+            approval_request, previous_discount_amount,
         )
         for product, quantity, discount, line_total in prepared:
             db.session.add(SaleItem(
