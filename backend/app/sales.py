@@ -895,9 +895,13 @@ def verify_stock_batch_compliance(user, batch_id):
                 data, "evidence_reference", 500, required=True
             )
             standard_reference = _text(data, "standard_reference", 160)
-            if policy and policy.accepted_authorities and authority_name.casefold() not in {
-                value.casefold() for value in policy.accepted_authorities
-            }:
+            if (
+                policy
+                and policy.approval_mode in {"required", "admin_exception"}
+                and authority_name.casefold() not in {
+                    value.casefold() for value in policy.accepted_authorities
+                }
+            ):
                 raise ValueError("The issuing authority is not on this category policy allow-list.")
             batch.qr_code = qr_code
             batch.authority_name = authority_name
@@ -1145,6 +1149,8 @@ def save_category_compliance_policy(user):
         authorities = data.get("accepted_authorities", [])
         if not isinstance(authorities, list) or len(authorities) > 30:
             raise ValueError("Accepted authorities must be a list of up to 30 names.")
+        if approval_mode == "required" and not authorities:
+            raise ValueError("Add at least one accepted authority for a required-approval policy.")
         cleaned = []
         for authority in authorities:
             if (
