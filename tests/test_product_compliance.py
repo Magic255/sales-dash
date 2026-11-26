@@ -165,3 +165,148 @@ def test_compliance_required_stock_is_received_to_quarantine_until_independent_v
         with app.app_context():
             db.session.remove()
             db.drop_all()
+
+
+def test_category_market_policy_enforces_quarantine_authorities_and_admin_exceptions():
+    app = create_app({
+        "TESTING": True,
+        "SECRET_KEY": "category-policy-test-secret",
+        "SQLALCHEMY_DATABASE_URI": "sqlite://",
+        "WTF_CSRF_ENABLED": False,
+        "RATELIMIT_ENABLED": False,
+    })
+    try:
+        with app.app_context():
+            db.create_all()
+            admin = User(
+                email="policy-admin@example.test",
+                password_hash=PasswordHasher().hash("a-very-strong-test-password"),
+                email_verified=True,
+            )
+            manager = User(
+                email="policy-manager@example.test",
+                password_hash=PasswordHasher().hash("a-very-strong-test-password"),
+                email_verified=True,
+            )
+            company = Company(name="Policy Test", slug="policy-test")
+            db.session.add_all([admin, manager, company])
+            db.session.flush()
+            db.session.add_all([
+                CompanyMembership(
+                    user_id=admin.id, company_id=company.id,
+                    role="admin", status="active",
+                ),
+                CompanyMembership(
+                    user_id=manager.id, company_id=company.id,
+                    role="manager", status="active",
+                ),
+            ])
+            product = Product(
+                company_id=company.id, created_by_user_id=admin.id,
+                sku="FOOD-001", name="Synthetic food product",
+                unit_price=Decimal("12.00"), currency="TZS",
+                track_inventory=True, category_key="food", market_country="TZ",
+            )
+            exception_product = Product(
+                company_id=company.id, created_by_user_id=admin.id,
+                sku="TOOLS-001", name="Synthetic tools product",
+                unit_price=Decimal("15.00"), currency="TZS",
+                track_inventory=True, category_key="tools", market_country="TZ",
+            )
+            db.session.add_all([product, exception_product])
+            db.session.commit()
+            company_id = str(company.id)
+            product_id = str(product.id)
+            exception_product_id = str(exception_product.id)
+
+        admin_client = app.test_client()
+        manager_client = app.test_client()
+        _login(admin_client, "policy-admin@example.test", company_id)
+        _login(manager_client, "policy-manager@example.test", company_id)
+
+        required = admin_client.post("/api/compliance-policies", json={
+            "category_key": "food",
+            "market_country": "tz",
+            "approval_mode": "required",
+            "accepted_authorities": ["Tanzania Bureau of Standards"],
+        })
+        assert required.status_code == 200
+        assert required.json["item"]["approval_mode"] == "required"
+        product_data = admin_client.get("/api/products?include_inactive=true").json["items"]
+        regulated = next(item for item in product_data if item["id"] == product_id)
+        assert regulated["compliance_required"] is True
+
+        receipt = manager_client.post(
+            f"/api/products/{product_id}/stock-movements",
+            json={
+                "movement_type": "received", "quantity": "5",
+                "reason": "Synthetic category policy receipt",
+                "batch_code": "FOOD-LOT-001",
+            },
+        )
+        assert receipt.status_code == 201
+        batch_id = receipt.json["item"]["batch_id"]
+        batches = manager_client.get(
+            f"/api/products/{product_id}/stock-batches"
+        ).json["items"]
+        assert batches[0]["compliance_status"] == "pending_verification"
+
+        unknown_authority = admin_client.post(
+            f"/api/stock-batches/{batch_id}/compliance",
+            json={
+                "decision": "approve", "qr_code": "SYNTHETIC-QR-FOOD",
+                "authority_name": "Unlisted Authority", "authority_country": "TZ",
+                "certificate_reference": "SYNTHETIC-CERT-1",
+                "evidence_reference": "private-evidence-food-1",
+            },
+        )
+        assert unknown_authority.status_code == 400
+
+        verified = admin_client.post(
+            f"/api/stock-batches/{batch_id}/compliance",
+            json={
+                "decision": "approve", "qr_code": "SYNTHETIC-QR-FOOD",
+                "authority_name": "Tanzania Bureau of Standards", "authority_country": "TZ",
+                "certificate_reference": "SYNTHETIC-CERT-1",
+                "evidence_reference": "private-evidence-food-1",
+            },
+        )
+        assert verified.status_code == 200
+        assert verified.json["item"]["compliance_status"] == "approved"
+
+        exception_policy = admin_client.post("/api/compliance-policies", json={
+            "category_key": "tools", "market_country": "TZ",
+            "approval_mode": "admin_exception", "accepted_authorities": [],
+        })
+        assert exception_policy.status_code == 200
+        exception_receipt = manager_client.post(
+            f"/api/products/{exception_product_id}/stock-movements",
+            json={
+                "movement_type": "received", "quantity": "2",
+                "reason": "Synthetic Admin exception receipt",
+                "batch_code": "TOOLS-LOT-001",
+            },
+        )
+        assert exception_receipt.status_code == 201
+        exception_batch_id = exception_receipt.json["item"]["batch_id"]
+        manager_exception = manager_client.post(
+            f"/api/stock-batches/{exception_batch_id}/compliance",
+            json={"decision": "exception", "notes": "Manager must not override."},
+        )
+        assert manager_exception.status_code == 403
+        admin_exception = admin_client.post(
+            f"/api/stock-batches/{exception_batch_id}/compliance",
+            json={"decision": "exception", "notes": "Synthetic documented exception."},
+        )
+        assert admin_exception.status_code == 200
+        assert admin_exception.json["item"]["compliance_status"] == "exception_approved"
+
+        not_required = admin_client.post("/api/compliance-policies", json={
+            "category_key": "stationery", "market_country": "TZ",
+            "approval_mode": "not_required", "accepted_authorities": [],
+        })
+        assert not_required.status_code == 200
+    finally:
+        with app.app_context():
+            db.session.remove()
+            db.drop_all()
