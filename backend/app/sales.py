@@ -1091,6 +1091,44 @@ def complete_sale(user, sale_id):
                 "error": "The discount request was not approved. "
                 "Update the sale or request approval again."
             }), 409
+    sale_lines = db.session.scalars(
+        select(SaleItem).where(
+            SaleItem.sale_id == item.id,
+            SaleItem.company_id == item.company_id,
+        )
+    ).all()
+    product_ids = {line.product_id for line in sale_lines}
+    current_products = db.session.scalars(
+        select(Product).where(
+            Product.company_id == item.company_id,
+            Product.id.in_(product_ids),
+        )
+    ).all() if product_ids else []
+    products_by_id = {product.id: product for product in current_products}
+    if len(products_by_id) != len(product_ids):
+        return jsonify({"error": "A product on this sale is no longer available for price validation."}), 409
+    line_discount_total = sum(
+        (line.discount_amount for line in sale_lines), Decimal("0.00")
+    )
+    order_discount = item.discount_amount - line_discount_total
+    try:
+        request_data = request.get_json(silent=True) or {}
+        override_reason = _text(
+            request_data, "price_floor_override_reason", 1000
+        ) if isinstance(request_data, dict) else ""
+        _check_price_floor(
+            [
+                (products_by_id[line.product_id], line.quantity,
+                 line.discount_amount, line.line_total)
+                for line in sale_lines
+            ],
+            max(order_discount, Decimal("0.00")),
+            user,
+            override_reason,
+            item.id,
+        )
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 400
     item.status = "completed"
     db.session.flush()
     result = _sale_json(item)
