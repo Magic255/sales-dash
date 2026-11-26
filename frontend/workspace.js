@@ -668,21 +668,26 @@ async function loadInventoryBatches(productId, generation = workspaceGeneration)
     textCell(row, batch.compliance_status.replaceAll("_", " "));
     textCell(row, batch.status.replaceAll("_", " "));
     const actions = document.createElement("td");
-    if (["pending_verification", "approved"].includes(batch.compliance_status)) {
+    if (["pending_verification", "approved", "exception_approved"].includes(batch.compliance_status)) {
       const review = document.createElement("button");
       review.type = "button";
       review.className = "table-action";
-      review.textContent = batch.compliance_status === "approved" ? "Recall" : "Review";
+      review.textContent = ["approved", "exception_approved"].includes(batch.compliance_status) ? "Recall" : "Review";
       review.addEventListener("click", async () => {
-        const decision = batch.compliance_status === "approved"
+        const decision = ["approved", "exception_approved"].includes(batch.compliance_status)
           ? "recall" : window.prompt(
-            "Record an evidence-based decision: enter approve or reject. QR text alone is not proof.",
+            workspaceRole === "admin"
+              ? "Evidence-based decision: approve, reject, or exception (if the policy allows it). QR text alone is not proof."
+              : "Evidence-based decision: approve or reject. QR text alone is not proof.",
             "approve"
           );
         if (!decision) return;
         const normalized = decision.trim().toLowerCase();
-        if (!["approve", "reject", "recall"].includes(normalized)) {
-          return workspaceMessage("Choose approve, reject or recall.");
+        const allowedDecisions = workspaceRole === "admin"
+          ? ["approve", "reject", "recall", "exception"]
+          : ["approve", "reject", "recall"];
+        if (!allowedDecisions.includes(normalized)) {
+          return workspaceMessage("Choose one of the available compliance decisions.");
         }
         const payload = {decision: normalized};
         if (normalized === "approve") {
