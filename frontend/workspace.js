@@ -575,7 +575,7 @@ async function loadInventory(generation = workspaceGeneration) {
     product.batches.map((batch) => ({product, batch}))
   );
   if (!batchRows.length) {
-    emptyRow(batchBody, 7, "No product batches have been created yet.");
+    emptyRow(batchBody, 8, "No product batches have been created yet.");
   } else {
     for (const {product, batch} of batchRows) {
       const row = document.createElement("tr");
@@ -588,8 +588,13 @@ async function loadInventory(generation = workspaceGeneration) {
       textCell(row, batch.batch_code);
       textCell(row, batch.expiry_date || "No expiry date");
       textCell(row, batch.on_hand);
+      textCell(row, batch.reserved);
       textCell(row, available.toFixed(3));
-      textCell(row, expired ? "Expired" : available > 0 ? "Available" : "Out of stock");
+      textCell(
+        row,
+        expired ? "Expired" : available > 0 ? "Available"
+          : Number(batch.reserved) > 0 ? "Reserved" : "Out of stock",
+      );
       batchBody.append(row);
     }
   }
