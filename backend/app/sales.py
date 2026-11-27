@@ -1110,6 +1110,10 @@ def verify_stock_batch_compliance(user, batch_id):
             batch.compliance_status = "verified_not_required"
             event_type = "product_compliance_not_required_release"
         elif decision == "approve":
+            if not policy or policy.approval_mode == "not_required":
+                raise ValueError(
+                    "Configure a required category/market policy before authority approval."
+                )
             qr_code = _text(data, "qr_code", 500, required=True)
             authority_name = _text(data, "authority_name", 160, required=True)
             authority_country = _country_code(data.get("authority_country"), required=True)
@@ -1335,7 +1339,6 @@ def create_stock_movement(user, product_id):
             supplier_name = _text(data, "supplier_name", 160, required=(movement_type == "received"))
             supplier_invoice_reference = _text(
                 data, "supplier_invoice_reference", 120,
-                required=(movement_type == "received"),
             )
             delivery_note_reference = _text(data, "delivery_note_reference", 120)
             manufacturer_name = _text(
@@ -1517,6 +1520,11 @@ def save_category_compliance_policy(user):
             )
             db.session.add(policy)
         else:
+            if policy.legal_requirement and not legal_requirement:
+                raise ValueError(
+                    "A recorded legal requirement cannot be removed from this screen. "
+                    "Use a separately reviewed legal-policy change process."
+                )
             policy.approval_mode = approval_mode
             policy.accepted_authorities = cleaned
             policy.legal_requirement = legal_requirement
