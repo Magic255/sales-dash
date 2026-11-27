@@ -1,6 +1,6 @@
 from datetime import date, timedelta
-from io import BytesIO
 from decimal import Decimal
+from io import BytesIO
 from uuid import UUID
 
 from argon2 import PasswordHasher
@@ -9,9 +9,9 @@ from cryptography.fernet import Fernet
 from app import create_app
 from app.extensions import db
 from app.models import (
+    CategoryCompliancePolicy,
     Company,
     CompanyMembership,
-    CategoryCompliancePolicy,
     Customer,
     DiscountApprovalRequest,
     Product,
