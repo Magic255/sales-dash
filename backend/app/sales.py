@@ -1783,21 +1783,24 @@ def update_product(user, product_id):
                 data["compliance_required"], "compliance_required"
             )
         _apply_category_compliance_policy(item)
-        if item.compliance_required:
-            compliance_enabled = (
-                not before["compliance_required"] and item.compliance_required
-            )
-            identity_changed = item.sku != before["sku"] or item.name != before["name"]
-            reclassified = (
-                "category_key" in data or "market_country" in data
-                or compliance_enabled or identity_changed
-            )
-            if reclassified:
-                eligible_statuses = ["approved", "exception_approved", "verified_not_required"]
-                require_unverified = False
-            else:
-                eligible_statuses = ["approved"]
-                require_unverified = True
+        compliance_enabled = (
+            not before["compliance_required"] and item.compliance_required
+        )
+        identity_changed = item.sku != before["sku"] or item.name != before["name"]
+        reclassified = (
+            "category_key" in data or "market_country" in data
+            or compliance_enabled or identity_changed
+        )
+        if reclassified:
+            eligible_statuses = ["approved", "exception_approved", "verified_not_required"]
+            require_unverified = False
+        elif item.compliance_required:
+            eligible_statuses = ["approved"]
+            require_unverified = True
+        else:
+            eligible_statuses = []
+            require_unverified = False
+        if eligible_statuses:
             batch_query = select(StockBatch).where(
                 StockBatch.company_id == item.company_id,
                 StockBatch.product_id == item.id,
