@@ -627,7 +627,7 @@ def _batch_balances(company_id, product_id):
             "writeoffs": totals[batch.id]["writeoffs"],
             "available": totals[batch.id]["on_hand"] - totals[batch.id]["reserved"],
             "compliance_blocked": batch.compliance_status not in {
-                "approved", "exception_approved"
+                "approved", "exception_approved", "verified_not_required"
             },
             "expired": batch.expiry_date is not None and batch.expiry_date < today,
             "expiring_soon": (
@@ -811,6 +811,11 @@ def list_stock_batches(_user, product_id):
             "batch_code": batch.batch_code,
             "expiry_date": batch.expiry_date.isoformat() if batch.expiry_date else None,
             "compliance_status": batch.compliance_status,
+            "supplier_name": batch.supplier_name,
+            "supplier_invoice_reference": batch.supplier_invoice_reference,
+            "delivery_note_reference": batch.delivery_note_reference,
+            "manufacturer_name": batch.manufacturer_name,
+            "country_of_origin": batch.country_of_origin,
             "qr_code_present": bool(batch.qr_code),
             "authority_name": batch.authority_name,
             "authority_role": batch.authority_role,
@@ -1057,7 +1062,9 @@ def verify_stock_batch_compliance(user, batch_id):
         return jsonify({"error": "Send a JSON object."}), 400
     try:
         decision = _text(data, "decision", 16, required=True, lower=True)
-        if decision not in {"approve", "reject", "recall", "exception"}:
+        if decision not in {
+            "approve", "reject", "recall", "exception", "release_not_required"
+        }:
             raise ValueError("Unsupported compliance decision.")
         notes = _text(data, "notes", 1000, required=(decision != "approve"))
         product = db.session.scalar(
@@ -1073,12 +1080,35 @@ def verify_stock_batch_compliance(user, batch_id):
                 g.company_membership.role != "admin"
                 or not policy
                 or policy.approval_mode != "admin_exception"
+                or policy.legal_requirement
             ):
                 return jsonify({
-                    "error": "An Admin exception is not enabled for this category and market."
+                    "error": "Admin exceptions are unavailable for legally required approvals."
                 }), 403
             batch.compliance_status = "exception_approved"
             event_type = "product_compliance_exception"
+        elif decision == "release_not_required":
+            if (
+                not policy
+                or policy.approval_mode != "not_required"
+                or policy.legal_requirement
+            ):
+                return jsonify({
+                    "error": "A not-required category policy must be configured before release."
+                }), 409
+            evidence_file_id = UUID(_text(data, "evidence_file_id", 36, required=True))
+            evidence_file = db.session.scalar(
+                select(ComplianceEvidenceFile).where(
+                    ComplianceEvidenceFile.id == evidence_file_id,
+                    ComplianceEvidenceFile.company_id == company_id,
+                    ComplianceEvidenceFile.batch_id == batch.id,
+                )
+            )
+            if evidence_file is None:
+                raise ValueError("Upload supplier/source evidence for this batch before release.")
+            batch.evidence_reference = f"private-evidence:{evidence_file.id}"
+            batch.compliance_status = "verified_not_required"
+            event_type = "product_compliance_not_required_release"
         elif decision == "approve":
             qr_code = _text(data, "qr_code", 500, required=True)
             authority_name = _text(data, "authority_name", 160, required=True)
@@ -1295,6 +1325,22 @@ def create_stock_movement(user, product_id):
         created = []
         if movement_type in {"received", "returned", "adjustment_increase"}:
             batch_code = _text(data, "batch_code", 80, required=True)
+            supplier_name = _text(data, "supplier_name", 160, required=(movement_type == "received"))
+            supplier_invoice_reference = _text(
+                data, "supplier_invoice_reference", 120,
+                required=(movement_type == "received"),
+            )
+            delivery_note_reference = _text(data, "delivery_note_reference", 120)
+            manufacturer_name = _text(
+                data, "manufacturer_name", 160, required=(movement_type == "received")
+            )
+            country_of_origin = _country_code(
+                data.get("country_of_origin"), required=(movement_type == "received")
+            )
+            if movement_type == "received" and not (
+                supplier_invoice_reference or delivery_note_reference
+            ):
+                raise ValueError("A supplier invoice or delivery note reference is required.")
             raw_expiry = data.get("expiry_date")
             if raw_expiry in (None, ""):
                 expiry_date = None
@@ -1310,9 +1356,12 @@ def create_stock_movement(user, product_id):
                 product_id=product_id,
                 batch_code=batch_code,
                 expiry_date=expiry_date,
-                compliance_status=(
-                    "pending_verification" if product.compliance_required else "approved"
-                ),
+                supplier_name=supplier_name,
+                supplier_invoice_reference=supplier_invoice_reference,
+                delivery_note_reference=delivery_note_reference,
+                manufacturer_name=manufacturer_name,
+                country_of_origin=country_of_origin,
+                compliance_status="pending_verification",
                 received_by_user_id=user.id,
                 created_at=datetime.now(timezone.utc),
             )
@@ -1656,7 +1705,7 @@ def update_product(user, product_id):
                 "category_key" in data or "market_country" in data or compliance_enabled
             )
             if reclassified:
-                eligible_statuses = ["approved", "exception_approved"]
+                eligible_statuses = ["approved", "exception_approved", "verified_not_required"]
                 require_unverified = False
             else:
                 eligible_statuses = ["approved"]
