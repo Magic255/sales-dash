@@ -513,6 +513,13 @@ def test_category_market_policy_enforces_quarantine_authorities_and_admin_except
             "requirement_reference": "Tanzania Medicines and Medical Devices Act, Cap. 219",
         })
         assert forbidden_override.status_code == 400
+        legal_downgrade = admin_client.post("/api/compliance-policies", json={
+            "category_key": "medical-device", "market_country": "TZ",
+            "approval_mode": "not_required", "accepted_authorities": [],
+            "legal_requirement": False,
+        })
+        assert legal_downgrade.status_code == 400
+        assert "cannot be removed" in legal_downgrade.json["error"]
 
         not_required = admin_client.post("/api/compliance-policies", json={
             "category_key": "stationery", "market_country": "TZ",
@@ -534,7 +541,7 @@ def test_category_market_policy_enforces_quarantine_authorities_and_admin_except
         assert unregulated.status_code == 201
         assert unregulated.json["item"]["compliance_required"] is False
         unregulated_id = unregulated.json["item"]["id"]
-        receipt = admin_client.post(
+        receipt = manager_client.post(
             f"/api/products/{unregulated_id}/stock-movements",
             json={
                 "movement_type": "received", "quantity": "4",
