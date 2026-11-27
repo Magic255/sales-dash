@@ -607,7 +607,10 @@ def test_category_market_policy_enforces_quarantine_authorities_and_admin_except
             },
         )
         assert document_only_approval.status_code == 400
-        assert "official registry or direct issuer confirmation" in document_only_approval.json["error"]
+        assert (
+            "official registry or direct issuer confirmation"
+            in document_only_approval.json["error"]
+        )
         forbidden_override = admin_client.post("/api/compliance-policies", json={
             "category_key": "medical-device", "market_country": "TZ",
             "approval_mode": "admin_exception", "accepted_authorities": [],
