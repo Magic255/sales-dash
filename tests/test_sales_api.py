@@ -85,10 +85,14 @@ def make_client(role="admin"):
             kwargs["json"] = payload
         if isinstance(payload, dict) and payload.get("movement_type") == "received":
             payload = dict(payload)
-            payload.setdefault("supplier_name", "Synthetic Test Supplier")
-            payload.setdefault("supplier_invoice_reference", "SYNTHETIC-INVOICE-001")
-            payload.setdefault("manufacturer_name", "Synthetic Test Manufacturer")
-            payload.setdefault("country_of_origin", "TZ")
+            payload["supplier_name"] = payload.get("supplier_name") or "Synthetic Test Supplier"
+            payload["supplier_invoice_reference"] = (
+                payload.get("supplier_invoice_reference") or "SYNTHETIC-INVOICE-001"
+            )
+            payload["manufacturer_name"] = (
+                payload.get("manufacturer_name") or "Synthetic Test Manufacturer"
+            )
+            payload["country_of_origin"] = payload.get("country_of_origin") or "TZ"
             kwargs["json"] = payload
         response = original_post(path, *args, **kwargs)
         if (
