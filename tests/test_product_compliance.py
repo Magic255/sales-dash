@@ -695,6 +695,26 @@ def test_category_market_policy_enforces_quarantine_authorities_and_admin_except
             content_type="multipart/form-data",
         )
         assert invoice.status_code == 201
+        product_level_requirement = admin_client.patch(
+            f"/api/products/{unregulated_id}",
+            json={"compliance_required": True},
+        )
+        assert product_level_requirement.status_code == 200
+        blocked_product_override = admin_client.post(
+            f"/api/stock-batches/{unregulated_batch_id}/compliance",
+            json={
+                "decision": "release_not_required",
+                "notes": "A product-level approval requirement is enabled.",
+                "evidence_file_id": invoice.json["item"]["id"],
+            },
+        )
+        assert blocked_product_override.status_code == 409
+        clear_product_level_requirement = admin_client.patch(
+            f"/api/products/{unregulated_id}",
+            json={"compliance_required": False},
+        )
+        assert clear_product_level_requirement.status_code == 200
+
         released = admin_client.post(
             f"/api/stock-batches/{unregulated_batch_id}/compliance",
             json={
