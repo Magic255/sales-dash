@@ -80,7 +80,7 @@ def make_client(role="admin"):
         payload = kwargs.get("json")
         if isinstance(payload, dict) and path == "/api/products":
             payload = dict(payload)
-            if payload.get("track_inventory") and not payload.get("market_country"):
+            if not payload.get("market_country"):
                 payload["market_country"] = "TZ"
             kwargs["json"] = payload
         if isinstance(payload, dict) and payload.get("movement_type") == "received":
