@@ -428,8 +428,7 @@ class StockBatch(db.Model):
     manufacturer_name: Mapped[str | None] = mapped_column(String(160))
     country_of_origin: Mapped[str | None] = mapped_column(String(2))
     compliance_status: Mapped[str] = mapped_column(
-        String(24), nullable=False, default="pending_verification",
-        server_default="pending_verification"
+        String(24), nullable=False, default="approved", server_default="approved"
     )
     received_by_user_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True))
     qr_code: Mapped[str | None] = mapped_column(String(500))
