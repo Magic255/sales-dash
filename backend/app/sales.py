@@ -1085,6 +1085,21 @@ def verify_stock_batch_compliance(user, batch_id):
                 return jsonify({
                     "error": "Admin exceptions are unavailable for legally required approvals."
                 }), 403
+            exception_qr = _text(data, "qr_code", 500, required=True)
+            evidence_file_id = UUID(_text(data, "evidence_file_id", 36, required=True))
+            evidence_file = db.session.scalar(
+                select(ComplianceEvidenceFile).where(
+                    ComplianceEvidenceFile.id == evidence_file_id,
+                    ComplianceEvidenceFile.company_id == company_id,
+                    ComplianceEvidenceFile.batch_id == batch.id,
+                )
+            )
+            if evidence_file is None:
+                raise ValueError(
+                    "Upload private supplier/traceability evidence for this batch before an exception."
+                )
+            batch.qr_code = exception_qr
+            batch.evidence_reference = f"private-evidence:{evidence_file.id}"
             batch.compliance_status = "exception_approved"
             event_type = "product_compliance_exception"
         elif decision == "release_not_required":
@@ -1227,7 +1242,7 @@ def verify_stock_batch_compliance(user, batch_id):
                 "evidence_reference_present": bool(batch.evidence_reference),
                 "evidence_file_id": (
                     str(evidence_file.id)
-                    if decision in {"approve", "release_not_required"} else None
+                    if decision in {"approve", "release_not_required", "exception"} else None
                 ),
                 "notes": notes,
             },
