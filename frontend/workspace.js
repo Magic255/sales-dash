@@ -713,6 +713,51 @@ async function loadInventoryBatches(productId, generation = workspaceGeneration)
         }
         const payload = {decision: normalized};
         try {
+          if (["approve", "exception", "release_not_required"].includes(normalized)) {
+            let legacyProvenanceCompleted = false;
+            if (!batch.supplier_name) {
+              payload.supplier_name = window.prompt("Supplier name from invoice / delivery note", "");
+              if (payload.supplier_name === null || !payload.supplier_name.trim()) return;
+              legacyProvenanceCompleted = true;
+            }
+            if (!batch.supplier_invoice_reference && !batch.delivery_note_reference) {
+              const invoiceReference = window.prompt(
+                "Supplier invoice reference (leave blank if only a delivery note exists)",
+                "",
+              );
+              if (invoiceReference === null) return;
+              if (invoiceReference.trim()) {
+                payload.supplier_invoice_reference = invoiceReference.trim();
+              } else {
+                payload.delivery_note_reference = window.prompt(
+                  "Delivery note reference (required when no invoice exists)",
+                  "",
+                );
+                if (
+                  payload.delivery_note_reference === null
+                  || !payload.delivery_note_reference.trim()
+                ) return;
+              }
+              legacyProvenanceCompleted = true;
+            }
+            if (!batch.manufacturer_name) {
+              payload.manufacturer_name = window.prompt("Manufacturer name", "");
+              if (payload.manufacturer_name === null || !payload.manufacturer_name.trim()) return;
+              legacyProvenanceCompleted = true;
+            }
+            if (!batch.country_of_origin) {
+              payload.country_of_origin = window.prompt("Country of origin (2-letter code)", "");
+              if (payload.country_of_origin === null || !payload.country_of_origin.trim()) return;
+              legacyProvenanceCompleted = true;
+            }
+            if (legacyProvenanceCompleted && normalized === "approve") {
+              payload.notes = window.prompt(
+                "Reason for completing missing legacy supplier details",
+                "",
+              );
+              if (payload.notes === null || !payload.notes.trim()) return;
+            }
+          }
           if (normalized === "approve") {
           payload.qr_code = window.prompt("QR / traceability value (required)", "");
           if (payload.qr_code === null) return;
