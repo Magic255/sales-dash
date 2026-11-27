@@ -1351,6 +1351,19 @@ def create_stock_movement(user, product_id):
                 supplier_invoice_reference or delivery_note_reference
             ):
                 raise ValueError("A supplier invoice or delivery note reference is required.")
+            if movement_type == "received":
+                if not product.market_country:
+                    raise ValueError(
+                        "Set the product's destination market before receiving stock."
+                    )
+                policy = _category_compliance_policy(
+                    company_id, product.category_key, product.market_country
+                )
+                if policy is None:
+                    raise ValueError(
+                        "Configure a compliance policy for this product category and market "
+                        "before receiving stock."
+                    )
             raw_expiry = data.get("expiry_date")
             if raw_expiry in (None, ""):
                 expiry_date = None
@@ -1371,9 +1384,7 @@ def create_stock_movement(user, product_id):
                 delivery_note_reference=delivery_note_reference,
                 manufacturer_name=manufacturer_name,
                 country_of_origin=country_of_origin,
-                compliance_status=(
-                    "pending_verification" if product.compliance_required else "approved"
-                ),
+                compliance_status="pending_verification",
                 received_by_user_id=user.id,
                 created_at=datetime.now(timezone.utc),
             )
