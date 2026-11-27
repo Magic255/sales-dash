@@ -97,6 +97,7 @@ def test_compliance_required_stock_is_received_to_quarantine_until_independent_v
                 sku="REGULATED-001", name="Synthetic regulated item",
                 unit_price=Decimal("25.00"), currency="TZS",
                 track_inventory=True, compliance_required=True,
+                category_key="general", market_country="TZ",
             )
             db.session.add(product)
             db.session.commit()
@@ -106,6 +107,12 @@ def test_compliance_required_stock_is_received_to_quarantine_until_independent_v
 
         admin_client = app.test_client()
         _login(admin_client, "compliance-admin@example.test", company_id)
+        policy = admin_client.post("/api/compliance-policies", json={
+            "category_key": "general", "market_country": "TZ",
+            "approval_mode": "required",
+            "accepted_authorities": ["Tanzania Bureau of Standards"],
+        })
+        assert policy.status_code == 200
 
         receipt = admin_client.post(
             f"/api/products/{product_id}/stock-movements",
@@ -114,6 +121,10 @@ def test_compliance_required_stock_is_received_to_quarantine_until_independent_v
                 "quantity": "8",
                 "reason": "Synthetic receipt for compliance test",
                 "batch_code": "BATCH-TEST-001",
+                "supplier_name": "Synthetic Supplier Ltd",
+                "supplier_invoice_reference": "INV-SYNTH-001",
+                "manufacturer_name": "Synthetic Manufacturer Ltd",
+                "country_of_origin": "TZ",
             },
         )
         assert receipt.status_code == 201
@@ -371,6 +382,10 @@ def test_category_market_policy_enforces_quarantine_authorities_and_admin_except
                 "movement_type": "received", "quantity": "5",
                 "reason": "Synthetic category policy receipt",
                 "batch_code": "FOOD-LOT-001",
+                "supplier_name": "Synthetic Food Supplier",
+                "supplier_invoice_reference": "INV-FOOD-001",
+                "manufacturer_name": "Synthetic Food Manufacturer",
+                "country_of_origin": "TZ",
             },
         )
         assert receipt.status_code == 201
@@ -432,6 +447,10 @@ def test_category_market_policy_enforces_quarantine_authorities_and_admin_except
                 "movement_type": "received", "quantity": "2",
                 "reason": "Synthetic Admin exception receipt",
                 "batch_code": "TOOLS-LOT-001",
+                "supplier_name": "Synthetic Tool Supplier",
+                "delivery_note_reference": "DN-TOOLS-001",
+                "manufacturer_name": "Synthetic Tool Manufacturer",
+                "country_of_origin": "CN",
             },
         )
         assert exception_receipt.status_code == 201
@@ -447,6 +466,24 @@ def test_category_market_policy_enforces_quarantine_authorities_and_admin_except
         )
         assert admin_exception.status_code == 200
         assert admin_exception.json["item"]["compliance_status"] == "exception_approved"
+
+        legal_policy = admin_client.post("/api/compliance-policies", json={
+            "category_key": "medical-device", "market_country": "TZ",
+            "approval_mode": "required",
+            "accepted_authorities": ["Tanzania Medicines and Medical Devices Authority"],
+            "legal_requirement": True,
+            "requirement_source_url": "https://www.tmda.go.tz/pages/procedures-for-market-authorization",
+            "requirement_reference": "Tanzania Medicines and Medical Devices Act, Cap. 219",
+        })
+        assert legal_policy.status_code == 200
+        forbidden_override = admin_client.post("/api/compliance-policies", json={
+            "category_key": "medical-device", "market_country": "TZ",
+            "approval_mode": "admin_exception", "accepted_authorities": [],
+            "legal_requirement": True,
+            "requirement_source_url": "https://www.tmda.go.tz/pages/procedures-for-market-authorization",
+            "requirement_reference": "Tanzania Medicines and Medical Devices Act, Cap. 219",
+        })
+        assert forbidden_override.status_code == 400
 
         not_required = admin_client.post("/api/compliance-policies", json={
             "category_key": "stationery", "market_country": "TZ",
@@ -467,6 +504,48 @@ def test_category_market_policy_enforces_quarantine_authorities_and_admin_except
         })
         assert unregulated.status_code == 201
         assert unregulated.json["item"]["compliance_required"] is False
+        unregulated_id = unregulated.json["item"]["id"]
+        receipt = admin_client.post(
+            f"/api/products/{unregulated_id}/stock-movements",
+            json={
+                "movement_type": "received", "quantity": "4",
+                "reason": "Synthetic non-regulated goods receipt",
+                "batch_code": "STATIONERY-LOT-001",
+                "supplier_name": "Synthetic Stationery Supplier",
+                "supplier_invoice_reference": "INV-STATIONERY-001",
+                "manufacturer_name": "Synthetic Stationery Maker",
+                "country_of_origin": "TZ",
+            },
+        )
+        assert receipt.status_code == 201
+        unregulated_batch_id = receipt.json["item"]["batch_id"]
+        assert receipt.json["item"]["movement_type"] == "received"
+        batch_state = admin_client.get(
+            f"/api/products/{unregulated_id}/stock-batches"
+        ).json["items"][0]
+        assert batch_state["compliance_status"] == "pending_verification"
+        assert batch_state["available_quantity"] == "0.000"
+        invoice = admin_client.post(
+            f"/api/stock-batches/{unregulated_batch_id}/evidence",
+            data={
+                "file": (
+                    BytesIO(b"%PDF-1.7\\nsynthetic supplier invoice\\n"),
+                    "stationery-invoice.pdf",
+                )
+            },
+            content_type="multipart/form-data",
+        )
+        assert invoice.status_code == 201
+        released = admin_client.post(
+            f"/api/stock-batches/{unregulated_batch_id}/compliance",
+            json={
+                "decision": "release_not_required",
+                "notes": "Synthetic category review: no product approval requirement.",
+                "evidence_file_id": invoice.json["item"]["id"],
+            },
+        )
+        assert released.status_code == 200
+        assert released.json["item"]["compliance_status"] == "verified_not_required"
     finally:
         with app.app_context():
             db.session.remove()
