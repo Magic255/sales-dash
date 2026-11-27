@@ -321,6 +321,10 @@ class CategoryCompliancePolicy(db.Model):
             name="approval_mode_supported",
         ),
         CheckConstraint(
+            "NOT legal_requirement OR approval_mode = 'required'",
+            name="legal_requirement_no_exception",
+        ),
+        CheckConstraint(
             "category_key = lower(trim(category_key)) AND length(category_key) > 0",
             name="category_key_normalized",
         ),
@@ -337,6 +341,11 @@ class CategoryCompliancePolicy(db.Model):
     category_key: Mapped[str] = mapped_column(String(80), nullable=False)
     market_country: Mapped[str] = mapped_column(String(2), nullable=False)
     approval_mode: Mapped[str] = mapped_column(String(24), nullable=False)
+    legal_requirement: Mapped[bool] = mapped_column(
+        nullable=False, default=False, server_default="false"
+    )
+    requirement_source_url: Mapped[str | None] = mapped_column(String(500))
+    requirement_reference: Mapped[str | None] = mapped_column(String(200))
     accepted_authorities: Mapped[list] = mapped_column(db.JSON, nullable=False, default=list)
     updated_by_user_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
@@ -374,7 +383,7 @@ class StockBatch(db.Model):
         ),
         CheckConstraint("length(trim(batch_code)) > 0", name="batch_code_not_empty"),
         CheckConstraint(
-            "compliance_status IN ('approved', 'exception_approved', "
+            "compliance_status IN ('approved', 'exception_approved', 'verified_not_required', "
             "'pending_verification', 'rejected', 'recalled')",
             name="compliance_status_supported",
         ),
@@ -393,6 +402,11 @@ class StockBatch(db.Model):
         CheckConstraint(
             "verification_source_url IS NULL OR verification_source_url LIKE 'https://%'",
             name="verification_source_https",
+        ),
+        CheckConstraint(
+            "country_of_origin IS NULL OR (country_of_origin = upper(country_of_origin) "
+            "AND length(country_of_origin) = 2)",
+            name="country_of_origin_iso_code",
         ),
         db.Index("ix_stock_batches_company_product_expiry",
                  "company_id", "product_id", "expiry_date"),
