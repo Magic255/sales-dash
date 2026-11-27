@@ -349,11 +349,18 @@ def test_category_market_policy_enforces_quarantine_authorities_and_admin_except
                 unit_price=Decimal("15.00"), currency="TZS",
                 track_inventory=True, category_key="tools", market_country="TZ",
             )
-            db.session.add_all([product, exception_product])
+            unconfigured_product = Product(
+                company_id=company.id, created_by_user_id=admin.id,
+                sku="UNCATEGORIZED-001", name="Synthetic unconfigured product",
+                unit_price=Decimal("8.00"), currency="TZS",
+                track_inventory=True, category_key="unconfigured", market_country="TZ",
+            )
+            db.session.add_all([product, exception_product, unconfigured_product])
             db.session.commit()
             company_id = str(company.id)
             product_id = str(product.id)
             exception_product_id = str(exception_product.id)
+            unconfigured_product_id = str(unconfigured_product.id)
 
         admin_client = app.test_client()
         manager_client = app.test_client()
@@ -361,7 +368,7 @@ def test_category_market_policy_enforces_quarantine_authorities_and_admin_except
         _login(manager_client, "policy-manager@example.test", company_id)
 
         unconfigured_receipt = manager_client.post(
-            f"/api/products/{product_id}/stock-movements",
+            f"/api/products/{unconfigured_product_id}/stock-movements",
             json={
                 "movement_type": "received", "quantity": "1",
                 "reason": "Synthetic receipt without a configured policy",
@@ -372,8 +379,22 @@ def test_category_market_policy_enforces_quarantine_authorities_and_admin_except
                 "country_of_origin": "TZ",
             },
         )
-        assert unconfigured_receipt.status_code == 400
-        assert "Configure a compliance policy" in unconfigured_receipt.json["error"]
+        assert unconfigured_receipt.status_code == 201
+        unconfigured_batch_id = unconfigured_receipt.json["item"]["batch_id"]
+        unconfigured_state = manager_client.get(
+            f"/api/products/{unconfigured_product_id}/stock-batches"
+        ).json["items"][0]
+        assert unconfigured_state["compliance_status"] == "pending_verification"
+        assert unconfigured_state["available_quantity"] == "0.000"
+        no_policy_release = admin_client.post(
+            f"/api/stock-batches/{unconfigured_batch_id}/compliance",
+            json={
+                "decision": "release_not_required",
+                "notes": "No category policy exists.",
+                "evidence_file_id": "00000000-0000-0000-0000-000000000000",
+            },
+        )
+        assert no_policy_release.status_code == 409
 
         required = admin_client.post("/api/compliance-policies", json={
             "category_key": "food",
