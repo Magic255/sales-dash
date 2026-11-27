@@ -360,6 +360,21 @@ def test_category_market_policy_enforces_quarantine_authorities_and_admin_except
         _login(admin_client, "policy-admin@example.test", company_id)
         _login(manager_client, "policy-manager@example.test", company_id)
 
+        unconfigured_receipt = manager_client.post(
+            f"/api/products/{product_id}/stock-movements",
+            json={
+                "movement_type": "received", "quantity": "1",
+                "reason": "Synthetic receipt without a configured policy",
+                "batch_code": "FOOD-UNCONFIGURED",
+                "supplier_name": "Synthetic Food Supplier",
+                "supplier_invoice_reference": "INV-UNCONFIGURED",
+                "manufacturer_name": "Synthetic Food Manufacturer",
+                "country_of_origin": "TZ",
+            },
+        )
+        assert unconfigured_receipt.status_code == 400
+        assert "Configure a compliance policy" in unconfigured_receipt.json["error"]
+
         required = admin_client.post("/api/compliance-policies", json={
             "category_key": "food",
             "market_country": "tz",
@@ -375,6 +390,20 @@ def test_category_market_policy_enforces_quarantine_authorities_and_admin_except
             f"/api/products/{product_id}", json={"market_country": None}
         )
         assert missing_market.status_code == 400
+
+        missing_supplier_document = manager_client.post(
+            f"/api/products/{product_id}/stock-movements",
+            json={
+                "movement_type": "received", "quantity": "1",
+                "reason": "Synthetic receipt missing supplier proof",
+                "batch_code": "FOOD-NO-INVOICE",
+                "supplier_name": "Synthetic Food Supplier",
+                "manufacturer_name": "Synthetic Food Manufacturer",
+                "country_of_origin": "TZ",
+            },
+        )
+        assert missing_supplier_document.status_code == 400
+        assert "invoice or delivery note" in missing_supplier_document.json["error"]
 
         receipt = manager_client.post(
             f"/api/products/{product_id}/stock-movements",
