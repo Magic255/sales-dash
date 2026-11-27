@@ -1086,7 +1086,7 @@ def verify_stock_batch_compliance(user, batch_id):
     if data is None:
         return jsonify({"error": "Send a JSON object."}), 400
     try:
-        decision = _text(data, "decision", 16, required=True, lower=True)
+        decision = _text(data, "decision", 32, required=True, lower=True)
         if decision not in {
             "approve", "reject", "recall", "exception", "release_not_required"
         }:
