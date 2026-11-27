@@ -35,7 +35,7 @@ def upgrade():
     )
     op.execute(
         "UPDATE stock_batches SET compliance_status = 'pending_verification' "
-        "WHERE compliance_status = 'approved'"
+        "WHERE compliance_status IN ('approved', 'exception_approved')"
     )
     op.drop_constraint("compliance_status_supported", "stock_batches", type_="check")
     op.alter_column(
