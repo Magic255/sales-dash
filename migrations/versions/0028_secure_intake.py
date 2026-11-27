@@ -34,6 +34,11 @@ def upgrade():
         "(country_of_origin = upper(country_of_origin) AND length(country_of_origin) = 2)",
     )
     op.drop_constraint("compliance_status_supported", "stock_batches", type_="check")
+    op.alter_column(
+        "stock_batches", "compliance_status",
+        existing_type=sa.String(length=24),
+        server_default="pending_verification",
+    )
     op.create_check_constraint(
         "compliance_status_supported",
         "stock_batches",
@@ -133,6 +138,11 @@ def downgrade():
     op.drop_column("category_compliance_policies", "requirement_source_url")
     op.drop_column("category_compliance_policies", "legal_requirement")
     op.drop_constraint("compliance_status_supported", "stock_batches", type_="check")
+    op.alter_column(
+        "stock_batches", "compliance_status",
+        existing_type=sa.String(length=24),
+        server_default="approved",
+    )
     op.create_check_constraint(
         "compliance_status_supported",
         "stock_batches",
