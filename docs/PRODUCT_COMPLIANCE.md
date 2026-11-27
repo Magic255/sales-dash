@@ -4,21 +4,23 @@
 
 An Admin can configure product compliance directly and define reusable category/market policies for a company. Policies are scoped to a category key and a two-letter market country. Product records carry both fields.
 
-When a product requires compliance, physical receipts are still recorded in the append-only stock ledger, but new batches enter `pending_verification` quarantine. Their quantities remain visible as on-hand/quarantined stock and are excluded from available stock and FIFO sale allocation.
+Every new stock receipt enters `pending_verification` quarantine, regardless of whether the product category is regulated. Physical receipt records that the goods arrived; it does not authorize sale. The migration also moves previously approved batches back to pending verification so legacy stock cannot bypass the new controls.
 
-Pending, rejected, recalled and expired batches cannot be sold. Only `approved` batches are normally sellable. An `exception_approved` batch is sellable only when its category/market policy explicitly enables Admin exceptions and an Admin records a reason. Sale completion rechecks eligible stock on the server.
+At receipt, staff must record the supplier name, manufacturer, country of origin, and either a supplier invoice or delivery-note reference, in addition to product, batch/lot, quantity, receiver and reason. These details create a traceable chain from supplier delivery to stock batch. They are not, by themselves, proof that a product is lawful or authentic.
+
+Pending, rejected, recalled and expired batches cannot be sold, reserved or allocated by FIFO. Required categories need authority-backed approval. For categories explicitly configured as not requiring product approval, an independent Admin/Manager must attach private supplier/source evidence and record a reason before release as `verified_not_required`. The receiver cannot verify their own batch. Sale completion rechecks eligible stock on the server.
 
 ## Category and market policy
 
 Admins can configure one policy for each company category key and market country:
 
-- `required`: stock is quarantined until independently verified.
-- `admin_exception`: stock is quarantined; only an Admin can release a batch through a separately audited, reason-required exception. This is a business exception, not standards certification.
-- `not_required`: the policy does not require approval; an Admin may still require it on an individual product.
+- `required`: stock is quarantined until independently verified against the accepted authority list.
+- `admin_exception`: stock is quarantined; only an Admin can release a batch through a separately audited, reason-required exception. This is an internal business exception only, never a regulatory/legal override.
+- `not_required`: the policy does not require product certification, but a separate verifier must still review supplier/source evidence and record a reason before the batch can be released.
 
-A strict `required` policy must list at least one accepted authority. An `admin_exception` policy may leave the list empty, in which case ordinary standards approval is blocked and only the separately audited Admin exception can release stock. Where a list is configured, the entered authority name must match it.
+A strict `required` policy must list at least one accepted authority. An `admin_exception` policy may leave the list empty, in which case ordinary standards approval is blocked and only the separately audited internal Admin exception can release stock. Where a list is configured, the entered authority name must match it. Goods received without a matching category/market policy remain quarantined; the policy must be configured before release.
 
-If a category has market-specific policies, a product in that category must specify its market country so the policy cannot be bypassed by omitting the country. Applying or changing a policy that requires approval moves matching previously approved batches back into quarantine for review against the new policy. Changing a product's category or market under a required policy also triggers re-review of its existing eligible batches.
+If a category has market-specific policies, a product in that category must specify its market country so the policy cannot be bypassed by omitting the country. Applying or changing any policy moves matching previously released batches back into quarantine for review against the new policy. Changing a product's category or market under a required policy also triggers re-review of its existing eligible batches.
 
 ## Authority, QR and evidence boundaries
 
@@ -50,9 +52,11 @@ These sources answer different questions. The TBS register is for individual TBS
 
 For other countries and authorities, use the relevant regulator/issuer's official register and the appropriate accreditation body's current directory and scope. Global ACI's MRA covers several distinct conformity-assessment scopes; a member listing alone is not enough. For example, product certification, testing and inspection must not be treated as interchangeable. The app stores the source and scope the verifier checked but does not yet connect to or automatically validate any of these registries.
 
-The receiver cannot verify their own batch. Admins and Managers can record approve, reject or recall decisions. An Admin exception is separate from a standards approval and requires an enabled policy plus a reason. For an ordinary approval, the reviewer records issuer role, verification method, source, product identity and scope.
+The receiver cannot verify their own batch. Admins and Managers can record approve, reject, recall, or (for a not-required policy) release decisions. Admin exceptions are blocked whenever a policy is marked as a legal/regulatory requirement. The legal-requirement flag requires an official HTTPS source and a law/regulation/notice reference, must use strict required mode, and cannot be removed through the normal policy screen. Legal-required approvals must use an official registry or direct issuer confirmation; document-only review is not accepted.
 
 SALES DASH records the business's evidence and staff verification decision. It does not issue legal certification, independently establish regulatory recognition, or replace a competent authority's determination.
+
+The app does not determine legal requirements automatically. The business must configure the correct category/market policy from official sources. Missing policy means the batch remains blocked; it is not silently treated as unregulated.
 
 ## Private evidence file handling
 
@@ -73,6 +77,8 @@ The existing 30-day indicator is only a warning lead-time for a supplied expiry 
 ## Remaining work
 
 - Trusted QR decoding and official certificate/authority verification integrations, where suitable sources and permissions exist.
+- Supplier onboarding and risk screening (business licence, tax/registration details, authorised distributor status, sanctions/recall notices where applicable).
+- Purchase-order/consignment matching and automated mismatch alerts for supplier, manufacturer, country of origin, SKU/model/GTIN, batch/lot, quantity and certificate scope.
 - Evidence scope and product/manufacturer identity checks, certificate validity/revocation handling, and batch-level inspection reporting.
 - Configurable expiry warning lead-times and recall traceability reporting.
 - Additional synthetic tests for cross-company evidence access, revocation/expiry, product-scope mismatch, concurrency and all sale paths.
