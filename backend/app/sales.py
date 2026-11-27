@@ -1733,6 +1733,25 @@ def update_product(user, product_id):
         "low_stock_threshold": str(item.low_stock_threshold),
         "currency": item.currency, "is_active": item.is_active,
     }
+    current_policy = (
+        _category_compliance_policy(
+            item.company_id, item.category_key, item.market_country
+        )
+        if item.market_country else None
+    )
+    if current_policy and current_policy.legal_requirement:
+        requested_category = data.get("category_key", item.category_key)
+        requested_market = data.get("market_country", item.market_country)
+        if (
+            requested_category != item.category_key
+            or requested_market != item.market_country
+        ):
+            return jsonify({
+                "error": (
+                    "A product governed by a legal requirement cannot be reclassified "
+                    "through the normal product edit. Use a separately reviewed legal-policy process."
+                )
+            }), 409
     try:
         if "sku" in data:
             item.sku = _text(data, "sku", 64, required=True, upper=True)
@@ -1768,8 +1787,10 @@ def update_product(user, product_id):
             compliance_enabled = (
                 not before["compliance_required"] and item.compliance_required
             )
+            identity_changed = item.sku != before["sku"] or item.name != before["name"]
             reclassified = (
-                "category_key" in data or "market_country" in data or compliance_enabled
+                "category_key" in data or "market_country" in data
+                or compliance_enabled or identity_changed
             )
             if reclassified:
                 eligible_statuses = ["approved", "exception_approved", "verified_not_required"]
