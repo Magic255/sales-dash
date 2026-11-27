@@ -516,9 +516,25 @@ def test_category_market_policy_enforces_quarantine_authorities_and_admin_except
             json={"decision": "exception", "notes": "Manager must not override."},
         )
         assert manager_exception.status_code == 403
+        exception_evidence = admin_client.post(
+            f"/api/stock-batches/{exception_batch_id}/evidence",
+            data={
+                "file": (
+                    BytesIO(b"%PDF-1.7\\nsynthetic supplier traceability evidence\\n"),
+                    "exception-traceability.pdf",
+                )
+            },
+            content_type="multipart/form-data",
+        )
+        assert exception_evidence.status_code == 201
         admin_exception = admin_client.post(
             f"/api/stock-batches/{exception_batch_id}/compliance",
-            json={"decision": "exception", "notes": "Synthetic documented exception."},
+            json={
+                "decision": "exception",
+                "notes": "Synthetic documented internal-policy exception.",
+                "qr_code": "QR-SYNTHETIC-TOOLS-001",
+                "evidence_file_id": exception_evidence.json["item"]["id"],
+            },
         )
         assert admin_exception.status_code == 200
         assert admin_exception.json["item"]["compliance_status"] == "exception_approved"
