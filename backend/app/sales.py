@@ -1136,6 +1136,7 @@ def verify_stock_batch_compliance(user, batch_id):
                 not policy
                 or policy.approval_mode != "not_required"
                 or policy.legal_requirement
+                or (product is not None and product.compliance_required)
             ):
                 return jsonify({
                     "error": "A not-required category policy must be configured before release."
