@@ -120,7 +120,10 @@ def make_client(role="admin"):
                 f"/api/stock-batches/{batch_id}/compliance",
                 json={
                     "decision": "release_not_required",
-                    "notes": "Synthetic test category is configured as not requiring authority approval.",
+                    "notes": (
+                        "Synthetic test category is configured as not requiring "
+                        "authority approval."
+                    ),
                     "evidence_file_id": evidence.json["item"]["id"],
                 },
             )
