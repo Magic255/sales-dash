@@ -1100,6 +1100,14 @@ def verify_stock_batch_compliance(user, batch_id):
         policy = _category_compliance_policy(
             company_id, product.category_key, product.market_country
         ) if product else None
+        if (
+            decision in {"approve", "exception", "release_not_required"}
+            and policy
+            and not (policy.requirement_source_url and policy.requirement_reference)
+        ):
+            return jsonify({
+                "error": "Complete the category policy's source and reference before releasing stock."
+            }), 409
         if decision == "exception":
             if (
                 g.company_membership.role != "admin"
