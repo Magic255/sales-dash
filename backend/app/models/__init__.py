@@ -166,7 +166,8 @@ class AuditLog(db.Model):
             "'discount_approval_decided', 'price_floor_override', 'discount_applied', "
             "'product_compliance_verified', 'product_compliance_rejected', "
             "'product_compliance_recalled', 'product_compliance_exception', "
-            "'product_compliance_policy_updated', 'product_compliance_evidence_uploaded', "
+            "'product_compliance_policy_updated', 'product_compliance_not_required_release', "
+            "'product_compliance_evidence_uploaded', "
             "'product_compliance_evidence_downloaded')",
             name="event_type_is_supported",
         ),
