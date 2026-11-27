@@ -677,7 +677,7 @@ async function loadInventoryBatches(productId, generation = workspaceGeneration)
       tbsLink.href = "https://tbs.go.tz/certified-product-companies";
       tbsLink.target = "_blank";
       tbsLink.rel = "noopener noreferrer";
-      tbsLink.textContent = "TBS product register";
+      tbsLink.textContent = "TBS product register (where applicable)";
       tbsLink.className = "table-action";
       tbsLink.style.display = "block";
       actions.append(tbsLink);
@@ -689,6 +689,22 @@ async function loadInventoryBatches(productId, generation = workspaceGeneration)
       sadcasLink.className = "table-action";
       sadcasLink.style.display = "block";
       actions.append(sadcasLink);
+      const tmdaLink = document.createElement("a");
+      tmdaLink.href = "https://tmda.go.tz/pages/procedures-for-market-authorization";
+      tmdaLink.target = "_blank";
+      tmdaLink.rel = "noopener noreferrer";
+      tmdaLink.textContent = "TMDA market authorisation (where applicable)";
+      tmdaLink.className = "table-action";
+      tmdaLink.style.display = "block";
+      actions.append(tmdaLink);
+      const tmdaImportLink = document.createElement("a");
+      tmdaImportLink.href = "https://www.tmda.go.tz/pages/import-and-export-control";
+      tmdaImportLink.target = "_blank";
+      tmdaImportLink.rel = "noopener noreferrer";
+      tmdaImportLink.textContent = "TMDA import/export control";
+      tmdaImportLink.className = "table-action";
+      tmdaImportLink.style.display = "block";
+      actions.append(tmdaImportLink);
     }
     if (["pending_verification", "approved", "exception_approved", "verified_not_required"].includes(batch.compliance_status)) {
       const review = document.createElement("button");
