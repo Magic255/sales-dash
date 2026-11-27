@@ -1124,7 +1124,8 @@ def verify_stock_batch_compliance(user, batch_id):
             )
             if evidence_file is None:
                 raise ValueError(
-                    "Upload private supplier/traceability evidence for this batch before an exception."
+                    "Upload private supplier/traceability evidence for this batch "
+                    "before an exception."
                 )
             batch.qr_code = exception_qr
             batch.evidence_reference = f"private-evidence:{evidence_file.id}"
@@ -1393,7 +1394,9 @@ def create_stock_movement(user, product_id):
         created = []
         if movement_type in {"received", "returned", "adjustment_increase"}:
             batch_code = _text(data, "batch_code", 80, required=True)
-            supplier_name = _text(data, "supplier_name", 160, required=(movement_type == "received"))
+            supplier_name = _text(
+                data, "supplier_name", 160, required=(movement_type == "received")
+            )
             supplier_invoice_reference = _text(
                 data, "supplier_invoice_reference", 120,
             )
@@ -1788,7 +1791,8 @@ def update_product(user, product_id):
             return jsonify({
                 "error": (
                     "A product governed by a legal requirement cannot be reclassified "
-                    "through the normal product edit. Use a separately reviewed legal-policy process."
+                    "through the normal product edit. Use a separately reviewed "
+                    "legal-policy process."
                 )
             }), 409
     try:
