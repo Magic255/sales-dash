@@ -294,8 +294,8 @@
               <option value="not_required">Approval not required by this policy</option>
             </select>
             <label class="checkbox-label"><input id="policy-legal-requirement" type="checkbox"> This is a legal / regulator requirement (Admin override is permanently blocked)</label>
-            <label for="policy-requirement-source">Official legal requirement source (HTTPS)</label><input id="policy-requirement-source" type="url" maxlength="500" placeholder="https://...">
-            <label for="policy-requirement-reference">Law, regulation, notice or official requirement reference</label><input id="policy-requirement-reference" maxlength="200">
+            <label for="policy-requirement-source">Official requirement or business-policy source (HTTPS)</label><input id="policy-requirement-source" type="url" maxlength="500" placeholder="https://..." required>
+            <label for="policy-requirement-reference">Law, regulation, notice or internal policy reference</label><input id="policy-requirement-reference" maxlength="200" required>
             <label for="policy-authorities">Accepted authority names (one per line; required for required-approval rules)</label>
             <textarea id="policy-authorities" rows="3" maxlength="5000" placeholder="Tanzania Bureau of Standards"></textarea>
             <button class="primary-button" type="submit">Save category rule</button>
