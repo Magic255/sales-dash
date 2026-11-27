@@ -1,4 +1,5 @@
 from datetime import date, timedelta
+from io import BytesIO
 from decimal import Decimal
 from uuid import UUID
 
@@ -107,7 +108,7 @@ def make_client(role="admin"):
             evidence = verifier_client.post(
                 f"/api/stock-batches/{batch_id}/evidence",
                 data={"file": (
-                    __import__("io").BytesIO(b"%PDF-1.7\\nsynthetic supplier invoice\\n"),
+                    BytesIO(b"%PDF-1.7\\nsynthetic supplier invoice\\n"),
                     "synthetic-invoice.pdf",
                 )},
                 content_type="multipart/form-data",
