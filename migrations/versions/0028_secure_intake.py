@@ -71,6 +71,25 @@ def upgrade():
         "GRANT UPDATE (supplier_name, supplier_invoice_reference, delivery_note_reference, "
         "manufacturer_name, country_of_origin) ON stock_batches TO sales_dash_app"
     )
+    op.drop_constraint("event_type_is_supported", "audit_logs", type_="check")
+    op.create_check_constraint(
+        "event_type_is_supported",
+        "audit_logs",
+        "event_type IN ('login_succeeded', 'password_changed', "
+        "'company_selected', 'logout', 'email_verified', 'password_reset', "
+        "'company_invitation_created', 'company_invitation_accepted', "
+        "'company_invitation_revoked', 'mfa_enabled', 'mfa_disabled', "
+        "'mfa_recovery_code_used', 'company_settings_updated', "
+        "'team_member_role_changed', 'team_member_suspended', "
+        "'team_member_reactivated', 'product_created', 'product_updated', "
+        "'discount_limits_updated', 'discount_approval_requested', "
+        "'discount_approval_decided', 'price_floor_override', 'discount_applied', "
+        "'product_compliance_verified', 'product_compliance_rejected', "
+        "'product_compliance_recalled', 'product_compliance_exception', "
+        "'product_compliance_policy_updated', 'product_compliance_evidence_uploaded', "
+        "'product_compliance_evidence_downloaded', "
+        "'product_compliance_not_required_release')",
+    )
     op.execute(
         "GRANT UPDATE (legal_requirement, requirement_source_url, requirement_reference) "
         "ON category_compliance_policies TO sales_dash_app"
@@ -81,6 +100,24 @@ def downgrade():
     op.execute(
         "REVOKE UPDATE (supplier_name, supplier_invoice_reference, delivery_note_reference, "
         "manufacturer_name, country_of_origin) ON stock_batches FROM sales_dash_app"
+    )
+    op.drop_constraint("event_type_is_supported", "audit_logs", type_="check")
+    op.create_check_constraint(
+        "event_type_is_supported",
+        "audit_logs",
+        "event_type IN ('login_succeeded', 'password_changed', "
+        "'company_selected', 'logout', 'email_verified', 'password_reset', "
+        "'company_invitation_created', 'company_invitation_accepted', "
+        "'company_invitation_revoked', 'mfa_enabled', 'mfa_disabled', "
+        "'mfa_recovery_code_used', 'company_settings_updated', "
+        "'team_member_role_changed', 'team_member_suspended', "
+        "'team_member_reactivated', 'product_created', 'product_updated', "
+        "'discount_limits_updated', 'discount_approval_requested', "
+        "'discount_approval_decided', 'price_floor_override', 'discount_applied', "
+        "'product_compliance_verified', 'product_compliance_rejected', "
+        "'product_compliance_recalled', 'product_compliance_exception', "
+        "'product_compliance_policy_updated', 'product_compliance_evidence_uploaded', "
+        "'product_compliance_evidence_downloaded')",
     )
     op.execute(
         "REVOKE UPDATE (legal_requirement, requirement_source_url, requirement_reference) "
