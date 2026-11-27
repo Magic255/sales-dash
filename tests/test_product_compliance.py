@@ -113,8 +113,6 @@ def test_compliance_required_stock_is_received_to_quarantine_until_independent_v
             "accepted_authorities": ["Tanzania Bureau of Standards"],
             "requirement_source_url": "https://tbs.go.tz/pages/pre-shipment-verification-of-conformity-pvoc",
             "requirement_reference": "TBS PVoC official guidance",
-            "requirement_source_url": "https://tbs.go.tz/pages/pre-shipment-verification-of-conformity-pvoc",
-            "requirement_reference": "TBS PVoC official guidance",
         })
         assert policy.status_code == 200
 
@@ -405,6 +403,8 @@ def test_category_market_policy_enforces_quarantine_authorities_and_admin_except
             "market_country": "tz",
             "approval_mode": "required",
             "accepted_authorities": ["Tanzania Bureau of Standards"],
+            "requirement_source_url": "https://tbs.go.tz/pages/pre-shipment-verification-of-conformity-pvoc",
+            "requirement_reference": "TBS PVoC official guidance",
         })
         assert required.status_code == 200
         assert required.json["item"]["approval_mode"] == "required"
