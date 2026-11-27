@@ -1434,6 +1434,9 @@ def list_category_compliance_policies(_user):
             "category_key": row.category_key,
             "market_country": row.market_country,
             "approval_mode": row.approval_mode,
+            "legal_requirement": row.legal_requirement,
+            "requirement_source_url": row.requirement_source_url,
+            "requirement_reference": row.requirement_reference,
             "accepted_authorities": row.accepted_authorities,
             "updated_at": row.updated_at.isoformat(),
         }
@@ -1456,6 +1459,22 @@ def save_category_compliance_policy(user):
         approval_mode = _text(data, "approval_mode", 24, required=True, lower=True)
         if approval_mode not in {"required", "admin_exception", "not_required"}:
             raise ValueError("Unsupported category approval mode.")
+        legal_requirement = _boolean(data.get("legal_requirement", False), "legal_requirement")
+        requirement_source_url = _text(data, "requirement_source_url", 500)
+        requirement_reference = _text(data, "requirement_reference", 200)
+        if legal_requirement and approval_mode != "required":
+            raise ValueError("Legally required approvals must use the strict required mode.")
+        if requirement_source_url:
+            parsed_requirement_source = urlsplit(requirement_source_url)
+            if (
+                parsed_requirement_source.scheme != "https"
+                or not parsed_requirement_source.hostname
+                or parsed_requirement_source.username
+                or parsed_requirement_source.password
+            ):
+                raise ValueError("The legal requirement source must be an HTTPS URL.")
+        if legal_requirement and not (requirement_source_url and requirement_reference):
+            raise ValueError("Record the official legal source URL and requirement reference.")
         authorities = data.get("accepted_authorities", [])
         if not isinstance(authorities, list) or len(authorities) > 30:
             raise ValueError("Accepted authorities must be a list of up to 30 names.")
@@ -1485,11 +1504,17 @@ def save_category_compliance_policy(user):
                 company_id=company_id, category_key=category_key,
                 market_country=market_country, approval_mode=approval_mode,
                 accepted_authorities=cleaned, updated_by_user_id=user.id,
+                legal_requirement=legal_requirement,
+                requirement_source_url=requirement_source_url,
+                requirement_reference=requirement_reference,
             )
             db.session.add(policy)
         else:
             policy.approval_mode = approval_mode
             policy.accepted_authorities = cleaned
+            policy.legal_requirement = legal_requirement
+            policy.requirement_source_url = requirement_source_url
+            policy.requirement_reference = requirement_reference
             policy.updated_by_user_id = user.id
         affected = db.session.scalars(
             select(Product).where(
@@ -1517,6 +1542,9 @@ def save_category_compliance_policy(user):
             {
                 "category_key": category_key, "market_country": market_country,
                 "approval_mode": approval_mode, "accepted_authorities": cleaned,
+                "legal_requirement": legal_requirement,
+                "requirement_source_url": requirement_source_url,
+                "requirement_reference": requirement_reference,
                 "affected_products": len(affected),
             },
         )
@@ -1524,6 +1552,9 @@ def save_category_compliance_policy(user):
             "category_key": policy.category_key,
             "market_country": policy.market_country,
             "approval_mode": policy.approval_mode,
+            "legal_requirement": policy.legal_requirement,
+            "requirement_source_url": policy.requirement_source_url,
+            "requirement_reference": policy.requirement_reference,
             "accepted_authorities": policy.accepted_authorities,
             "affected_products": len(affected),
         }
