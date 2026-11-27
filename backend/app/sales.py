@@ -1225,7 +1225,10 @@ def verify_stock_batch_compliance(user, batch_id):
                 "accreditation_body_name": batch.accreditation_body_name,
                 "qr_code_present": bool(batch.qr_code),
                 "evidence_reference_present": bool(batch.evidence_reference),
-                "evidence_file_id": str(evidence_file.id) if decision == "approve" else None,
+                "evidence_file_id": (
+                    str(evidence_file.id)
+                    if decision in {"approve", "release_not_required"} else None
+                ),
                 "notes": notes,
             },
         )
