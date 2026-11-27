@@ -647,7 +647,7 @@ async function loadInventoryBatches(productId, generation = workspaceGeneration)
   const body = document.querySelector("#inventory-batches-rows");
   body.replaceChildren();
   if (!productId) {
-    emptyRow(body, 8, "Select a tracked product to view batches.");
+    emptyRow(body, 10, "Select a tracked product to view batches.");
     return;
   }
   const data = await workspaceRequest(
@@ -656,12 +656,15 @@ async function loadInventoryBatches(productId, generation = workspaceGeneration)
   if (generation !== workspaceGeneration) return;
   const batchProduct = products.find((entry) => entry.id === productId);
   if (!data.items.length) {
-    emptyRow(body, 8, "No batches have been recorded for this product.");
+    emptyRow(body, 10, "No batches have been recorded for this product.");
     return;
   }
   for (const batch of data.items) {
     const row = document.createElement("tr");
     textCell(row, batch.batch_code);
+    textCell(row, [batch.supplier_name, batch.supplier_invoice_reference || batch.delivery_note_reference]
+      .filter(Boolean).join(" · ") || "Supplier details missing");
+    textCell(row, [batch.manufacturer_name, batch.country_of_origin].filter(Boolean).join(" · ") || "Origin details missing");
     textCell(row, batch.expiry_date || "No expiry date");
     textCell(row, batch.stock_on_hand);
     textCell(row, batch.reserved_quantity);
@@ -687,24 +690,24 @@ async function loadInventoryBatches(productId, generation = workspaceGeneration)
       sadcasLink.style.display = "block";
       actions.append(sadcasLink);
     }
-    if (["pending_verification", "approved", "exception_approved"].includes(batch.compliance_status)) {
+    if (["pending_verification", "approved", "exception_approved", "verified_not_required"].includes(batch.compliance_status)) {
       const review = document.createElement("button");
       review.type = "button";
       review.className = "table-action";
-      review.textContent = ["approved", "exception_approved"].includes(batch.compliance_status) ? "Recall" : "Review";
+      review.textContent = ["approved", "exception_approved", "verified_not_required"].includes(batch.compliance_status) ? "Recall" : "Review";
       review.addEventListener("click", async () => {
-        const decision = ["approved", "exception_approved"].includes(batch.compliance_status)
+        const decision = ["approved", "exception_approved", "verified_not_required"].includes(batch.compliance_status)
           ? "recall" : window.prompt(
-            workspaceRole === "admin"
-              ? "Evidence-based decision: approve, reject, or exception (if the policy allows it). QR text alone is not proof."
-              : "Evidence-based decision: approve or reject. QR text alone is not proof.",
+            "Evidence-based decision: approve, reject, release_not_required (only with a not-required category policy)" +
+            (workspaceRole === "admin" ? ", or exception (never for legal requirements)" : "") +
+            ". Missing or uncertain proof must remain quarantined.",
             "approve"
           );
         if (!decision) return;
         const normalized = decision.trim().toLowerCase();
         const allowedDecisions = workspaceRole === "admin"
-          ? ["approve", "reject", "recall", "exception"]
-          : ["approve", "reject", "recall"];
+          ? ["approve", "reject", "recall", "exception", "release_not_required"]
+          : ["approve", "reject", "recall", "release_not_required"];
         if (!allowedDecisions.includes(normalized)) {
           return workspaceMessage("Choose one of the available compliance decisions.");
         }
@@ -783,6 +786,29 @@ async function loadInventoryBatches(productId, generation = workspaceGeneration)
         } else {
           payload.notes = window.prompt("Reason for " + normalized + " (required)", "");
           if (payload.notes === null || !payload.notes.trim()) return;
+          if (normalized === "release_not_required") {
+            const fileInput = document.createElement("input");
+            fileInput.type = "file";
+            fileInput.accept = ".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp";
+            fileInput.style.position = "fixed";
+            fileInput.style.left = "-10000px";
+            document.body.append(fileInput);
+            const selectedFile = new Promise((resolve) => {
+              fileInput.addEventListener("change", () => resolve(fileInput.files[0] || null), {once: true});
+              fileInput.addEventListener("cancel", () => resolve(null), {once: true});
+            });
+            fileInput.click();
+            const evidenceFile = await selectedFile;
+            fileInput.remove();
+            if (!evidenceFile) return;
+            const evidenceForm = new FormData();
+            evidenceForm.append("file", evidenceFile);
+            const uploadedEvidence = await workspaceRequest(
+              "/api/stock-batches/" + encodeURIComponent(batch.id) + "/evidence",
+              {method: "POST", body: evidenceForm},
+            );
+            payload.evidence_file_id = uploadedEvidence.item.id;
+          }
         }
         review.disabled = true;
           await workspaceRequest("/api/stock-batches/" + encodeURIComponent(batch.id) + "/compliance", {
@@ -912,7 +938,7 @@ async function loadCompliancePolicies(generation = workspaceGeneration) {
   if (generation !== workspaceGeneration) return;
   body.replaceChildren();
   if (!data.items.length) {
-    emptyRow(body, 4, "No category rules configured.");
+    emptyRow(body, 5, "No category rules configured.");
     return;
   }
   for (const policy of data.items) {
@@ -920,6 +946,7 @@ async function loadCompliancePolicies(generation = workspaceGeneration) {
     textCell(row, policy.category_key);
     textCell(row, policy.market_country);
     textCell(row, policy.approval_mode.replaceAll("_", " "));
+    textCell(row, policy.legal_requirement ? "Yes — no Admin override" : "No");
     textCell(row, policy.accepted_authorities.join(", ") || "No authority allow-list");
     body.append(row);
   }
@@ -947,7 +974,7 @@ async function loadWorkspace() {
     renderProducts();
     fillSaleChoices();
     if (workspaceRole === "admin") await loadCompliancePolicies(generation);
-    else emptyRow(document.querySelector("#compliance-policy-rows"), 4, "Category compliance rules are managed by company Admins.");
+    else emptyRow(document.querySelector("#compliance-policy-rows"), 5, "Category compliance rules are managed by company Admins.");
     await loadSales(generation);
     await loadNotifications(generation);
     await loadSalesTargets(generation);
