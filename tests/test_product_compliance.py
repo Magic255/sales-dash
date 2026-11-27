@@ -14,6 +14,7 @@ from app.models import (
     ComplianceEvidenceFile,
     Customer,
     Product,
+    StockBatch,
     User,
 )
 
@@ -666,6 +667,13 @@ def test_category_market_policy_enforces_quarantine_authorities_and_admin_except
         assert receipt.status_code == 201
         unregulated_batch_id = receipt.json["item"]["batch_id"]
         assert receipt.json["item"]["movement_type"] == "received"
+        with app.app_context():
+            legacy_batch = db.session.get(StockBatch, UUID(unregulated_batch_id))
+            legacy_batch.supplier_name = None
+            legacy_batch.supplier_invoice_reference = None
+            legacy_batch.manufacturer_name = None
+            legacy_batch.country_of_origin = None
+            db.session.commit()
         batch_state = admin_client.get(
             f"/api/products/{unregulated_id}/stock-batches"
         ).json["items"][0]
@@ -686,7 +694,11 @@ def test_category_market_policy_enforces_quarantine_authorities_and_admin_except
             f"/api/stock-batches/{unregulated_batch_id}/compliance",
             json={
                 "decision": "release_not_required",
-                "notes": "Synthetic category review: no product approval requirement.",
+                "notes": "Synthetic category review: no product approval requirement; completed legacy supplier details.",
+                "supplier_name": "Synthetic Stationery Supplier",
+                "supplier_invoice_reference": "INV-STATIONERY-001",
+                "manufacturer_name": "Synthetic Stationery Maker",
+                "country_of_origin": "TZ",
                 "evidence_file_id": invoice.json["item"]["id"],
             },
         )
