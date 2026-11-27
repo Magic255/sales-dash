@@ -15,7 +15,7 @@ Pending, rejected, recalled and expired batches cannot be sold, reserved or allo
 Admins can configure one policy for each company category key and market country:
 
 - `required`: stock is quarantined until independently verified against the accepted authority list.
-- `admin_exception`: stock is quarantined; only an Admin can release a batch through a separately audited, reason-required exception. This is an internal business exception only, never a regulatory/legal override.
+- `admin_exception`: stock is quarantined; only an Admin can release a batch through a separately audited exception that requires a reason, QR/batch traceability value and private evidence. This is an internal business exception only, never a regulatory/legal override.
 - `not_required`: the policy does not require product certification, but a separate verifier must still review supplier/source evidence and record a reason before the batch can be released.
 
 A strict `required` policy must list at least one accepted authority. An `admin_exception` policy may leave the list empty, in which case ordinary standards approval is blocked and only the separately audited internal Admin exception can release stock. Where a list is configured, the entered authority name must match it. Goods received without a matching category/market policy remain quarantined; the policy must be configured before release. Every policy mode, including `not_required`, must record an HTTPS source and a specific law, regulator notice or internal policy reference. This prevents a category from being marked unregulated without recording the basis for that decision.
