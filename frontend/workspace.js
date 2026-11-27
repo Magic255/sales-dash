@@ -1003,7 +1003,7 @@ async function loadCompliancePolicies(generation = workspaceGeneration) {
   if (generation !== workspaceGeneration) return;
   body.replaceChildren();
   if (!data.items.length) {
-    emptyRow(body, 5, "No category rules configured.");
+    emptyRow(body, 6, "No category rules configured.");
     return;
   }
   for (const policy of data.items) {
@@ -1013,7 +1013,16 @@ async function loadCompliancePolicies(generation = workspaceGeneration) {
     textCell(row, policy.approval_mode.replaceAll("_", " "));
     textCell(row, policy.legal_requirement ? "Yes — no Admin override" : "No");
     textCell(row, policy.accepted_authorities.join(", ") || "No authority allow-list");
+    const basis = document.createElement("td");
+    const basisLink = document.createElement("a");
+    basisLink.href = policy.requirement_source_url;
+    basisLink.target = "_blank";
+    basisLink.rel = "noopener noreferrer";
+    basisLink.textContent = policy.requirement_reference || "Open policy source";
+    basisLink.className = "table-action";
+    basis.append(basisLink);
     body.append(row);
+    row.append(basis);
   }
 }
 
@@ -1039,7 +1048,7 @@ async function loadWorkspace() {
     renderProducts();
     fillSaleChoices();
     if (workspaceRole === "admin") await loadCompliancePolicies(generation);
-    else emptyRow(document.querySelector("#compliance-policy-rows"), 5, "Category compliance rules are managed by company Admins.");
+    else emptyRow(document.querySelector("#compliance-policy-rows"), 6, "Category compliance rules are managed by company Admins.");
     await loadSales(generation);
     await loadNotifications(generation);
     await loadSalesTargets(generation);
