@@ -548,6 +548,23 @@ def test_category_market_policy_enforces_quarantine_authorities_and_admin_except
             "requirement_reference": "Tanzania Medicines and Medical Devices Act, Cap. 219",
         })
         assert legal_policy.status_code == 200
+        legal_product = admin_client.post("/api/products", json={
+            "sku": "MED-DEVICE-001",
+            "name": "Synthetic regulated medical device",
+            "unit_price": "50.00",
+            "cost_price": "20.00",
+            "minimum_selling_price": "30.00",
+            "currency": "TZS",
+            "category_key": "medical-device",
+            "market_country": "TZ",
+        })
+        assert legal_product.status_code == 201
+        legal_reclassification = admin_client.patch(
+            f"/api/products/{legal_product.json['item']['id']}",
+            json={"category_key": "general"},
+        )
+        assert legal_reclassification.status_code == 409
+        assert "cannot be reclassified" in legal_reclassification.json["error"]
         forbidden_override = admin_client.post("/api/compliance-policies", json={
             "category_key": "medical-device", "market_country": "TZ",
             "approval_mode": "admin_exception", "accepted_authorities": [],
@@ -629,6 +646,16 @@ def test_category_market_policy_enforces_quarantine_authorities_and_admin_except
         )
         assert released.status_code == 200
         assert released.json["item"]["compliance_status"] == "verified_not_required"
+        identity_change = admin_client.patch(
+            f"/api/products/{unregulated_id}",
+            json={"name": "Synthetic stationery identity changed"},
+        )
+        assert identity_change.status_code == 200
+        rechecked = admin_client.get(
+            f"/api/products/{unregulated_id}/stock-batches"
+        ).json["items"][0]
+        assert rechecked["compliance_status"] == "pending_verification"
+        assert rechecked["available_quantity"] == "0.000"
     finally:
         with app.app_context():
             db.session.remove()
