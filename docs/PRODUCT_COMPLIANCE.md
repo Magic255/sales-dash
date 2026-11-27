@@ -4,7 +4,7 @@
 
 An Admin can configure product compliance directly and define reusable category/market policies for a company. Policies are scoped to a category key and a two-letter market country. Product records carry both fields.
 
-Every new stock receipt enters `pending_verification` quarantine, regardless of whether the product category is regulated. Physical receipt records that the goods arrived; it does not authorize sale. The migration also moves previously approved batches back to pending verification so legacy stock cannot bypass the new controls.
+Every new stock receipt enters `pending_verification` quarantine, regardless of whether the product category is regulated. Physical receipt records that the goods arrived; it does not authorize sale. The migration moves previously approved and exception-released batches back to pending verification so legacy stock cannot bypass the new controls.
 
 At receipt, staff must record the supplier name, manufacturer, country of origin, and either a supplier invoice or delivery-note reference, in addition to product, batch/lot, quantity, receiver and reason. These details create a traceable chain from supplier delivery to stock batch. They are not, by themselves, proof that a product is lawful or authentic.
 
