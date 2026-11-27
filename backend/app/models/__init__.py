@@ -326,6 +326,10 @@ class CategoryCompliancePolicy(db.Model):
             name="legal_requirement_no_exception",
         ),
         CheckConstraint(
+            "requirement_source_url IS NULL OR requirement_source_url LIKE 'https://%'",
+            name="requirement_source_https",
+        ),
+        CheckConstraint(
             "category_key = lower(trim(category_key)) AND length(category_key) > 0",
             name="category_key_normalized",
         ),
@@ -418,8 +422,14 @@ class StockBatch(db.Model):
     product_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
     batch_code: Mapped[str] = mapped_column(String(80), nullable=False)
     expiry_date: Mapped[date | None] = mapped_column(db.Date)
+    supplier_name: Mapped[str | None] = mapped_column(String(160))
+    supplier_invoice_reference: Mapped[str | None] = mapped_column(String(120))
+    delivery_note_reference: Mapped[str | None] = mapped_column(String(120))
+    manufacturer_name: Mapped[str | None] = mapped_column(String(160))
+    country_of_origin: Mapped[str | None] = mapped_column(String(2))
     compliance_status: Mapped[str] = mapped_column(
-        String(24), nullable=False, default="approved", server_default="approved"
+        String(24), nullable=False, default="pending_verification",
+        server_default="pending_verification"
     )
     received_by_user_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True))
     qr_code: Mapped[str | None] = mapped_column(String(500))
