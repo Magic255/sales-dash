@@ -1371,7 +1371,9 @@ def create_stock_movement(user, product_id):
                 delivery_note_reference=delivery_note_reference,
                 manufacturer_name=manufacturer_name,
                 country_of_origin=country_of_origin,
-                compliance_status="pending_verification",
+                compliance_status=(
+                    "pending_verification" if product.compliance_required else "approved"
+                ),
                 received_by_user_id=user.id,
                 created_at=datetime.now(timezone.utc),
             )
