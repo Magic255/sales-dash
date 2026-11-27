@@ -1162,6 +1162,13 @@ def verify_stock_batch_compliance(user, batch_id):
             )
             if evidence_file is None:
                 raise ValueError("Upload private evidence for this batch before approval.")
+            if policy and policy.legal_requirement and verification_method not in {
+                "official_registry", "issuer_confirmation"
+            }:
+                raise ValueError(
+                    "Legally required approval must be checked against an official registry "
+                    "or confirmed directly with the issuing authority."
+                )
             standard_reference = _text(data, "standard_reference", 160)
             if (
                 policy
@@ -1526,17 +1533,18 @@ def save_category_compliance_policy(user):
         if approval_mode in {"required", "admin_exception"}:
             for product in affected:
                 product.compliance_required = True
-                batches = db.session.scalars(
-                    select(StockBatch).where(
-                        StockBatch.company_id == company_id,
-                        StockBatch.product_id == product.id,
-                        StockBatch.compliance_status.in_(
-                            ["approved", "exception_approved"]
-                        ),
-                    ).with_for_update()
-                ).all()
-                for batch in batches:
-                    batch.compliance_status = "pending_verification"
+        for product in affected:
+            batches = db.session.scalars(
+                select(StockBatch).where(
+                    StockBatch.company_id == company_id,
+                    StockBatch.product_id == product.id,
+                    StockBatch.compliance_status.in_(
+                        ["approved", "exception_approved", "verified_not_required"]
+                    ),
+                ).with_for_update()
+            ).all()
+            for batch in batches:
+                batch.compliance_status = "pending_verification"
         record_audit_event(
             db.session, user.id, "product_compliance_policy_updated", company_id,
             {
