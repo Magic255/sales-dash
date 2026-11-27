@@ -1486,8 +1486,10 @@ def save_category_compliance_policy(user):
                 or parsed_requirement_source.password
             ):
                 raise ValueError("The legal requirement source must be an HTTPS URL.")
-        if legal_requirement and not (requirement_source_url and requirement_reference):
-            raise ValueError("Record the official legal source URL and requirement reference.")
+        if not (requirement_source_url and requirement_reference):
+            raise ValueError(
+                "Record an HTTPS official requirement or business-policy source and its reference."
+            )
         authorities = data.get("accepted_authorities", [])
         if not isinstance(authorities, list) or len(authorities) > 30:
             raise ValueError("Accepted authorities must be a list of up to 30 names.")
