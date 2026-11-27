@@ -58,6 +58,8 @@ def make_client(role="admin"):
             market_country="TZ",
             approval_mode="not_required",
             accepted_authorities=[],
+            requirement_source_url="https://example.test/test-category-policy",
+            requirement_reference="Synthetic test policy v1",
             updated_by_user_id=user.id,
         ))
         company_id = str(company.id)
