@@ -33,6 +33,10 @@ def upgrade():
         "country_of_origin IS NULL OR "
         "(country_of_origin = upper(country_of_origin) AND length(country_of_origin) = 2)",
     )
+    op.execute(
+        "UPDATE stock_batches SET compliance_status = 'pending_verification' "
+        "WHERE compliance_status = 'approved'"
+    )
     op.drop_constraint("compliance_status_supported", "stock_batches", type_="check")
     op.alter_column(
         "stock_batches", "compliance_status",
