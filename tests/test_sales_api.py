@@ -1370,7 +1370,9 @@ def test_admin_can_make_reasoned_stock_adjustments():
         )
         assert decrease.status_code == 201
         assert decrease.json["balance"]["stock_on_hand"] == "1.000"
-        assert decrease.json["balance"]["available_quantity"] == "1.000"
+        assert decrease.json["balance"]["available_quantity"] == "0.000"
+        inventory = client.get("/api/inventory").json["items"][0]
+        assert inventory["quarantine_quantity"] == "1.000"
     finally:
         with application.app_context():
             db.session.remove()
