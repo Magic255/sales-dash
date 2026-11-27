@@ -44,6 +44,9 @@ For each approval, the verifier must also record the issuer's role, the verifica
 
 For Tanzania-market products, the inventory screen provides direct links to two official sources:
 
+- TBS PVoC programme: https://tbs.go.tz/pages/pre-shipment-verification-of-conformity-pvoc . Applies to specified categories of imported consumer goods; check the current regulated HS-code list and exemptions for the actual consignment.
+- Tanzania Trade Portal CoC verification procedure: https://trade.tanzania.go.tz/procedure/307?l=en . Lists the documents and TBS verification steps for applicable imported products.
+- TMDA market authorisation: https://tmda.go.tz/pages/procedures-for-market-authorization and import/export control: https://www.tmda.go.tz/pages/import-and-export-control . Use for products within TMDA's legal remit; confirm the specific product registration, premises/business licence and permit requirements.
 - TBS certified-product register: https://tbs.go.tz/certified-product-companies . Use it to compare the licence number, product, brand, standard, issue date and expiry date shown by TBS.
 - SADCAS product-certification-body directory: https://www.sadcas.org/accredited-organisations/product-certification-bodies . It lists TBS Product Certification Services as accreditation PROD-CERT 003 and publishes its approval status and accreditation validity.
 - SADCAS schedule of accreditation: https://www.sadcas.org/sites/default/files/2024-10/TBS-Prod%20Certification%20Cert%20%26%20SoA%20%28Issue%2001%29%202024.pdf . Check the specific product-certification scope, not just the organisation name.
