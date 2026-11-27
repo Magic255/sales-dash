@@ -111,6 +111,10 @@ def test_compliance_required_stock_is_received_to_quarantine_until_independent_v
             "category_key": "general", "market_country": "TZ",
             "approval_mode": "required",
             "accepted_authorities": ["Tanzania Bureau of Standards"],
+            "requirement_source_url": "https://tbs.go.tz/pages/pre-shipment-verification-of-conformity-pvoc",
+            "requirement_reference": "TBS PVoC official guidance",
+            "requirement_source_url": "https://tbs.go.tz/pages/pre-shipment-verification-of-conformity-pvoc",
+            "requirement_reference": "TBS PVoC official guidance",
         })
         assert policy.status_code == 200
 
@@ -489,6 +493,8 @@ def test_category_market_policy_enforces_quarantine_authorities_and_admin_except
         exception_policy = admin_client.post("/api/compliance-policies", json={
             "category_key": "tools", "market_country": "TZ",
             "approval_mode": "admin_exception", "accepted_authorities": [],
+            "requirement_source_url": "https://example.test/internal-tools-policy",
+            "requirement_reference": "Synthetic internal policy v1",
         })
         assert exception_policy.status_code == 200
         exception_receipt = manager_client.post(
@@ -538,6 +544,8 @@ def test_category_market_policy_enforces_quarantine_authorities_and_admin_except
             "category_key": "medical-device", "market_country": "TZ",
             "approval_mode": "not_required", "accepted_authorities": [],
             "legal_requirement": False,
+            "requirement_source_url": "https://www.tmda.go.tz/pages/procedures-for-market-authorization",
+            "requirement_reference": "Attempted legal policy downgrade",
         })
         assert legal_downgrade.status_code == 400
         assert "cannot be removed" in legal_downgrade.json["error"]
@@ -545,6 +553,8 @@ def test_category_market_policy_enforces_quarantine_authorities_and_admin_except
         not_required = admin_client.post("/api/compliance-policies", json={
             "category_key": "stationery", "market_country": "TZ",
             "approval_mode": "not_required", "accepted_authorities": [],
+            "requirement_source_url": "https://example.test/stationery-policy",
+            "requirement_reference": "Synthetic category assessment v1",
         })
         assert not_required.status_code == 200
         unregulated = admin_client.post("/api/products", json={
