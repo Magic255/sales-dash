@@ -112,7 +112,8 @@ def test_compliance_required_stock_is_received_to_quarantine_until_independent_v
             "category_key": "general", "market_country": "TZ",
             "approval_mode": "required",
             "accepted_authorities": ["Tanzania Bureau of Standards"],
-            "requirement_source_url": "https://tbs.go.tz/pages/pre-shipment-verification-of-conformity-pvoc",
+            "requirement_source_url": "https://tbs.go.tz/pages/"
+            "pre-shipment-verification-of-conformity-pvoc",
             "requirement_reference": "TBS PVoC official guidance",
         })
         assert policy.status_code == 200
@@ -404,7 +405,8 @@ def test_category_market_policy_enforces_quarantine_authorities_and_admin_except
             "market_country": "tz",
             "approval_mode": "required",
             "accepted_authorities": ["Tanzania Bureau of Standards"],
-            "requirement_source_url": "https://tbs.go.tz/pages/pre-shipment-verification-of-conformity-pvoc",
+            "requirement_source_url": "https://tbs.go.tz/pages/"
+            "pre-shipment-verification-of-conformity-pvoc",
             "requirement_reference": "TBS PVoC official guidance",
         })
         assert required.status_code == 200
@@ -545,7 +547,8 @@ def test_category_market_policy_enforces_quarantine_authorities_and_admin_except
             "approval_mode": "required",
             "accepted_authorities": ["Tanzania Medicines and Medical Devices Authority"],
             "legal_requirement": True,
-            "requirement_source_url": "https://www.tmda.go.tz/pages/procedures-for-market-authorization",
+            "requirement_source_url": "https://www.tmda.go.tz/pages/"
+            "procedures-for-market-authorization",
             "requirement_reference": "Tanzania Medicines and Medical Devices Act, Cap. 219",
         })
         assert legal_policy.status_code == 200
@@ -616,7 +619,8 @@ def test_category_market_policy_enforces_quarantine_authorities_and_admin_except
             "category_key": "medical-device", "market_country": "TZ",
             "approval_mode": "admin_exception", "accepted_authorities": [],
             "legal_requirement": True,
-            "requirement_source_url": "https://www.tmda.go.tz/pages/procedures-for-market-authorization",
+            "requirement_source_url": "https://www.tmda.go.tz/pages/"
+            "procedures-for-market-authorization",
             "requirement_reference": "Tanzania Medicines and Medical Devices Act, Cap. 219",
         })
         assert forbidden_override.status_code == 400
@@ -624,7 +628,8 @@ def test_category_market_policy_enforces_quarantine_authorities_and_admin_except
             "category_key": "medical-device", "market_country": "TZ",
             "approval_mode": "not_required", "accepted_authorities": [],
             "legal_requirement": False,
-            "requirement_source_url": "https://www.tmda.go.tz/pages/procedures-for-market-authorization",
+            "requirement_source_url": "https://www.tmda.go.tz/pages/"
+            "procedures-for-market-authorization",
             "requirement_reference": "Attempted legal policy downgrade",
         })
         assert legal_downgrade.status_code == 400
@@ -694,7 +699,10 @@ def test_category_market_policy_enforces_quarantine_authorities_and_admin_except
             f"/api/stock-batches/{unregulated_batch_id}/compliance",
             json={
                 "decision": "release_not_required",
-                "notes": "Synthetic category review: no product approval requirement; completed legacy supplier details.",
+                "notes": (
+                    "Synthetic category review: no product approval requirement; "
+                    "completed legacy supplier details."
+                ),
                 "supplier_name": "Synthetic Stationery Supplier",
                 "supplier_invoice_reference": "INV-STATIONERY-001",
                 "manufacturer_name": "Synthetic Stationery Maker",
