@@ -1014,15 +1014,19 @@ async function loadCompliancePolicies(generation = workspaceGeneration) {
     textCell(row, policy.legal_requirement ? "Yes — no Admin override" : "No");
     textCell(row, policy.accepted_authorities.join(", ") || "No authority allow-list");
     const basis = document.createElement("td");
-    const basisLink = document.createElement("a");
-    basisLink.href = policy.requirement_source_url;
-    basisLink.target = "_blank";
-    basisLink.rel = "noopener noreferrer";
-    basisLink.textContent = policy.requirement_reference || "Open policy source";
-    basisLink.className = "table-action";
-    basis.append(basisLink);
-    body.append(row);
+    if (policy.requirement_source_url && policy.requirement_reference) {
+      const basisLink = document.createElement("a");
+      basisLink.href = policy.requirement_source_url;
+      basisLink.target = "_blank";
+      basisLink.rel = "noopener noreferrer";
+      basisLink.textContent = policy.requirement_reference;
+      basisLink.className = "table-action";
+      basis.append(basisLink);
+    } else {
+      basis.textContent = "Source missing — update required";
+    }
     row.append(basis);
+    body.append(row);
   }
 }
 
