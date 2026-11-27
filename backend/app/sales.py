@@ -1106,7 +1106,10 @@ def verify_stock_batch_compliance(user, batch_id):
             and not (policy.requirement_source_url and policy.requirement_reference)
         ):
             return jsonify({
-                "error": "Complete the category policy's source and reference before releasing stock."
+                "error": (
+                    "Complete the category policy's source and reference before "
+                    "releasing stock."
+                ),
             }), 409
         if decision == "exception":
             if (
