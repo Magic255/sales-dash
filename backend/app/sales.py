@@ -1318,6 +1318,8 @@ def verify_stock_batch_compliance(user, batch_id):
         }
         db.session.commit()
     except ValueError:
+        if current_app.testing:
+            current_app.logger.exception("Compliance review validation failed in tests.")
         db.session.rollback()
         return jsonify({
             "error": "Invalid compliance review. Check the required evidence and fields."
