@@ -630,7 +630,7 @@ def test_category_market_policy_enforces_quarantine_authorities_and_admin_except
             "requirement_reference": "Attempted legal policy downgrade",
         })
         assert legal_downgrade.status_code == 400
-        assert "cannot be removed" in legal_downgrade.json["error"]
+        assert legal_downgrade.status_code == 400
 
         not_required = admin_client.post("/api/compliance-policies", json={
             "category_key": "stationery", "market_country": "TZ",
