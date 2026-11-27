@@ -103,6 +103,14 @@ def upgrade():
 
 def downgrade():
     op.execute(
+        "UPDATE stock_batches SET compliance_status = 'pending_verification' "
+        "WHERE compliance_status = 'verified_not_required'"
+    )
+    op.execute(
+        "UPDATE audit_logs SET event_type = 'product_compliance_verified' "
+        "WHERE event_type = 'product_compliance_not_required_release'"
+    )
+    op.execute(
         "REVOKE UPDATE (supplier_name, supplier_invoice_reference, delivery_note_reference, "
         "manufacturer_name, country_of_origin) ON stock_batches FROM sales_dash_app"
     )
