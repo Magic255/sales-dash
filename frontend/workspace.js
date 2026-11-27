@@ -786,7 +786,11 @@ async function loadInventoryBatches(productId, generation = workspaceGeneration)
         } else {
           payload.notes = window.prompt("Reason for " + normalized + " (required)", "");
           if (payload.notes === null || !payload.notes.trim()) return;
-          if (normalized === "release_not_required") {
+          if (normalized === "exception") {
+            payload.qr_code = window.prompt("QR / batch traceability value (required for exception)", "");
+            if (payload.qr_code === null || !payload.qr_code.trim()) return;
+          }
+          if (normalized === "release_not_required" || normalized === "exception") {
             const fileInput = document.createElement("input");
             fileInput.type = "file";
             fileInput.accept = ".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp";
