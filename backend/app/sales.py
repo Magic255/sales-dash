@@ -56,6 +56,31 @@ def _country_code(value, *, required=False):
     return result
 
 
+def _ensure_batch_supplier_provenance(batch, data):
+    """Complete legacy batch provenance before any release decision."""
+    changed = False
+    if not batch.supplier_name:
+        batch.supplier_name = _text(data, "supplier_name", 160, required=True)
+        changed = True
+    if not batch.supplier_invoice_reference and not batch.delivery_note_reference:
+        invoice = _text(data, "supplier_invoice_reference", 120)
+        delivery_note = _text(data, "delivery_note_reference", 120)
+        if not (invoice or delivery_note):
+            raise ValueError("A supplier invoice or delivery note reference is required.")
+        batch.supplier_invoice_reference = invoice
+        batch.delivery_note_reference = delivery_note
+        changed = True
+    if not batch.manufacturer_name:
+        batch.manufacturer_name = _text(data, "manufacturer_name", 160, required=True)
+        changed = True
+    if not batch.country_of_origin:
+        batch.country_of_origin = _country_code(
+            data.get("country_of_origin"), required=True
+        )
+        changed = True
+    return changed
+
+
 def _category_compliance_policy(company_id, category_key, market_country):
     if not market_country:
         category_has_market_rules = db.session.scalar(
@@ -1085,6 +1110,9 @@ def verify_stock_batch_compliance(user, batch_id):
                 return jsonify({
                     "error": "Admin exceptions are unavailable for legally required approvals."
                 }), 403
+            provenance_changed = _ensure_batch_supplier_provenance(batch, data)
+            if provenance_changed and not notes:
+                raise ValueError("Record a reason when completing legacy supplier details.")
             exception_qr = _text(data, "qr_code", 500, required=True)
             evidence_file_id = UUID(_text(data, "evidence_file_id", 36, required=True))
             evidence_file = db.session.scalar(
@@ -1111,6 +1139,9 @@ def verify_stock_batch_compliance(user, batch_id):
                 return jsonify({
                     "error": "A not-required category policy must be configured before release."
                 }), 409
+            provenance_changed = _ensure_batch_supplier_provenance(batch, data)
+            if provenance_changed and not notes:
+                raise ValueError("Record a reason when completing legacy supplier details.")
             evidence_file_id = UUID(_text(data, "evidence_file_id", 36, required=True))
             evidence_file = db.session.scalar(
                 select(ComplianceEvidenceFile).where(
@@ -1129,6 +1160,9 @@ def verify_stock_batch_compliance(user, batch_id):
                 raise ValueError(
                     "Configure a required category/market policy before authority approval."
                 )
+            provenance_changed = _ensure_batch_supplier_provenance(batch, data)
+            if provenance_changed and not notes:
+                raise ValueError("Record a reason when completing legacy supplier details.")
             qr_code = _text(data, "qr_code", 500, required=True)
             authority_name = _text(data, "authority_name", 160, required=True)
             authority_country = _country_code(data.get("authority_country"), required=True)
@@ -1244,6 +1278,11 @@ def verify_stock_batch_compliance(user, batch_id):
                     str(evidence_file.id)
                     if decision in {"approve", "release_not_required", "exception"} else None
                 ),
+                "supplier_name": batch.supplier_name,
+                "supplier_invoice_reference": batch.supplier_invoice_reference,
+                "delivery_note_reference": batch.delivery_note_reference,
+                "manufacturer_name": batch.manufacturer_name,
+                "country_of_origin": batch.country_of_origin,
                 "notes": notes,
             },
         )
