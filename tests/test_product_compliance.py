@@ -557,6 +557,7 @@ def test_category_market_policy_enforces_quarantine_authorities_and_admin_except
             "currency": "TZS",
             "category_key": "medical-device",
             "market_country": "TZ",
+            "track_inventory": True,
         })
         assert legal_product.status_code == 201
         legal_reclassification = admin_client.patch(
@@ -565,6 +566,48 @@ def test_category_market_policy_enforces_quarantine_authorities_and_admin_except
         )
         assert legal_reclassification.status_code == 409
         assert "cannot be reclassified" in legal_reclassification.json["error"]
+        legal_receipt = manager_client.post(
+            f"/api/products/{legal_product.json['item']['id']}/stock-movements",
+            json={
+                "movement_type": "received", "quantity": "1",
+                "reason": "Synthetic legal-category receipt",
+                "batch_code": "MED-LEGAL-001",
+                "supplier_name": "Synthetic Medical Supplier",
+                "supplier_invoice_reference": "INV-MED-001",
+                "manufacturer_name": "Synthetic Medical Manufacturer",
+                "country_of_origin": "DE",
+            },
+        )
+        assert legal_receipt.status_code == 201
+        legal_batch_id = legal_receipt.json["item"]["batch_id"]
+        legal_evidence = admin_client.post(
+            f"/api/stock-batches/{legal_batch_id}/evidence",
+            data={
+                "file": (
+                    BytesIO(b"%PDF-1.7\\nsynthetic medical registration\\n"),
+                    "medical-registration.pdf",
+                )
+            },
+            content_type="multipart/form-data",
+        )
+        assert legal_evidence.status_code == 201
+        document_only_approval = admin_client.post(
+            f"/api/stock-batches/{legal_batch_id}/compliance",
+            json={
+                "decision": "approve",
+                "qr_code": "QR-MEDICAL-SYNTHETIC-001",
+                "authority_name": "Tanzania Medicines and Medical Devices Authority",
+                "authority_country": "TZ",
+                "authority_role": "regulator",
+                "certificate_reference": "TMDA-SYNTHETIC-001",
+                "verification_method": "document_review",
+                "verified_product_identifier": "Synthetic regulated medical device",
+                "verified_scope": "Medical device registration in Tanzania",
+                "evidence_file_id": legal_evidence.json["item"]["id"],
+            },
+        )
+        assert document_only_approval.status_code == 400
+        assert "official registry or direct issuer confirmation" in document_only_approval.json["error"]
         forbidden_override = admin_client.post("/api/compliance-policies", json={
             "category_key": "medical-device", "market_country": "TZ",
             "approval_mode": "admin_exception", "accepted_authorities": [],
