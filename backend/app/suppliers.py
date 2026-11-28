@@ -273,10 +273,11 @@ def update_supplier(_user, supplier_id):
                 data["next_review_date"], "Next review date"
             )
         if changed:
-            item.status = "pending_review"
-            item.reviewed_by_user_id = None
-            item.reviewed_at = None
-            item.review_notes = None
+            if item.status == "approved":
+                item.status = "pending_review"
+                item.reviewed_by_user_id = None
+                item.reviewed_at = None
+                item.review_notes = None
             record_audit_event(
                 db.session, _user.id, "supplier_re_review_required", company_id,
                 {"supplier_id": str(item.id), "changed_fields": sorted(identity_fields.intersection(data))},
