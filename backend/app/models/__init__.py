@@ -824,7 +824,9 @@ class Supplier(db.Model):
     )
 
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
-    company_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    company_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False
+    )
     legal_name: Mapped[str] = mapped_column(String(180), nullable=False)
     registration_number: Mapped[str | None] = mapped_column(String(120))
     tax_identifier: Mapped[str | None] = mapped_column(String(120))
