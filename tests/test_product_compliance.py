@@ -140,7 +140,7 @@ def test_compliance_required_stock_is_received_to_quarantine_until_independent_v
         receipt = admin_client.post(
             f"/api/products/{product_id}/stock-movements",
             json={
-                "movement_type": "received", "supplier_id": supplier_id, "supplier_id": supplier_id,
+                "movement_type": "received", "supplier_id": supplier_id,
                 "quantity": "8",
                 "reason": "Synthetic receipt for compliance test",
                 "batch_code": "BATCH-TEST-001",
