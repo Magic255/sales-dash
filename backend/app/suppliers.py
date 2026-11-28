@@ -3,7 +3,7 @@
 from datetime import date, datetime, timezone
 from uuid import UUID
 
-from flask import Blueprint, g, jsonify, request, session
+from flask import Blueprint, jsonify, request, session
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
