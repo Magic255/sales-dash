@@ -140,7 +140,7 @@ def test_compliance_required_stock_is_received_to_quarantine_until_independent_v
         receipt = admin_client.post(
             f"/api/products/{product_id}/stock-movements",
             json={
-                "movement_type": "received", "supplier_id": supplier_id,
+                "movement_type": "received", "supplier_id": supplier_id, "supplier_id": supplier_id,
                 "quantity": "8",
                 "reason": "Synthetic receipt for compliance test",
                 "batch_code": "BATCH-TEST-001",
@@ -410,7 +410,7 @@ def test_category_market_policy_enforces_quarantine_authorities_and_admin_except
         unconfigured_receipt = manager_client.post(
             f"/api/products/{unconfigured_product_id}/stock-movements",
             json={
-                "movement_type": "received", "quantity": "1",
+                "movement_type": "received", "supplier_id": supplier_id, "quantity": "1",
                 "reason": "Synthetic receipt without a configured policy",
                 "batch_code": "FOOD-UNCONFIGURED",
                 "supplier_name": "Synthetic Food Supplier",
@@ -458,7 +458,7 @@ def test_category_market_policy_enforces_quarantine_authorities_and_admin_except
         missing_supplier_document = manager_client.post(
             f"/api/products/{product_id}/stock-movements",
             json={
-                "movement_type": "received", "quantity": "1",
+                "movement_type": "received", "supplier_id": supplier_id, "quantity": "1",
                 "reason": "Synthetic receipt missing supplier proof",
                 "batch_code": "FOOD-NO-INVOICE",
                 "supplier_name": "Synthetic Food Supplier",
@@ -472,7 +472,7 @@ def test_category_market_policy_enforces_quarantine_authorities_and_admin_except
         receipt = manager_client.post(
             f"/api/products/{product_id}/stock-movements",
             json={
-                "movement_type": "received", "quantity": "5",
+                "movement_type": "received", "supplier_id": supplier_id, "quantity": "5",
                 "reason": "Synthetic category policy receipt",
                 "batch_code": "FOOD-LOT-001",
                 "supplier_name": "Synthetic Food Supplier",
@@ -539,7 +539,7 @@ def test_category_market_policy_enforces_quarantine_authorities_and_admin_except
         exception_receipt = manager_client.post(
             f"/api/products/{exception_product_id}/stock-movements",
             json={
-                "movement_type": "received", "quantity": "2",
+                "movement_type": "received", "supplier_id": supplier_id, "quantity": "2",
                 "reason": "Synthetic Admin exception receipt",
                 "batch_code": "TOOLS-LOT-001",
                 "supplier_name": "Synthetic Tool Supplier",
@@ -609,7 +609,7 @@ def test_category_market_policy_enforces_quarantine_authorities_and_admin_except
         legal_receipt = manager_client.post(
             f"/api/products/{legal_product.json['item']['id']}/stock-movements",
             json={
-                "movement_type": "received", "quantity": "1",
+                "movement_type": "received", "supplier_id": supplier_id, "quantity": "1",
                 "reason": "Synthetic legal-category receipt",
                 "batch_code": "MED-LEGAL-001",
                 "supplier_name": "Synthetic Medical Supplier",
@@ -693,7 +693,7 @@ def test_category_market_policy_enforces_quarantine_authorities_and_admin_except
         receipt = manager_client.post(
             f"/api/products/{unregulated_id}/stock-movements",
             json={
-                "movement_type": "received", "quantity": "4",
+                "movement_type": "received", "supplier_id": supplier_id, "quantity": "4",
                 "reason": "Synthetic non-regulated goods receipt",
                 "batch_code": "STATIONERY-LOT-001",
                 "supplier_name": "Synthetic Stationery Supplier",
