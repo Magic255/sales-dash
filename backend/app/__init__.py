@@ -105,12 +105,12 @@ def create_app(test_config=None):
     from .auth import auth_bp
     from .company_settings import company_settings_bp
     from .mfa import mfa_bp
-    from .team import team_bp
     from .purchase_orders import purchase_orders_bp
     from .sales import sales_bp
     from .sales_targets import targets_bp
     from .supplier_documents import supplier_documents_bp
     from .suppliers import suppliers_bp
+    from .team import team_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(company_settings_bp)
