@@ -193,6 +193,7 @@
           <button id="inventory-tab" type="button" class="module-tab" data-workspace-tab="inventory" hidden>Inventory</button>
           <button id="suppliers-tab" type="button" class="module-tab" data-workspace-tab="suppliers" hidden>Suppliers</button>
           <button id="purchasing-tab" type="button" class="module-tab" data-workspace-tab="purchasing" hidden>Purchasing</button>
+          <button id="expenses-tab" type="button" class="module-tab" data-workspace-tab="expenses" hidden>Expenses</button>
           <button type="button" class="module-tab" data-workspace-tab="sales">Sales</button>
           <button type="button" class="module-tab" data-workspace-tab="reports">Reports</button>
           <button id="team-tab" type="button" class="module-tab" data-workspace-tab="team" hidden>Team</button>
@@ -405,6 +406,23 @@
               <button class="primary-button" type="submit">Record quarantined receipt</button>
             </form><p id="receipt-message" class="form-message" role="status" aria-live="polite"></p>
           </section>
+        </section>
+        <section class="module-panel" data-workspace-panel="expenses" hidden>
+          <div class="workspace-title"><div><h3>Expenses</h3><p class="panel-copy">Record operating costs with currency, date, category and reference. Entries are preserved; corrections are made by voiding with a reason.</p></div><button id="expenses-refresh" type="button" class="secondary-button">Refresh expenses</button></div>
+          <form id="expense-form" class="record-form">
+            <label for="expense-description">Description</label><input id="expense-description" maxlength="500" required>
+            <label for="expense-category">Category</label><select id="expense-category" required><option value="rent">Rent</option><option value="utilities">Utilities</option><option value="transport">Transport</option><option value="staff">Staff costs</option><option value="marketing">Marketing</option><option value="repairs">Repairs and maintenance</option><option value="fees">Bank and service fees</option><option value="taxes">Taxes and duties</option><option value="other">Other</option></select>
+            <label for="expense-amount">Amount</label><input id="expense-amount" type="number" min="0.01" step="0.01" required>
+            <label for="expense-currency">Currency</label><input id="expense-currency" value="TZS" minlength="3" maxlength="3" pattern="[A-Za-z]{3}" required>
+            <label for="expense-date">Expense date</label><input id="expense-date" type="date" required>
+            <label for="expense-payment-method">Payment method (optional)</label><select id="expense-payment-method"><option value="">Not specified</option><option>Cash</option><option>Bank transfer</option><option>Mobile money</option><option>Card</option><option>Credit</option></select>
+            <label for="expense-reference">Receipt / reference (optional)</label><input id="expense-reference" maxlength="120">
+            <label for="expense-notes">Notes (optional)</label><textarea id="expense-notes" maxlength="1000" rows="2"></textarea>
+            <button class="primary-button" type="submit">Record expense</button>
+          </form>
+          <p id="expenses-message" class="form-message" role="status" aria-live="polite"></p>
+          <div class="table-wrap"><table class="data-table"><thead><tr><th>Date</th><th>Description</th><th>Category</th><th>Amount</th><th>Payment</th><th>Status</th><th>Action</th></tr></thead><tbody id="expense-rows"><tr><td colspan="7">Load expenses to begin.</td></tr></tbody></table></div>
+          <p id="expenses-totals" class="panel-copy">Recorded totals: —</p>
         </section>
         <section class="module-panel" data-workspace-panel="sales" hidden>
           <h3>Record a sale</h3><p class="panel-copy">The server calculates totals from the saved product price.</p>
