@@ -168,7 +168,7 @@ class AuditLog(db.Model):
             "'product_compliance_recalled', 'product_compliance_exception', "
             "'product_compliance_policy_updated', 'product_compliance_not_required_release', "
             "'product_compliance_evidence_uploaded', "
-            "'product_compliance_evidence_downloaded')",
+            "'product_compliance_evidence_downloaded', 'supplier_created', 'supplier_approved', 'supplier_restricted', 'supplier_suspended', 'supplier_rejected', 'supplier_re_review_required')",
             name="event_type_is_supported",
         ),
         db.Index("ix_audit_logs_company_time", "company_id", "occurred_at"),
@@ -778,4 +778,79 @@ class SaleItem(db.Model):
     line_total: Mapped[Decimal] = mapped_column(db.Numeric(14, 2), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class Supplier(db.Model):
+    """Company-scoped supplier with independent approval and licence review."""
+
+    __tablename__ = "suppliers"
+    __table_args__ = (
+        db.UniqueConstraint("company_id", "id", name="uq_suppliers_company_id_id"),
+        db.ForeignKeyConstraint(
+            ["company_id", "submitted_by_user_id"],
+            ["company_memberships.company_id", "company_memberships.user_id"],
+            ondelete="NO ACTION",
+            name="fk_suppliers_submitter_membership",
+        ),
+        db.ForeignKeyConstraint(
+            ["company_id", "reviewed_by_user_id"],
+            ["company_memberships.company_id", "company_memberships.user_id"],
+            ondelete="NO ACTION",
+            name="fk_suppliers_reviewer_membership",
+        ),
+        CheckConstraint(
+            "status IN ('pending_review', 'approved', 'restricted', 'suspended', 'rejected', 'expired')",
+            name="supplier_status_supported",
+        ),
+        CheckConstraint(
+            "length(trim(legal_name)) > 0",
+            name="supplier_legal_name_not_empty",
+        ),
+        CheckConstraint(
+            "country = upper(country) AND length(country) = 2",
+            name="supplier_country_iso_code",
+        ),
+        CheckConstraint(
+            "reviewed_by_user_id IS NULL OR reviewed_by_user_id <> submitted_by_user_id",
+            name="supplier_no_self_approval",
+        ),
+        CheckConstraint(
+            "licence_source_url IS NULL OR licence_source_url LIKE 'https://%'",
+            name="supplier_licence_source_https",
+        ),
+        db.Index("ix_suppliers_company_status", "company_id", "status"),
+        db.Index("ix_suppliers_company_licence_expiry", "company_id", "licence_valid_until"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    company_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    legal_name: Mapped[str] = mapped_column(String(180), nullable=False)
+    registration_number: Mapped[str | None] = mapped_column(String(120))
+    tax_identifier: Mapped[str | None] = mapped_column(String(120))
+    country: Mapped[str] = mapped_column(String(2), nullable=False)
+    address: Mapped[str | None] = mapped_column(String(500))
+    contact_name: Mapped[str | None] = mapped_column(String(160))
+    contact_email: Mapped[str | None] = mapped_column(String(320))
+    contact_phone: Mapped[str | None] = mapped_column(String(40))
+    authorised_categories: Mapped[list] = mapped_column(db.JSON, nullable=False, default=list)
+    authorised_brands: Mapped[list] = mapped_column(db.JSON, nullable=False, default=list)
+    authorised_territories: Mapped[list] = mapped_column(db.JSON, nullable=False, default=list)
+    licence_number: Mapped[str | None] = mapped_column(String(160))
+    licence_issuer: Mapped[str | None] = mapped_column(String(180))
+    licence_source_url: Mapped[str | None] = mapped_column(String(500))
+    licence_valid_until: Mapped[date | None] = mapped_column(db.Date)
+    next_review_date: Mapped[date | None] = mapped_column(db.Date)
+    status: Mapped[str] = mapped_column(
+        String(24), nullable=False, default="pending_review", server_default="pending_review"
+    )
+    submitted_by_user_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    reviewed_by_user_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True))
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    review_notes: Mapped[str | None] = mapped_column(String(1000))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=utc_now
     )
