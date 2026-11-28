@@ -887,7 +887,7 @@ def list_stock_batches(_user, product_id):
 
 
 def _supplier_document_cipher():
-    key = current_app.config.get("COMPLIANCE_EVIDENCE_ENCRYPTION_KEY")
+    key = current_app.config.get("SUPPLIER_DOCUMENT_ENCRYPTION_KEY")
     if not isinstance(key, str) or not key:
         return None
     try:
