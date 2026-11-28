@@ -84,13 +84,16 @@ def create_app(test_config=None):
         try:
             Fernet(supplier_key.encode("ascii"))
         except (ValueError, UnicodeEncodeError) as error:
-            raise RuntimeError("SUPPLIER_DOCUMENT_ENCRYPTION_KEY must be a valid Fernet key.") from error
+            raise RuntimeError(
+                "SUPPLIER_DOCUMENT_ENCRYPTION_KEY must be a valid Fernet key."
+            ) from error
         if supplier_key in {
             app.config.get("COMPLIANCE_EVIDENCE_ENCRYPTION_KEY"),
             app.config.get("MFA_ENCRYPTION_KEY"),
         }:
             raise RuntimeError(
-                "Supplier document encryption key must be distinct from compliance evidence and MFA keys."
+                "Supplier document encryption key must be distinct from "
+                "compliance evidence and MFA keys."
             )
 
     db.init_app(app)
@@ -102,12 +105,12 @@ def create_app(test_config=None):
     from .auth import auth_bp
     from .company_settings import company_settings_bp
     from .mfa import mfa_bp
+        from .team import team_bp
+    from .purchase_orders import purchase_orders_bp
     from .sales import sales_bp
     from .sales_targets import targets_bp
-    from .team import team_bp
-    from .suppliers import suppliers_bp
     from .supplier_documents import supplier_documents_bp
-    from .purchase_orders import purchase_orders_bp
+    from .suppliers import suppliers_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(company_settings_bp)
