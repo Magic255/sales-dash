@@ -136,3 +136,33 @@ def test_supplier_record_is_company_scoped():
         with app.app_context():
             db.session.remove()
             db.drop_all()
+
+
+def test_supplier_identity_edit_does_not_lift_suspension():
+    app, (company_id, _admin_id, _manager_id) = _seed_app()
+    try:
+        submitter = app.test_client()
+        reviewer = app.test_client()
+        _login(submitter, "supplier-admin@example.test", company_id)
+        _login(reviewer, "supplier-manager@example.test", company_id)
+
+        created = submitter.post("/api/suppliers", json=_supplier_payload())
+        assert created.status_code == 201
+        supplier_id = created.json["item"]["id"]
+        suspended = reviewer.post(
+            f"/api/suppliers/{supplier_id}/review",
+            json={"decision": "suspend", "notes": "Synthetic regulator notice."},
+        )
+        assert suspended.status_code == 200
+        assert suspended.json["item"]["status"] == "suspended"
+
+        changed = submitter.patch(
+            f"/api/suppliers/{supplier_id}",
+            json={"address": "Updated synthetic address"},
+        )
+        assert changed.status_code == 200
+        assert changed.json["item"]["status"] == "suspended"
+    finally:
+        with app.app_context():
+            db.session.remove()
+            db.drop_all()
