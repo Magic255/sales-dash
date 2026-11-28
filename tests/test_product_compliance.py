@@ -779,3 +779,101 @@ def test_category_market_policy_enforces_quarantine_authorities_and_admin_except
         with app.app_context():
             db.session.remove()
             db.drop_all()
+
+def test_certificate_recall_propagates_to_all_matching_company_batches():
+    app = create_app({
+        "TESTING": True,
+        "SECRET_KEY": "recall-propagation-test-secret",
+        "SQLALCHEMY_DATABASE_URI": "sqlite://",
+        "WTF_CSRF_ENABLED": False,
+        "RATELIMIT_ENABLED": False,
+        "COMPLIANCE_EVIDENCE_ENCRYPTION_KEY": TEST_EVIDENCE_KEY,
+    })
+    try:
+        with app.app_context():
+            db.create_all()
+            password = PasswordHasher().hash("a-very-strong-test-password")
+            admin = User(email="recall-admin@example.test", password_hash=password, email_verified=True)
+            manager = User(email="recall-manager@example.test", password_hash=password, email_verified=True)
+            receiver = User(email="recall-receiver@example.test", password_hash=password, email_verified=True)
+            company = Company(name="Recall Test", slug="recall-test")
+            db.session.add_all([admin, manager, receiver, company])
+            db.session.flush()
+            db.session.add_all([
+                CompanyMembership(user_id=admin.id, company_id=company.id, role="admin", status="active"),
+                CompanyMembership(user_id=manager.id, company_id=company.id, role="manager", status="active"),
+                CompanyMembership(user_id=receiver.id, company_id=company.id, role="salesperson", status="active"),
+            ])
+            supplier = Supplier(
+                company_id=company.id, legal_name="Synthetic Recall Supplier",
+                country="TZ", authorised_categories=["general"],
+                authorised_brands=[], authorised_territories=["TZ"],
+                licence_valid_until=date.today() + timedelta(days=90),
+                status="approved", submitted_by_user_id=admin.id,
+                reviewed_by_user_id=manager.id, reviewed_at=datetime.now(timezone.utc),
+            )
+            product = Product(
+                company_id=company.id, created_by_user_id=admin.id,
+                sku="RECALL-SYNTH-001", name="Synthetic recalled item",
+                unit_price=Decimal("20.00"), currency="TZS",
+                track_inventory=True, category_key="general",
+            )
+            db.session.add_all([supplier, product])
+            db.session.flush()
+            batches = [
+                StockBatch(
+                    company_id=company.id, product_id=product.id,
+                    batch_code="RECALL-BATCH-001", supplier_id=supplier.id,
+                    supplier_name=supplier.legal_name, received_by_user_id=receiver.id,
+                    certificate_reference="CERT-SHARED-SYNTH-001",
+                    compliance_status="approved",
+                ),
+                StockBatch(
+                    company_id=company.id, product_id=product.id,
+                    batch_code="RECALL-BATCH-002", supplier_id=supplier.id,
+                    supplier_name=supplier.legal_name, received_by_user_id=receiver.id,
+                    certificate_reference="CERT-SHARED-SYNTH-001",
+                    compliance_status="approved",
+                ),
+                StockBatch(
+                    company_id=company.id, product_id=product.id,
+                    batch_code="UNRELATED-BATCH-003", supplier_id=supplier.id,
+                    supplier_name=supplier.legal_name, received_by_user_id=receiver.id,
+                    certificate_reference="CERT-OTHER-SYNTH-003",
+                    compliance_status="approved",
+                ),
+            ]
+            db.session.add_all(batches)
+            db.session.commit()
+            company_id = str(company.id)
+            target_batch_id = str(batches[0].id)
+            affected_ids = {str(batches[0].id), str(batches[1].id)}
+            unrelated_id = str(batches[2].id)
+
+        verifier = app.test_client()
+        _login(verifier, "recall-manager@example.test", company_id)
+        response = verifier.post(
+            f"/api/stock-batches/{target_batch_id}/compliance",
+            json={
+                "decision": "recall",
+                "recall_scope": "certificate",
+                "notes": "Synthetic certificate recall notice; quarantine every matching batch.",
+            },
+        )
+        assert response.status_code == 200
+        assert set(response.json["item"]["affected_batch_ids"]) == affected_ids
+        assert response.json["item"]["recall_scope"] == "certificate"
+
+        with app.app_context():
+            statuses = {
+                str(batch.id): batch.compliance_status
+                for batch in db.session.query(StockBatch).all()
+            }
+            assert statuses[target_batch_id] == "recalled"
+            assert statuses[unrelated_id] == "approved"
+            assert all(statuses[item] == "recalled" for item in affected_ids)
+    finally:
+        with app.app_context():
+            db.session.remove()
+            db.drop_all()
+
