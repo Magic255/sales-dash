@@ -174,7 +174,7 @@ class AuditLog(db.Model):
             "'supplier_rejected', 'supplier_re_review_required', "
             "'supplier_document_uploaded', 'supplier_document_rejected', "
             "'supplier_document_downloaded', 'purchase_order_created', "
-            "'purchase_order_receipt_recorded', 'supplier_invoice_recorded', 'supplier_invoice_matched', 'expense_created', 'expense_voided')",
+            "'purchase_order_receipt_recorded', 'supplier_invoice_recorded', 'supplier_invoice_matched', 'supplier_credit_note_recorded', 'expense_created', 'expense_voided')",
             name="event_type_is_supported",
         ),
         db.Index("ix_audit_logs_company_time", "company_id", "occurred_at"),
@@ -1231,3 +1231,93 @@ class SupplierInvoiceLine(db.Model):
     quantity: Mapped[Decimal] = mapped_column(db.Numeric(12, 3), nullable=False)
     unit_price: Mapped[Decimal] = mapped_column(db.Numeric(12, 2), nullable=False)
     line_total: Mapped[Decimal] = mapped_column(db.Numeric(14, 2), nullable=False)
+
+
+class SupplierCreditNote(db.Model):
+    """Immutable supplier credit note against an original supplier invoice."""
+
+    __tablename__ = "supplier_credit_notes"
+    __table_args__ = (
+        db.UniqueConstraint(
+            "company_id", "supplier_id", "credit_reference",
+            name="uq_supplier_credit_note_reference",
+        ),
+        db.UniqueConstraint("company_id", "id", name="uq_supplier_credit_notes_company_id"),
+        db.ForeignKeyConstraint(
+            ["company_id", "invoice_id"],
+            ["supplier_invoices.company_id", "supplier_invoices.id"],
+            ondelete="NO ACTION", name="fk_supplier_credit_notes_invoice_same_company",
+        ),
+        db.ForeignKeyConstraint(
+            ["company_id", "supplier_id"],
+            ["suppliers.company_id", "suppliers.id"],
+            ondelete="NO ACTION", name="fk_supplier_credit_notes_supplier_same_company",
+        ),
+        db.ForeignKeyConstraint(
+            ["company_id", "created_by_user_id"],
+            ["company_memberships.company_id", "company_memberships.user_id"],
+            ondelete="NO ACTION", name="fk_supplier_credit_notes_creator_membership",
+        ),
+        CheckConstraint(
+            "reason IN ('return', 'shortage', 'pricing_adjustment', 'other')",
+            name="supplier_credit_note_reason_supported",
+        ),
+        CheckConstraint("length(trim(credit_reference)) > 0",
+                        name="supplier_credit_note_reference_not_empty"),
+        CheckConstraint("length(currency) = 3 AND currency = upper(currency)",
+                        name="supplier_credit_note_currency_iso"),
+        CheckConstraint("subtotal > 0 AND tax_amount >= 0 AND total_amount > 0",
+                        name="supplier_credit_note_amounts_positive"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    company_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    invoice_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    supplier_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    credit_reference: Mapped[str] = mapped_column(String(120), nullable=False)
+    credit_date: Mapped[date] = mapped_column(Date, nullable=False)
+    reason: Mapped[str] = mapped_column(String(32), nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    subtotal: Mapped[Decimal] = mapped_column(db.Numeric(14, 2), nullable=False)
+    tax_amount: Mapped[Decimal] = mapped_column(db.Numeric(14, 2), nullable=False)
+    total_amount: Mapped[Decimal] = mapped_column(db.Numeric(14, 2), nullable=False)
+    created_by_user_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class SupplierCreditNoteLine(db.Model):
+    """Quantity and monetary credit allocated to one original invoice line."""
+
+    __tablename__ = "supplier_credit_note_lines"
+    __table_args__ = (
+        db.UniqueConstraint("company_id", "id",
+                            name="uq_supplier_credit_note_lines_company_id"),
+        db.UniqueConstraint(
+            "company_id", "credit_note_id", "invoice_line_id",
+            name="uq_supplier_credit_note_invoice_line",
+        ),
+        db.ForeignKeyConstraint(
+            ["company_id", "credit_note_id"],
+            ["supplier_credit_notes.company_id", "supplier_credit_notes.id"],
+            ondelete="NO ACTION", name="fk_supplier_credit_note_lines_note_same_company",
+        ),
+        db.ForeignKeyConstraint(
+            ["company_id", "invoice_line_id"],
+            ["supplier_invoice_lines.company_id", "supplier_invoice_lines.id"],
+            ondelete="NO ACTION", name="fk_supplier_credit_note_lines_invoice_line_same_company",
+        ),
+        CheckConstraint("quantity >= 0", name="supplier_credit_note_line_quantity_nonnegative"),
+        CheckConstraint("credit_amount > 0",
+                        name="supplier_credit_note_line_amount_positive"),
+        db.Index("ix_supplier_credit_note_lines_company_note",
+                 "company_id", "credit_note_id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    company_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    credit_note_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    invoice_line_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(db.Numeric(12, 3), nullable=False)
+    credit_amount: Mapped[Decimal] = mapped_column(db.Numeric(14, 2), nullable=False)

@@ -109,3 +109,25 @@ settlement workflow. It does not initiate payment, approve supplier payment,
 record credit notes, or replace review of tax treatment and supporting
 documents. Credit-note handling, consignment settlement and exception
 resolution remain follow-up work.
+
+
+## Supplier credit notes
+
+Credit notes are recorded against an existing supplier invoice at
+`POST /api/supplier-invoices/{invoice_id}/credit-notes` and listed at the matching
+`GET` endpoint. A credit note reason is one of `return`, `shortage`,
+`pricing_adjustment` or `other`. Each line references an original invoice line,
+records a credited quantity (zero is allowed for a monetary price adjustment),
+and records a positive credit amount.
+
+The API enforces cumulative caps across all credit notes for that invoice:
+credited quantities cannot exceed each original invoiced quantity, line credits
+cannot exceed each original invoice line amount, tax credits cannot exceed the
+original invoice tax, and total credits cannot exceed the original invoice total.
+Currency is inherited from the invoice and totals are calculated by the server.
+Credit note references are unique per company and supplier. Notes are immutable
+to the application runtime, protected by company row-level security and audited.
+
+These records support supplier reconciliation; they do not issue refunds,
+automatically adjust inventory, settle consignment balances or authorize payment.
+A return still requires the appropriate stock-return and compliance workflow.

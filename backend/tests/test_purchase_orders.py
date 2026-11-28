@@ -9,7 +9,7 @@ from app.extensions import db
 from app.models import (
     Company, CompanyMembership, Product, PurchaseOrder, PurchaseOrderLine,
     PurchaseOrderReceipt, PurchaseOrderReceiptLine, StockBatch, StockMovement,
-    Supplier, SupplierInvoice, User,
+    Supplier, SupplierInvoice, SupplierCreditNote, User,
 )
 
 
@@ -358,6 +358,140 @@ def test_supplier_invoice_rejects_client_calculated_totals_and_duplicate_referen
         assert created_invoice.status_code == 201
         duplicate = client.post(
             f"/api/purchase-orders/{order['id']}/supplier-invoices", json=body
+        )
+        assert duplicate.status_code == 409
+    finally:
+        with app.app_context():
+            db.session.remove()
+            db.drop_all()
+
+
+
+def _supplier_credit_note(client, invoice_id, reference, reason, invoice_line_id,
+                          quantity, credit_amount, tax_amount="0.00"):
+    return client.post(
+        f"/api/supplier-invoices/{invoice_id}/credit-notes",
+        json={
+            "credit_reference": reference,
+            "credit_date": date.today().isoformat(),
+            "reason": reason,
+            "tax_amount": tax_amount,
+            "lines": [{
+                "invoice_line_id": invoice_line_id,
+                "quantity": quantity,
+                "credit_amount": credit_amount,
+            }],
+        },
+    )
+
+
+def test_supplier_credit_notes_record_returns_and_price_adjustments_with_caps():
+    app, (company_id, supplier_id, product_id) = _app()
+    try:
+        client = app.test_client()
+        _login(client, company_id)
+        created = _order(client, supplier_id, product_id, quantity="3.000")
+        order = created.json["item"]
+        line_id = order["lines"][0]["id"]
+        invoice_body = {
+            "invoice_reference": "INV-CREDIT-001",
+            "invoice_date": date.today().isoformat(),
+            "currency": "TZS",
+            "tax_amount": "6.00",
+            "lines": [{
+                "purchase_order_line_id": line_id,
+                "quantity": "3.000",
+                "unit_price": "10.00",
+            }],
+        }
+        invoice_response = client.post(
+            f"/api/purchase-orders/{order['id']}/supplier-invoices",
+            json=invoice_body,
+        )
+        assert invoice_response.status_code == 201
+        invoice = invoice_response.json["item"]
+        invoice_line_id = invoice["lines"][0]["id"]
+
+        returned = _supplier_credit_note(
+            client, invoice["id"], "CN-RETURN-001", "return",
+            invoice_line_id, "1.000", "10.00", "2.00",
+        )
+        assert returned.status_code == 201
+        assert returned.json["item"]["subtotal"] == "10.00"
+        assert returned.json["item"]["total_amount"] == "12.00"
+
+        price_adjustment = _supplier_credit_note(
+            client, invoice["id"], "CN-PRICE-001", "pricing_adjustment",
+            invoice_line_id, "0", "2.00", "3.00",
+        )
+        assert price_adjustment.status_code == 201
+        assert price_adjustment.json["item"]["total_amount"] == "5.00"
+
+        listed = client.get(
+            f"/api/supplier-invoices/{invoice['id']}/credit-notes"
+        )
+        assert listed.status_code == 200
+        assert len(listed.json["items"]) == 2
+
+        over_quantity = _supplier_credit_note(
+            client, invoice["id"], "CN-OVER-QTY", "return",
+            invoice_line_id, "3.000", "10.00",
+        )
+        assert over_quantity.status_code == 400
+        assert "credited quantity exceeds" in over_quantity.json["error"]
+
+        over_amount = _supplier_credit_note(
+            client, invoice["id"], "CN-OVER-AMOUNT", "pricing_adjustment",
+            invoice_line_id, "0", "20.00",
+        )
+        assert over_amount.status_code == 400
+        assert "line credits exceed" in over_amount.json["error"]
+
+        over_tax = _supplier_credit_note(
+            client, invoice["id"], "CN-OVER-TAX", "other",
+            invoice_line_id, "0", "1.00", "2.00",
+        )
+        assert over_tax.status_code == 400
+        assert "tax credits exceed" in over_tax.json["error"]
+        with app.app_context():
+            assert db.session.query(SupplierCreditNote).count() == 2
+    finally:
+        with app.app_context():
+            db.session.remove()
+            db.drop_all()
+
+
+def test_supplier_credit_note_reference_is_unique_per_supplier():
+    app, (company_id, supplier_id, product_id) = _app()
+    try:
+        client = app.test_client()
+        _login(client, company_id)
+        created = _order(client, supplier_id, product_id, quantity="2.000")
+        order = created.json["item"]
+        invoice_response = client.post(
+            f"/api/purchase-orders/{order['id']}/supplier-invoices",
+            json={
+                "invoice_reference": "INV-CREDIT-DUP-001",
+                "invoice_date": date.today().isoformat(),
+                "currency": "TZS",
+                "lines": [{
+                    "purchase_order_line_id": order["lines"][0]["id"],
+                    "quantity": "2.000",
+                    "unit_price": "10.00",
+                }],
+            },
+        )
+        assert invoice_response.status_code == 201
+        invoice = invoice_response.json["item"]
+        line_id = invoice["lines"][0]["id"]
+        first = _supplier_credit_note(
+            client, invoice["id"], "CN-DUP-001", "return",
+            line_id, "1.000", "10.00",
+        )
+        assert first.status_code == 201
+        duplicate = _supplier_credit_note(
+            client, invoice["id"], "CN-DUP-001", "return",
+            line_id, "1.000", "10.00",
         )
         assert duplicate.status_code == 409
     finally:

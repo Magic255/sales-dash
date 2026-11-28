@@ -22,6 +22,8 @@ from .models import (
     Supplier,
     SupplierInvoice,
     SupplierInvoiceLine,
+    SupplierCreditNote,
+    SupplierCreditNoteLine,
 )
 from .permissions import company_permission_required
 
@@ -473,6 +475,7 @@ def _supplier_invoice_json(invoice):
         "total_amount": str(invoice.total_amount),
         "match_status": invoice.match_status,
         "lines": [{
+            "id": str(line.id),
             "purchase_order_line_id": str(line.purchase_order_line_id),
             "quantity": str(line.quantity),
             "unit_price": str(line.unit_price),
@@ -639,4 +642,207 @@ def record_supplier_invoice(user, order_id):
     except IntegrityError:
         db.session.rollback()
         return jsonify({"error": "Supplier invoice reference already exists for this supplier."}), 409
+    return jsonify({"item": result}), 201
+
+
+
+def _supplier_credit_note_json(note):
+    lines = db.session.scalars(
+        select(SupplierCreditNoteLine).where(
+            SupplierCreditNoteLine.company_id == note.company_id,
+            SupplierCreditNoteLine.credit_note_id == note.id,
+        ).order_by(SupplierCreditNoteLine.id)
+    ).all()
+    return {
+        "id": str(note.id),
+        "invoice_id": str(note.invoice_id),
+        "supplier_id": str(note.supplier_id),
+        "credit_reference": note.credit_reference,
+        "credit_date": note.credit_date.isoformat(),
+        "reason": note.reason,
+        "currency": note.currency,
+        "subtotal": str(note.subtotal),
+        "tax_amount": str(note.tax_amount),
+        "total_amount": str(note.total_amount),
+        "lines": [{
+            "invoice_line_id": str(line.invoice_line_id),
+            "quantity": str(line.quantity),
+            "credit_amount": str(line.credit_amount),
+        } for line in lines],
+    }
+
+
+@purchase_orders_bp.get("/supplier-invoices/<uuid:invoice_id>/credit-notes")
+@login_required
+@company_permission_required("manage_inventory")
+def list_supplier_credit_notes(_user, invoice_id):
+    company_id = _company_id()
+    invoice = db.session.scalar(select(SupplierInvoice).where(
+        SupplierInvoice.id == invoice_id, SupplierInvoice.company_id == company_id
+    ))
+    if invoice is None:
+        return jsonify({"error": "Supplier invoice not found."}), 404
+    notes = db.session.scalars(
+        select(SupplierCreditNote).where(
+            SupplierCreditNote.company_id == company_id,
+            SupplierCreditNote.invoice_id == invoice.id,
+        ).order_by(SupplierCreditNote.credit_date.desc(), SupplierCreditNote.created_at.desc())
+    ).all()
+    return jsonify({"items": [_supplier_credit_note_json(item) for item in notes]})
+
+
+@purchase_orders_bp.post("/supplier-invoices/<uuid:invoice_id>/credit-notes")
+@login_required
+@company_permission_required("manage_inventory")
+def record_supplier_credit_note(user, invoice_id):
+    company_id = _company_id()
+    data = _object()
+    if data is None:
+        return jsonify({"error": "Send a JSON object."}), 400
+    try:
+        invoice = db.session.scalar(select(SupplierInvoice).where(
+            SupplierInvoice.id == invoice_id, SupplierInvoice.company_id == company_id
+        ).with_for_update())
+        if invoice is None:
+            return jsonify({"error": "Supplier invoice not found."}), 404
+        supplier = db.session.scalar(select(Supplier).where(
+            Supplier.id == invoice.supplier_id, Supplier.company_id == company_id
+        ))
+        if supplier is None:
+            return jsonify({"error": "Supplier not found."}), 404
+
+        credit_reference = _text(data, "credit_reference", 120, required=True)
+        reason = _text(data, "reason", 32, required=True)
+        if reason not in {"return", "shortage", "pricing_adjustment", "other"}:
+            raise ValueError("Choose a supported credit note reason.")
+        try:
+            credit_date = date.fromisoformat(_text(data, "credit_date", 10, required=True))
+        except ValueError:
+            raise ValueError("Credit date must use YYYY-MM-DD.") from None
+        tax_amount = _quantity(
+            data.get("tax_amount", "0"), "credit tax amount", 2, allow_zero=True
+        )
+        raw_lines = data.get("lines")
+        if not isinstance(raw_lines, list) or not raw_lines or len(raw_lines) > 200:
+            raise ValueError("Add between 1 and 200 supplier credit note lines.")
+
+        invoice_lines = db.session.scalars(select(SupplierInvoiceLine).where(
+            SupplierInvoiceLine.company_id == company_id,
+            SupplierInvoiceLine.invoice_id == invoice.id,
+        ).with_for_update()).all()
+        by_id = {line.id: line for line in invoice_lines}
+        seen = set()
+        parsed = []
+        subtotal = Decimal("0.00")
+        for raw in raw_lines:
+            if not isinstance(raw, dict):
+                raise ValueError("Each credit note line must be an object.")
+            try:
+                line_id = UUID(_text(raw, "invoice_line_id", 36, required=True))
+            except ValueError:
+                raise ValueError("Each credit note line must reference a valid invoice line.") from None
+            if line_id in seen:
+                raise ValueError("An invoice line may appear only once per credit note.")
+            seen.add(line_id)
+            invoice_line = by_id.get(line_id)
+            if invoice_line is None:
+                raise ValueError("Credit note line does not belong to this supplier invoice.")
+            quantity = _quantity(
+                raw.get("quantity", "0"), "credited quantity", 3, allow_zero=True
+            )
+            credit_amount = _quantity(raw.get("credit_amount"), "credit amount", 2)
+            credited_quantity = db.session.scalar(
+                select(func.coalesce(func.sum(SupplierCreditNoteLine.quantity), 0))
+                .join(
+                    SupplierCreditNote,
+                    SupplierCreditNote.id == SupplierCreditNoteLine.credit_note_id,
+                )
+                .where(
+                    SupplierCreditNoteLine.company_id == company_id,
+                    SupplierCreditNoteLine.invoice_line_id == invoice_line.id,
+                )
+            )
+            credited_amount = db.session.scalar(
+                select(func.coalesce(func.sum(SupplierCreditNoteLine.credit_amount), 0))
+                .join(
+                    SupplierCreditNote,
+                    SupplierCreditNote.id == SupplierCreditNoteLine.credit_note_id,
+                )
+                .where(
+                    SupplierCreditNoteLine.company_id == company_id,
+                    SupplierCreditNoteLine.invoice_line_id == invoice_line.id,
+                )
+            )
+            if Decimal(str(credited_quantity or 0)) + quantity > invoice_line.quantity:
+                raise ValueError("Cumulative credited quantity exceeds the invoiced quantity.")
+            if Decimal(str(credited_amount or 0)) + credit_amount > invoice_line.line_total:
+                raise ValueError("Cumulative line credits exceed the original invoice line amount.")
+            if reason in {"return", "shortage"} and quantity == 0:
+                raise ValueError("Return and shortage credits must include a credited quantity.")
+            subtotal += credit_amount
+            parsed.append((invoice_line, quantity, credit_amount))
+
+        prior_tax = db.session.scalar(
+            select(func.coalesce(func.sum(SupplierCreditNote.tax_amount), 0)).where(
+                SupplierCreditNote.company_id == company_id,
+                SupplierCreditNote.invoice_id == invoice.id,
+            )
+        )
+        prior_total = db.session.scalar(
+            select(func.coalesce(func.sum(SupplierCreditNote.total_amount), 0)).where(
+                SupplierCreditNote.company_id == company_id,
+                SupplierCreditNote.invoice_id == invoice.id,
+            )
+        )
+        if Decimal(str(prior_tax or 0)) + tax_amount > invoice.tax_amount:
+            raise ValueError("Cumulative tax credits exceed the original invoice tax amount.")
+        total_amount = (subtotal + tax_amount).quantize(Decimal("0.01"))
+        if Decimal(str(prior_total or 0)) + total_amount > invoice.total_amount:
+            raise ValueError("Cumulative credit notes exceed the original invoice total.")
+
+        note = SupplierCreditNote(
+            company_id=company_id,
+            invoice_id=invoice.id,
+            supplier_id=supplier.id,
+            credit_reference=credit_reference,
+            credit_date=credit_date,
+            reason=reason,
+            currency=invoice.currency,
+            subtotal=subtotal,
+            tax_amount=tax_amount,
+            total_amount=total_amount,
+            created_by_user_id=user.id,
+        )
+        db.session.add(note)
+        db.session.flush()
+        db.session.add_all([
+            SupplierCreditNoteLine(
+                company_id=company_id,
+                credit_note_id=note.id,
+                invoice_line_id=line.id,
+                quantity=quantity,
+                credit_amount=credit_amount,
+            )
+            for line, quantity, credit_amount in parsed
+        ])
+        record_audit_event(
+            db.session, user.id, "supplier_credit_note_recorded", company_id,
+            {
+                "supplier_invoice_id": str(invoice.id),
+                "supplier_credit_note_id": str(note.id),
+                "supplier_id": str(supplier.id),
+                "credit_reference": note.credit_reference,
+                "reason": reason,
+                "total_amount": str(total_amount),
+                "currency": invoice.currency,
+            },
+        )
+        result = _supplier_credit_note_json(note)
+        db.session.commit()
+    except ValueError as error:
+        db.session.rollback()
+        return jsonify({"error": str(error)}), 400
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({"error": "Credit note reference already exists for this supplier."}), 409
     return jsonify({"item": result}), 201
