@@ -570,6 +570,10 @@ class StockBatch(db.Model):
             "company_id", "product_id", "batch_code",
             name="uq_stock_batches_company_product_code",
         ),
+        db.UniqueConstraint(
+            "company_id", "serial_reference",
+            name="uq_stock_batches_company_serial_reference",
+        ),
         db.ForeignKeyConstraint(
             ["company_id", "product_id"],
             ["products.company_id", "products.id"],
@@ -629,6 +633,7 @@ class StockBatch(db.Model):
     company_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
     product_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
     batch_code: Mapped[str] = mapped_column(String(80), nullable=False)
+    serial_reference: Mapped[str | None] = mapped_column(String(160))
     expiry_date: Mapped[date | None] = mapped_column(db.Date)
     supplier_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True))
     supplier_name: Mapped[str | None] = mapped_column(String(160))
