@@ -1452,9 +1452,30 @@ def create_stock_movement(user, product_id):
         created = []
         if movement_type in {"received", "returned", "adjustment_increase"}:
             batch_code = _text(data, "batch_code", 80, required=True)
-            supplier_name = _text(
-                data, "supplier_name", 160, required=(movement_type == "received")
-            )
+            supplier_id = None
+            supplier_name = _text(data, "supplier_name", 160)
+            if movement_type == "received":
+                raw_supplier_id = _text(data, "supplier_id", 36, required=True)
+                try:
+                    supplier_id = UUID(raw_supplier_id)
+                except ValueError:
+                    raise ValueError("Select a valid approved supplier.") from None
+                supplier = db.session.scalar(select(Supplier).where(
+                    Supplier.id == supplier_id, Supplier.company_id == company_id
+                ).with_for_update())
+                if supplier is None:
+                    raise ValueError("The selected supplier does not belong to this company.")
+                if supplier.status != "approved":
+                    raise ValueError("Stock can only be received from an approved supplier.")
+                if supplier.licence_valid_until is None or supplier.licence_valid_until < date.today():
+                    raise ValueError("The supplier licence is missing or expired.")
+                if supplier.next_review_date and supplier.next_review_date < date.today():
+                    raise ValueError("The supplier review is overdue.")
+                if product.category_key not in supplier.authorised_categories:
+                    raise ValueError("The supplier is not authorised for this product category.")
+                supplier_name = supplier.legal_name
+            else:
+                supplier_name = supplier_name or None
             supplier_invoice_reference = _text(
                 data, "supplier_invoice_reference", 120,
             )
@@ -1469,6 +1490,8 @@ def create_stock_movement(user, product_id):
                 supplier_invoice_reference or delivery_note_reference
             ):
                 raise ValueError("A supplier invoice or delivery note reference is required.")
+            if movement_type == "received" and country_of_origin not in supplier.authorised_territories:
+                raise ValueError("The supplier is not authorised for this country of origin.")
             raw_expiry = data.get("expiry_date")
             if raw_expiry in (None, ""):
                 expiry_date = None
@@ -1484,6 +1507,7 @@ def create_stock_movement(user, product_id):
                 product_id=product_id,
                 batch_code=batch_code,
                 expiry_date=expiry_date,
+                supplier_id=supplier_id,
                 supplier_name=supplier_name,
                 supplier_invoice_reference=supplier_invoice_reference,
                 delivery_note_reference=delivery_note_reference,
