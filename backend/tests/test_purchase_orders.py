@@ -422,10 +422,10 @@ def test_supplier_credit_notes_record_returns_and_price_adjustments_with_caps():
 
         price_adjustment = _supplier_credit_note(
             client, invoice["id"], "CN-PRICE-001", "pricing_adjustment",
-            invoice_line_id, "0", "5.00", "4.00",
+            invoice_line_id, "0", "2.00", "3.00",
         )
         assert price_adjustment.status_code == 201
-        assert price_adjustment.json["item"]["total_amount"] == "9.00"
+        assert price_adjustment.json["item"]["total_amount"] == "5.00"
 
         listed = client.get(
             f"/api/supplier-invoices/{invoice['id']}/credit-notes"
@@ -449,7 +449,7 @@ def test_supplier_credit_notes_record_returns_and_price_adjustments_with_caps():
 
         over_tax = _supplier_credit_note(
             client, invoice["id"], "CN-OVER-TAX", "other",
-            invoice_line_id, "0", "1.00", "1.00",
+            invoice_line_id, "0", "1.00", "2.00",
         )
         assert over_tax.status_code == 400
         assert "tax credits exceed" in over_tax.json["error"]
