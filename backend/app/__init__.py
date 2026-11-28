@@ -104,6 +104,7 @@ def create_app(test_config=None):
     from .audit import audit_bp
     from .auth import auth_bp
     from .company_settings import company_settings_bp
+    from .expenses import expenses_bp
     from .mfa import mfa_bp
     from .purchase_orders import purchase_orders_bp
     from .sales import sales_bp
@@ -115,6 +116,7 @@ def create_app(test_config=None):
     app.register_blueprint(auth_bp)
     app.register_blueprint(company_settings_bp)
     app.register_blueprint(mfa_bp)
+    app.register_blueprint(expenses_bp)
     app.register_blueprint(audit_bp)
     app.register_blueprint(sales_bp)
     app.register_blueprint(targets_bp)
