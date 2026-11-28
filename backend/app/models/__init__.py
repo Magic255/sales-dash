@@ -410,6 +410,152 @@ class SupplierDocument(db.Model):
     )
 
 
+
+
+class PurchaseOrder(db.Model):
+    """Company-scoped purchase order issued to an approved supplier."""
+
+    __tablename__ = "purchase_orders"
+    __table_args__ = (
+        db.UniqueConstraint("company_id", "id", name="uq_purchase_orders_company_id"),
+        db.UniqueConstraint("company_id", "order_number", name="uq_purchase_orders_number"),
+        db.ForeignKeyConstraint(
+            ["company_id", "supplier_id"], ["suppliers.company_id", "suppliers.id"],
+            ondelete="NO ACTION", name="fk_purchase_orders_supplier_same_company",
+        ),
+        db.ForeignKeyConstraint(
+            ["company_id", "created_by_user_id"],
+            ["company_memberships.company_id", "company_memberships.user_id"],
+            ondelete="NO ACTION", name="fk_purchase_orders_creator_membership",
+        ),
+        CheckConstraint("status IN ('issued', 'partially_received', 'received', 'cancelled')",
+                        name="purchase_order_status_supported"),
+        CheckConstraint("length(trim(order_number)) > 0", name="purchase_order_number_not_empty"),
+        CheckConstraint("length(currency) = 3 AND currency = upper(currency)",
+                        name="purchase_order_currency_iso"),
+        db.Index("ix_purchase_orders_company_supplier_status",
+                 "company_id", "supplier_id", "status"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    company_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    supplier_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    order_number: Mapped[str] = mapped_column(String(80), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="issued",
+                                        server_default="issued")
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    notes: Mapped[str | None] = mapped_column(String(1000))
+    created_by_user_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class PurchaseOrderLine(db.Model):
+    """Ordered product quantity and cumulative accepted quantity."""
+
+    __tablename__ = "purchase_order_lines"
+    __table_args__ = (
+        db.UniqueConstraint("company_id", "id", name="uq_purchase_order_lines_company_id"),
+        db.ForeignKeyConstraint(
+            ["company_id", "purchase_order_id"],
+            ["purchase_orders.company_id", "purchase_orders.id"],
+            ondelete="NO ACTION", name="fk_purchase_order_lines_order_same_company",
+        ),
+        db.ForeignKeyConstraint(
+            ["company_id", "product_id"], ["products.company_id", "products.id"],
+            ondelete="NO ACTION", name="fk_purchase_order_lines_product_same_company",
+        ),
+        CheckConstraint("ordered_quantity > 0", name="purchase_order_ordered_qty_positive"),
+        CheckConstraint("received_quantity >= 0 AND received_quantity <= ordered_quantity",
+                        name="purchase_order_received_qty_in_range"),
+        CheckConstraint("unit_cost >= 0", name="purchase_order_unit_cost_nonnegative"),
+        db.Index("ix_purchase_order_lines_company_order",
+                 "company_id", "purchase_order_id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    company_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    purchase_order_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    product_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    ordered_quantity: Mapped[Decimal] = mapped_column(db.Numeric(12, 3), nullable=False)
+    received_quantity: Mapped[Decimal] = mapped_column(
+        db.Numeric(12, 3), nullable=False, default=Decimal("0"), server_default="0"
+    )
+    unit_cost: Mapped[Decimal] = mapped_column(db.Numeric(12, 2), nullable=False)
+
+
+class PurchaseOrderReceipt(db.Model):
+    """One partial or complete delivery against a purchase order."""
+
+    __tablename__ = "purchase_order_receipts"
+    __table_args__ = (
+        db.UniqueConstraint("company_id", "id", name="uq_purchase_order_receipts_company_id"),
+        db.UniqueConstraint("company_id", "supplier_id", "delivery_note_reference",
+                            name="uq_purchase_receipt_delivery_note"),
+        db.ForeignKeyConstraint(
+            ["company_id", "purchase_order_id"],
+            ["purchase_orders.company_id", "purchase_orders.id"],
+            ondelete="NO ACTION", name="fk_purchase_receipts_order_same_company",
+        ),
+        db.ForeignKeyConstraint(
+            ["company_id", "supplier_id"], ["suppliers.company_id", "suppliers.id"],
+            ondelete="NO ACTION", name="fk_purchase_receipts_supplier_same_company",
+        ),
+        db.ForeignKeyConstraint(
+            ["company_id", "received_by_user_id"],
+            ["company_memberships.company_id", "company_memberships.user_id"],
+            ondelete="NO ACTION", name="fk_purchase_receipts_receiver_membership",
+        ),
+        CheckConstraint("length(trim(delivery_note_reference)) > 0",
+                        name="purchase_receipt_delivery_note_not_empty"),
+        db.Index("ix_purchase_receipts_company_order",
+                 "company_id", "purchase_order_id", "received_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    company_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    purchase_order_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    supplier_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    delivery_note_reference: Mapped[str] = mapped_column(String(120), nullable=False)
+    supplier_invoice_reference: Mapped[str | None] = mapped_column(String(120))
+    received_by_user_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class PurchaseOrderReceiptLine(db.Model):
+    """A received quantity tied to an order line and quarantined stock batch."""
+
+    __tablename__ = "purchase_order_receipt_lines"
+    __table_args__ = (
+        db.ForeignKeyConstraint(
+            ["company_id", "receipt_id"],
+            ["purchase_order_receipts.company_id", "purchase_order_receipts.id"],
+            ondelete="NO ACTION", name="fk_purchase_receipt_lines_receipt_same_company",
+        ),
+        db.ForeignKeyConstraint(
+            ["company_id", "purchase_order_line_id"],
+            ["purchase_order_lines.company_id", "purchase_order_lines.id"],
+            ondelete="NO ACTION", name="fk_purchase_receipt_lines_order_line_same_company",
+        ),
+        db.ForeignKeyConstraint(
+            ["company_id", "batch_id"], ["stock_batches.company_id", "stock_batches.id"],
+            ondelete="NO ACTION", name="fk_purchase_receipt_lines_batch_same_company",
+        ),
+        CheckConstraint("quantity > 0", name="purchase_receipt_line_qty_positive"),
+        db.Index("ix_purchase_receipt_lines_company_receipt", "company_id", "receipt_id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    company_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    receipt_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    purchase_order_line_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    batch_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(db.Numeric(12, 3), nullable=False)
+
+
 class StockBatch(db.Model):
     """A traceable stock receipt batch with an optional expiry date."""
 
