@@ -1,4 +1,5 @@
 """Company-scoped purchase order creation and controlled partial receiving."""
+# ruff: noqa: I001
 from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
 from uuid import UUID
@@ -135,7 +136,9 @@ def create_purchase_order(user):
         if supplier is None:
             return jsonify({"error": "Supplier not found."}), 404
         if not _approved_supplier(supplier):
-            raise ValueError("Purchase orders require a currently approved supplier with an in-date licence and review.")
+            raise ValueError(
+                "Purchase orders require an approved supplier with a current licence and review."
+            )
         order_number = _text(data, "order_number", 80, required=True)
         currency = _text(data, "currency", 3, required=True).upper()
         if len(currency) != 3 or not currency.isascii() or not currency.isalpha():
@@ -164,7 +167,9 @@ def create_purchase_order(user):
             if product is None:
                 raise ValueError("A purchase order product does not belong to this company.")
             if not product.is_active or not product.track_inventory:
-                raise ValueError("Purchase orders can include only active inventory-tracked products.")
+                raise ValueError(
+                    "Purchase orders can include only active inventory-tracked products."
+                )
             if product.currency != currency:
                 raise ValueError("Purchase order currency must match every product currency.")
             if product.category_key not in (supplier.authorised_categories or []):
@@ -201,7 +206,9 @@ def create_purchase_order(user):
         return jsonify({"error": str(error)}), 400
     except IntegrityError:
         db.session.rollback()
-        return jsonify({"error": "Purchase order number already exists or a line violates a data constraint."}), 409
+        return jsonify({
+            "error": "Purchase order number already exists or a line violates a data constraint."
+        }), 409
     return jsonify({"item": result}), 201
 
 
@@ -277,7 +284,9 @@ def receive_purchase_order(user, purchase_order_id):
             certificate_reference = _text(raw, "certificate_reference", 160)
             certificate_reference = certificate_reference.upper() if certificate_reference else None
             if serial_reference and quantity != Decimal("1.000"):
-                raise ValueError("A serial-numbered receipt line must have a quantity of exactly one.")
+                raise ValueError(
+                    "A serial-numbered receipt line must have a quantity of exactly one."
+                )
             duplicate_certificate = False
             if certificate_reference:
                 duplicate_certificate = (
@@ -293,7 +302,9 @@ def receive_purchase_order(user, purchase_order_id):
             manufacturer = _text(raw, "manufacturer_name", 160, required=True)
             origin = _text(raw, "country_of_origin", 2, required=True).upper()
             if len(origin) != 2 or not origin.isascii() or not origin.isalpha():
-                raise ValueError("Country of origin must be a two-letter ISO country code.")
+                raise ValueError(
+                    "Country of origin must be a two-letter ISO country code."
+                )
             if origin.lower() not in [str(x).lower() for x in (supplier.authorised_territories or [])]:
                 raise ValueError("Supplier is not authorised for this country of origin.")
             expiry_raw = raw.get("expiry_date")
