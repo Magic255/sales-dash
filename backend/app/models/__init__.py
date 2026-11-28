@@ -268,7 +268,9 @@ class Expense(db.Model):
     )
 
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
-    company_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    company_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False
+    )
     created_by_user_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
     category: Mapped[str] = mapped_column(String(60), nullable=False)
     description: Mapped[str] = mapped_column(String(500), nullable=False)
