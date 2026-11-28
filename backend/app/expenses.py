@@ -47,21 +47,39 @@ def _payload():
     description = data.get("description")
     category = data.get("category")
     currency = data.get("currency", "TZS")
-    if not isinstance(description, str) or not description.strip() or len(description.strip()) > 500:
+    if (
+        not isinstance(description, str)
+        or not description.strip()
+        or len(description.strip()) > 500
+    ):
         raise ValueError("Description is required and must be 500 characters or fewer.")
     if not isinstance(category, str):
         raise ValueError("Choose an expense category.")
     category = category.strip().lower().replace(" ", "_")
-    if not category or len(category) > 60 or not category.replace("_", "").replace("-", "").isalnum():
+    if (
+        not category
+        or len(category) > 60
+        or not category.replace("_", "").replace("-", "").isalnum()
+    ):
         raise ValueError("Expense category must use letters, numbers, hyphens or underscores.")
-    if not isinstance(currency, str) or len(currency.strip()) != 3 or not currency.strip().isascii() or not currency.strip().isalpha():
+    if (
+        not isinstance(currency, str)
+        or len(currency.strip()) != 3
+        or not currency.strip().isascii()
+        or not currency.strip().isalpha()
+    ):
         raise ValueError("Currency must be a three-letter ISO code.")
     try:
         amount = Decimal(str(data.get("amount", "")))
         expense_date = date.fromisoformat(data.get("expense_date", ""))
     except (InvalidOperation, ValueError, TypeError):
         raise ValueError("Enter a valid amount and expense date.") from None
-    if (not amount.is_finite() or amount <= 0 or amount > Decimal("9999999999.99")\n            or amount.as_tuple().exponent < -2):
+    if (
+        not amount.is_finite()
+        or amount <= 0
+        or amount > Decimal("9999999999.99")
+        or amount.as_tuple().exponent < -2
+    ):
         raise ValueError("Expense amount must be positive and use no more than two decimal places.")
     payment_method = data.get("payment_method")
     reference = data.get("reference")
@@ -168,7 +186,9 @@ def void_expense(user, expense_id):
     data = request.get_json(silent=True)
     reason = data.get("reason") if isinstance(data, dict) else None
     if not isinstance(reason, str) or not reason.strip() or len(reason.strip()) > 500:
-        return jsonify({"error": "A reason of 500 characters or fewer is required to void an expense."}), 400
+        return jsonify({
+            "error": "A reason of 500 characters or fewer is required to void an expense."
+        }), 400
     item = db.session.scalar(select(Expense).where(
         Expense.id == expense_id, Expense.company_id == _company_id()
     ).with_for_update())
