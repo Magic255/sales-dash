@@ -3,6 +3,8 @@
 Revision ID: 0032_stock_batch_serial_reference
 Revises: 0031_purchase_order_receipts
 """
+
+# ruff: noqa: I001
 from alembic import op
 import sqlalchemy as sa
 
@@ -14,7 +16,9 @@ depends_on = None
 
 
 def upgrade():
-    op.add_column("stock_batches", sa.Column("serial_reference", sa.String(length=160), nullable=True))
+    op.add_column(
+        "stock_batches", sa.Column("serial_reference", sa.String(length=160), nullable=True)
+    )
     op.create_unique_constraint(
         "uq_stock_batches_company_serial_reference",
         "stock_batches",
