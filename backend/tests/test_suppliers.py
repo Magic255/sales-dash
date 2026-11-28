@@ -1,10 +1,11 @@
 from datetime import date, datetime, timedelta, timezone
+from uuid import UUID
 
 from argon2 import PasswordHasher
 
 from app import create_app
 from app.extensions import db
-from app.models import Company, CompanyMembership, Supplier, SupplierDocument, User
+from app.models import Company, CompanyMembership, Product, Supplier, SupplierDocument, User
 
 
 def _seed_app():
@@ -71,9 +72,9 @@ def test_supplier_submitter_cannot_self_approve_but_second_reviewer_can():
         assert created.json["item"]["status"] == "pending_review"
         with app.app_context():
             db.session.add(SupplierDocument(
-                company_id=__import__("uuid").UUID(company_id),
-                supplier_id=__import__("uuid").UUID(supplier_id),
-                uploaded_by_user_id=__import__("uuid").UUID(_admin_id),
+                company_id=UUID(company_id),
+                supplier_id=UUID(supplier_id),
+                uploaded_by_user_id=UUID(_admin_id),
                 original_filename="synthetic-licence.pdf",
                 content_type="application/pdf",
                 size_bytes=12,
@@ -176,6 +177,67 @@ def test_supplier_identity_edit_does_not_lift_suspension():
         )
         assert changed.status_code == 200
         assert changed.json["item"]["status"] == "suspended"
+    finally:
+        with app.app_context():
+            db.session.remove()
+            db.drop_all()
+
+
+def test_stock_receipt_requires_company_approved_supplier():
+    app, (company_id, _admin_id, _manager_id) = _seed_app()
+    try:
+        client = app.test_client()
+        _login(client, "supplier-admin@example.test", company_id)
+        with app.app_context():
+            product = Product(
+                company_id=UUID(company_id),
+                created_by_user_id=UUID(_admin_id),
+                sku="SYNTHETIC-RECEIPT-001",
+                name="Synthetic test product",
+                unit_price="25.00",
+                currency="TZS",
+                track_inventory=True,
+                category_key="food",
+            )
+            db.session.add(product)
+            db.session.commit()
+            product_id = str(product.id)
+
+        response = client.post(
+            f"/api/products/{product_id}/stock-movements",
+            json={
+                "movement_type": "received",
+                "quantity": "2.000",
+                "reason": "Synthetic intake test",
+                "batch_code": "BATCH-SYNTHETIC-001",
+                "supplier_invoice_reference": "INV-SYNTHETIC-001",
+                "manufacturer_name": "Synthetic Manufacturer",
+                "country_of_origin": "TZ",
+            },
+        )
+        assert response.status_code == 400
+        assert response.json["error"] == "Supplier id is required."
+    finally:
+        with app.app_context():
+            db.session.remove()
+            db.drop_all()
+
+
+def test_supplier_approval_requires_clean_scanned_document():
+    app, (company_id, _admin_id, _manager_id) = _seed_app()
+    try:
+        submitter = app.test_client()
+        reviewer = app.test_client()
+        _login(submitter, "supplier-admin@example.test", company_id)
+        _login(reviewer, "supplier-manager@example.test", company_id)
+        created = submitter.post("/api/suppliers", json=_supplier_payload())
+        supplier_id = created.json["item"]["id"]
+        response = reviewer.post(
+            f"/api/suppliers/{supplier_id}/review",
+            json={"decision": "approve", "notes": "Synthetic review."},
+        )
+        assert response.status_code == 400
+        assert "malware-scanned" in response.json["error"]
     finally:
         with app.app_context():
             db.session.remove()
