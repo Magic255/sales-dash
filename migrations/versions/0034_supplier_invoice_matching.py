@@ -32,7 +32,7 @@ AUDIT_EVENTS = (
     "'expense_created', 'expense_voided')"
 )
 
-PREVIOUS_AUDIT_EVENTS = AUDIT_EVENTS.replace("'supplier_invoice_recorded', ", "")
+PREVIOUS_AUDIT_EVENTS = AUDIT_EVENTS.replace("'supplier_invoice_recorded', ", "").replace("'supplier_invoice_matched', ", "")
 
 
 def upgrade():
