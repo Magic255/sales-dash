@@ -191,6 +191,8 @@
           <button type="button" class="module-tab" data-workspace-tab="customers">Customers</button>
           <button type="button" class="module-tab" data-workspace-tab="products">Products</button>
           <button id="inventory-tab" type="button" class="module-tab" data-workspace-tab="inventory" hidden>Inventory</button>
+          <button id="suppliers-tab" type="button" class="module-tab" data-workspace-tab="suppliers" hidden>Suppliers</button>
+          <button id="purchasing-tab" type="button" class="module-tab" data-workspace-tab="purchasing" hidden>Purchasing</button>
           <button type="button" class="module-tab" data-workspace-tab="sales">Sales</button>
           <button type="button" class="module-tab" data-workspace-tab="reports">Reports</button>
           <button id="team-tab" type="button" class="module-tab" data-workspace-tab="team" hidden>Team</button>
@@ -341,6 +343,68 @@
             <thead><tr><th>Date</th><th>Product</th><th>Movement</th><th>Batch</th><th>Expiry</th><th>Quantity</th><th>Reason</th><th>Reference</th></tr></thead>
             <tbody id="inventory-history-rows"><tr><td colspan="8">Select a tracked product to view its movement history.</td></tr></tbody>
           </table></div>
+        </section>
+        <section class="module-panel" data-workspace-panel="suppliers" hidden>
+          <div class="workspace-title"><div><h3>Supplier register</h3><p class="panel-copy">Record supplier identity, licences, authorised categories and territories. New suppliers enter independent review.</p></div><button id="suppliers-refresh" type="button" class="secondary-button">Refresh suppliers</button></div>
+          <form id="supplier-form" class="record-form">
+            <label for="supplier-legal-name">Legal supplier name</label><input id="supplier-legal-name" maxlength="180" required>
+            <label for="supplier-country">Country (ISO code)</label><input id="supplier-country" value="TZ" maxlength="2" pattern="[A-Za-z]{2}" required>
+            <label for="supplier-registration">Registration number</label><input id="supplier-registration" maxlength="120">
+            <label for="supplier-tax">Tax identifier</label><input id="supplier-tax" maxlength="120">
+            <label for="supplier-contact-name">Contact person</label><input id="supplier-contact-name" maxlength="160">
+            <label for="supplier-contact-email">Contact email</label><input id="supplier-contact-email" type="email" maxlength="320">
+            <label for="supplier-contact-phone">Contact phone</label><input id="supplier-contact-phone" maxlength="40">
+            <label for="supplier-categories">Authorised categories (comma-separated)</label><input id="supplier-categories" placeholder="general, electronics" required>
+            <label for="supplier-territories">Authorised territories (ISO codes)</label><input id="supplier-territories" value="TZ" required>
+            <label for="supplier-licence-number">Licence number</label><input id="supplier-licence-number" maxlength="160">
+            <label for="supplier-licence-issuer">Licence issuer</label><input id="supplier-licence-issuer" maxlength="180">
+            <label for="supplier-licence-url">Licence source URL (HTTPS)</label><input id="supplier-licence-url" type="url" placeholder="https://">
+            <label for="supplier-licence-expiry">Licence valid until</label><input id="supplier-licence-expiry" type="date">
+            <label for="supplier-review-date">Next review date</label><input id="supplier-review-date" type="date">
+            <button class="primary-button" type="submit">Add supplier for review</button>
+          </form>
+          <p id="suppliers-message" class="form-message" role="status" aria-live="polite"></p>
+          <div class="table-wrap"><table class="data-table"><thead><tr><th>Supplier</th><th>Country</th><th>Licence expiry</th><th>Categories</th><th>Status</th><th>Review</th></tr></thead><tbody id="supplier-rows"><tr><td colspan="6">Load suppliers to begin.</td></tr></tbody></table></div>
+          <section class="dashboard-analytics"><h4>Supplier evidence</h4><p class="panel-copy">Upload PDF, JPEG, PNG or WebP evidence (max 8 MB). Uploads fail closed unless encryption and malware scanning are configured.</p>
+            <form id="supplier-document-form" class="record-form">
+              <label for="supplier-document-owner">Supplier</label><select id="supplier-document-owner" required><option value="">Choose supplier</option></select>
+              <label for="supplier-document-file">Document</label><input id="supplier-document-file" type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp" required>
+              <button class="secondary-button" type="submit">Upload and scan</button>
+            </form>
+            <p id="supplier-document-message" class="form-message" role="status" aria-live="polite"></p>
+            <div class="table-wrap"><table class="data-table"><thead><tr><th>File</th><th>Scan status</th><th>Uploaded</th><th>Action</th></tr></thead><tbody id="supplier-document-rows"><tr><td colspan="4">Choose a supplier to view evidence.</td></tr></tbody></table></div>
+          </section>
+        </section>
+        <section class="module-panel" data-workspace-panel="purchasing" hidden>
+          <div class="workspace-title"><div><h3>Purchase orders and receiving</h3><p class="panel-copy">Order only from currently approved suppliers. Partial deliveries are matched to order lines; all received stock enters quarantine pending verification.</p></div><button id="purchase-orders-refresh" type="button" class="secondary-button">Refresh orders</button></div>
+          <form id="purchase-order-form" class="record-form">
+            <label for="po-supplier">Approved supplier</label><select id="po-supplier" required><option value="">Choose supplier</option></select>
+            <label for="po-number">Purchase order number</label><input id="po-number" maxlength="80" required>
+            <label for="po-currency">Currency</label><input id="po-currency" value="TZS" minlength="3" maxlength="3" required>
+            <label for="po-product">Product</label><select id="po-product" required><option value="">Choose product</option></select>
+            <label for="po-quantity">Quantity ordered</label><input id="po-quantity" type="number" min="0.001" step="0.001" required>
+            <label for="po-unit-cost">Unit cost</label><input id="po-unit-cost" type="number" min="0" step="0.01" required>
+            <label for="po-notes">Notes</label><input id="po-notes" maxlength="1000">
+            <button class="primary-button" type="submit">Create purchase order</button>
+          </form>
+          <p id="purchase-orders-message" class="form-message" role="status" aria-live="polite"></p>
+          <div class="table-wrap"><table class="data-table"><thead><tr><th>PO</th><th>Supplier</th><th>Status</th><th>Currency</th><th>Received / ordered</th></tr></thead><tbody id="purchase-order-rows"><tr><td colspan="5">No purchase orders loaded.</td></tr></tbody></table></div>
+          <section class="dashboard-analytics"><h4>Record delivery / partial receipt</h4>
+            <form id="purchase-receipt-form" class="record-form">
+              <label for="receipt-order">Purchase order</label><select id="receipt-order" required><option value="">Choose an open order</option></select>
+              <label for="receipt-line">Outstanding order line</label><select id="receipt-line" required><option value="">Choose a line</option></select>
+              <label for="receipt-delivery-note">Delivery note reference</label><input id="receipt-delivery-note" maxlength="120" required>
+              <label for="receipt-invoice">Supplier invoice reference</label><input id="receipt-invoice" maxlength="120">
+              <label for="receipt-quantity">Quantity received</label><input id="receipt-quantity" type="number" min="0.001" step="0.001" required>
+              <label for="receipt-batch">Batch / lot code</label><input id="receipt-batch" maxlength="80" required>
+              <label for="receipt-serial">Serial reference (quantity must be 1)</label><input id="receipt-serial" maxlength="120">
+              <label for="receipt-certificate">Certificate reference</label><input id="receipt-certificate" maxlength="160">
+              <label for="receipt-origin">Country of origin (ISO code)</label><input id="receipt-origin" value="TZ" maxlength="2" pattern="[A-Za-z]{2}" required>
+              <label for="receipt-manufacturer">Manufacturer</label><input id="receipt-manufacturer" maxlength="180">
+              <label for="receipt-expiry">Expiry date</label><input id="receipt-expiry" type="date">
+              <button class="primary-button" type="submit">Record quarantined receipt</button>
+            </form><p id="receipt-message" class="form-message" role="status" aria-live="polite"></p>
+          </section>
         </section>
         <section class="module-panel" data-workspace-panel="sales" hidden>
           <h3>Record a sale</h3><p class="panel-copy">The server calculates totals from the saved product price.</p>
