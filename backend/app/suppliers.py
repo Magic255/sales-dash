@@ -189,7 +189,9 @@ def create_supplier(user):
             authorised_territories=_territories(data.get("authorised_territories")),
             licence_number=_text(data, "licence_number", 160),
             licence_issuer=_text(data, "licence_issuer", 180),
-            licence_source_url=_https_url(_text(data, "licence_source_url", 500), "Licence source URL"),
+            licence_source_url=_https_url(
+                _text(data, "licence_source_url", 500), "Licence source URL"
+            ),
             licence_valid_until=_optional_date(data.get("licence_valid_until"), "Licence expiry"),
             next_review_date=_optional_date(data.get("next_review_date"), "Next review date"),
             submitted_by_user_id=user.id,
@@ -280,7 +282,10 @@ def update_supplier(_user, supplier_id):
                 item.review_notes = None
             record_audit_event(
                 db.session, _user.id, "supplier_re_review_required", company_id,
-                {"supplier_id": str(item.id), "changed_fields": sorted(identity_fields.intersection(data))},
+                {
+                    "supplier_id": str(item.id),
+                    "changed_fields": sorted(identity_fields.intersection(data)),
+                },
             )
         db.session.flush()
         result = _supplier_json(item)
@@ -307,7 +312,9 @@ def review_supplier(user, supplier_id):
     if item is None:
         return jsonify({"error": "Supplier not found."}), 404
     if item.submitted_by_user_id == user.id:
-        return jsonify({"error": "A supplier submitter cannot approve or review their own submission."}), 403
+        return jsonify({
+            "error": "A supplier submitter cannot approve or review their own submission."
+        }), 403
     data = _json_object()
     if data is None:
         return jsonify({"error": "Send a JSON object."}), 400
@@ -320,7 +327,9 @@ def review_supplier(user, supplier_id):
             raise ValueError("A reason is required for this supplier decision.")
         if decision == "approve":
             if not item.licence_number or not item.licence_issuer:
-                raise ValueError("A licence number and issuing authority are required before approval.")
+                raise ValueError(
+                    "A licence number and issuing authority are required before approval."
+                )
             if not item.licence_valid_until or item.licence_valid_until < date.today():
                 raise ValueError("A current, unexpired supplier licence is required.")
             if not item.authorised_categories or not item.authorised_territories:
@@ -334,10 +343,15 @@ def review_supplier(user, supplier_id):
                 )
             )
             if not clean_document_count:
-                raise ValueError("Upload at least one malware-scanned supplier licence or business document before approval.")
+                raise ValueError(
+                    "Upload at least one malware-scanned supplier licence or business document "
+                    "before approval."
+                )
 
             if item.country not in item.authorised_territories:
-                raise ValueError("The supplier's registered country must be included in its authorised territories.")
+                raise ValueError(
+                    "The supplier's registered country must be included in its authorised territories."
+                )
             item.status = "approved"
             event_type = "supplier_approved"
         elif decision == "restrict":
