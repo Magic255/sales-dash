@@ -19,7 +19,7 @@ ROLE_PERMISSIONS = {
         "delete_sales", "manage_products", "manage_team", "manage_company_settings",
         "view_audit_logs", "manage_customers", "manage_sales_targets",
         "manage_product_catalog", "manage_discount_approvals",
-        "manage_inventory", "manage_suppliers",
+        "manage_inventory", "manage_suppliers", "manage_expenses",
     }),
     "manager": frozenset({
         "view_dashboard", "view_reports", "create_sales", "edit_sales",
