@@ -1708,6 +1708,11 @@ def download_supplier_document(user, supplier_id, document_id):
     if hashlib.sha256(content).hexdigest() != document.sha256:
         current_app.logger.error("Supplier document integrity check failed for a tenant record.")
         return jsonify({"error": "Supplier document is unavailable."}), 500
+    record_audit_event(
+        db.session, user.id, "supplier_document_downloaded", company_id,
+        {"supplier_id": str(supplier_id), "document_id": str(document_id)},
+    )
+    db.session.commit()
     response = send_file(
         io.BytesIO(content), mimetype=document.content_type, as_attachment=True,
         download_name=document.original_filename, conditional=False, max_age=0,
