@@ -1,12 +1,15 @@
 from datetime import date, timedelta
 from decimal import Decimal
+from io import BytesIO
 from uuid import UUID
 
 from argon2 import PasswordHasher
+from cryptography.fernet import Fernet
 
 from app import create_app
 from app.extensions import db
 from app.models import (
+    CategoryCompliancePolicy,
     Company,
     CompanyMembership,
     Customer,
@@ -24,6 +27,7 @@ def make_client(role="admin"):
         "SQLALCHEMY_DATABASE_URI": "sqlite://",
         "WTF_CSRF_ENABLED": False,
         "RATELIMIT_ENABLED": False,
+        "COMPLIANCE_EVIDENCE_ENCRYPTION_KEY": Fernet.generate_key().decode(),
     })
     with application.app_context():
         db.create_all()
@@ -32,11 +36,31 @@ def make_client(role="admin"):
             password_hash=PasswordHasher().hash("a-very-strong-test-password"),
             email_verified=True,
         )
+        verifier = User(
+            email="inventory-verifier@example.test",
+            password_hash=PasswordHasher().hash("a-very-strong-test-password"),
+            email_verified=True,
+        )
         company = Company(name="Sales API Company", slug=f"sales-api-{role}")
-        db.session.add_all([user, company])
+        db.session.add_all([user, verifier, company])
         db.session.flush()
-        db.session.add(CompanyMembership(
-            user_id=user.id, company_id=company.id, role=role, status="active"
+        db.session.add_all([
+            CompanyMembership(
+                user_id=user.id, company_id=company.id, role=role, status="active"
+            ),
+            CompanyMembership(
+                user_id=verifier.id, company_id=company.id, role="manager", status="active"
+            ),
+        ])
+        db.session.add(CategoryCompliancePolicy(
+            company_id=company.id,
+            category_key="general",
+            market_country="TZ",
+            approval_mode="not_required",
+            accepted_authorities=[],
+            requirement_source_url="https://example.test/test-category-policy",
+            requirement_reference="Synthetic test policy v1",
+            updated_by_user_id=user.id,
         ))
         company_id = str(company.id)
         db.session.commit()
@@ -49,6 +73,68 @@ def make_client(role="admin"):
     assert response.status_code == 200
     selected = client.post("/api/auth/company", json={"company_id": company_id})
     assert selected.status_code == 200
+
+    original_post = client.post
+
+    def guarded_test_post(path, *args, **kwargs):
+        payload = kwargs.get("json")
+        if isinstance(payload, dict) and path == "/api/products":
+            payload = dict(payload)
+            if not payload.get("market_country"):
+                payload["market_country"] = "TZ"
+            kwargs["json"] = payload
+        if isinstance(payload, dict) and payload.get("movement_type") == "received":
+            payload = dict(payload)
+            payload["supplier_name"] = payload.get("supplier_name") or "Synthetic Test Supplier"
+            payload["supplier_invoice_reference"] = (
+                payload.get("supplier_invoice_reference") or "SYNTHETIC-INVOICE-001"
+            )
+            payload["manufacturer_name"] = (
+                payload.get("manufacturer_name") or "Synthetic Test Manufacturer"
+            )
+            payload["country_of_origin"] = payload.get("country_of_origin") or "TZ"
+            kwargs["json"] = payload
+        response = original_post(path, *args, **kwargs)
+        if (
+            isinstance(payload, dict)
+            and payload.get("movement_type") == "received"
+            and response.status_code == 201
+        ):
+            verifier_client = application.test_client()
+            verifier_login = verifier_client.post("/api/auth/login", json={
+                "email": "inventory-verifier@example.test",
+                "password": "a-very-strong-test-password",
+            })
+            assert verifier_login.status_code == 200
+            verifier_selected = verifier_client.post(
+                "/api/auth/company", json={"company_id": company_id}
+            )
+            assert verifier_selected.status_code == 200
+            batch_id = response.json["item"]["batch_id"]
+            evidence = verifier_client.post(
+                f"/api/stock-batches/{batch_id}/evidence",
+                data={"file": (
+                    BytesIO(b"%PDF-1.7\\nsynthetic supplier invoice\\n"),
+                    "synthetic-invoice.pdf",
+                )},
+                content_type="multipart/form-data",
+            )
+            assert evidence.status_code == 201
+            released = verifier_client.post(
+                f"/api/stock-batches/{batch_id}/compliance",
+                json={
+                    "decision": "release_not_required",
+                    "notes": (
+                        "Synthetic test category is configured as not requiring "
+                        "authority approval."
+                    ),
+                    "evidence_file_id": evidence.json["item"]["id"],
+                },
+            )
+            assert released.status_code == 200
+        return response
+
+    client.post = guarded_test_post
     return application, client
 
 
@@ -1197,7 +1283,7 @@ def test_manager_can_receive_stock_but_cannot_make_inventory_adjustments():
                 unit_price=Decimal("50.00"), cost_price=Decimal("20.00"),
                 minimum_selling_price=Decimal("30.00"),
                 track_inventory=True, low_stock_threshold=Decimal("1.000"),
-                currency="TZS",
+                currency="TZS", market_country="TZ",
             )
             db.session.add(product)
             db.session.commit()
@@ -1279,6 +1365,10 @@ def test_admin_can_make_reasoned_stock_adjustments():
             f"/api/products/{product_id}/stock-movements",
             json={"movement_type": "adjustment_increase", "quantity": "2",
                   "batch_code": "ADJUST-BATCH-1",
+                  "supplier_name": "Synthetic Test Supplier",
+                  "supplier_invoice_reference": "SYNTHETIC-INVOICE-001",
+                  "manufacturer_name": "Synthetic Test Manufacturer",
+                  "country_of_origin": "TZ",
                   "reason": "Physical count found two extra units."},
         )
         assert increase.status_code == 201
@@ -1289,7 +1379,9 @@ def test_admin_can_make_reasoned_stock_adjustments():
         )
         assert decrease.status_code == 201
         assert decrease.json["balance"]["stock_on_hand"] == "1.000"
-        assert decrease.json["balance"]["available_quantity"] == "1.000"
+        assert decrease.json["balance"]["available_quantity"] == "0.000"
+        inventory = client.get("/api/inventory").json["items"][0]
+        assert inventory["quarantine_quantity"] == "1.000"
     finally:
         with application.app_context():
             db.session.remove()
@@ -1315,6 +1407,10 @@ def test_inventory_batches_exclude_expired_stock_and_allocate_fifo():
             json={
                 "movement_type": "received", "quantity": "4",
                 "batch_code": "EXPIRED-BATCH", "expiry_date": yesterday,
+                "supplier_name": "Synthetic Test Supplier",
+                "supplier_invoice_reference": "SYNTHETIC-INVOICE-001",
+                "manufacturer_name": "Synthetic Test Manufacturer",
+                "country_of_origin": "TZ",
                 "reason": "Expired stock from synthetic test fixture.",
             },
         )
@@ -1406,6 +1502,10 @@ def test_expired_only_inventory_is_reported_and_cannot_complete_sales():
             json={
                 "movement_type": "received", "quantity": "2",
                 "batch_code": "ONLY-EXPIRED",
+                "supplier_name": "Synthetic Test Supplier",
+                "supplier_invoice_reference": "SYNTHETIC-INVOICE-001",
+                "manufacturer_name": "Synthetic Test Manufacturer",
+                "country_of_origin": "TZ",
                 "expiry_date": (date.today() - timedelta(days=1)).isoformat(),
                 "reason": "Expired test stock.",
             },
@@ -1444,6 +1544,10 @@ def test_discontinued_inventory_is_labelled_and_cannot_be_sold():
             json={
                 "movement_type": "received", "quantity": "2",
                 "batch_code": "DISCONTINUED-BATCH",
+                "supplier_name": "Synthetic Test Supplier",
+                "supplier_invoice_reference": "SYNTHETIC-INVOICE-001",
+                "manufacturer_name": "Synthetic Test Manufacturer",
+                "country_of_origin": "TZ",
                 "reason": "Synthetic stock receipt.",
             },
         )
@@ -1629,6 +1733,10 @@ def test_inventory_expiry_notifications_are_deduplicated_and_role_scoped():
                 "movement_type": "received",
                 "quantity": "5",
                 "batch_code": "ALERT-EXPIRING",
+                "supplier_name": "Synthetic Test Supplier",
+                "supplier_invoice_reference": "SYNTHETIC-INVOICE-001",
+                "manufacturer_name": "Synthetic Test Manufacturer",
+                "country_of_origin": "TZ",
                 "expiry_date": (date.today() + timedelta(days=30)).isoformat(),
                 "reason": "Synthetic stock for expiry alert test.",
             },
@@ -1639,6 +1747,10 @@ def test_inventory_expiry_notifications_are_deduplicated_and_role_scoped():
                 "movement_type": "received",
                 "quantity": "3",
                 "batch_code": "ALERT-EXPIRED",
+                "supplier_name": "Synthetic Test Supplier",
+                "supplier_invoice_reference": "SYNTHETIC-INVOICE-001",
+                "manufacturer_name": "Synthetic Test Manufacturer",
+                "country_of_origin": "TZ",
                 "expiry_date": (date.today() - timedelta(days=1)).isoformat(),
                 "reason": "Synthetic expired stock for alert test.",
             },
@@ -1660,6 +1772,10 @@ def test_inventory_expiry_notifications_are_deduplicated_and_role_scoped():
                 "movement_type": "received",
                 "quantity": "2",
                 "batch_code": "ALERT-EMPTY",
+                "supplier_name": "Synthetic Test Supplier",
+                "supplier_invoice_reference": "SYNTHETIC-INVOICE-001",
+                "manufacturer_name": "Synthetic Test Manufacturer",
+                "country_of_origin": "TZ",
                 "expiry_date": (date.today() + timedelta(days=2)).isoformat(),
                 "reason": "Synthetic stock that will be depleted.",
             },
@@ -1689,6 +1805,10 @@ def test_inventory_expiry_notifications_are_deduplicated_and_role_scoped():
                 "movement_type": "received",
                 "quantity": "4",
                 "batch_code": "ALERT-ARCHIVED",
+                "supplier_name": "Synthetic Test Supplier",
+                "supplier_invoice_reference": "SYNTHETIC-INVOICE-001",
+                "manufacturer_name": "Synthetic Test Manufacturer",
+                "country_of_origin": "TZ",
                 "expiry_date": (date.today() + timedelta(days=3)).isoformat(),
                 "reason": "Synthetic stock for discontinued product test.",
             },

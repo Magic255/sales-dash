@@ -13,7 +13,7 @@ function workspaceMessage(message) {
 async function workspaceRequest(path, options = {}) {
   const method = (options.method || "GET").toUpperCase();
   const headers = new Headers(options.headers || {});
-  if (options.body) headers.set("Content-Type", "application/json");
+  if (options.body && !(options.body instanceof FormData)) headers.set("Content-Type", "application/json");
   if (!["GET", "HEAD", "OPTIONS"].includes(method)) {
     if (!csrfToken) await refreshCsrfToken();
     headers.set("X-CSRFToken", csrfToken);
@@ -64,6 +64,9 @@ async function loadAuditLogs(generation = workspaceGeneration) {
     const eventLabels = {
       product_created: "Product created",
       product_updated: "Product details or price changed",
+      product_compliance_verified: "Product compliance verified",
+      product_compliance_rejected: "Product compliance rejected",
+      product_compliance_recalled: "Product compliance recalled",
       discount_limits_updated: "Discount limits updated",
       discount_approval_requested: "Discount approval requested",
       discount_approval_decided: "Discount approval decided",
@@ -345,6 +348,18 @@ async function editProduct(item) {
     "Low-stock threshold", item.low_stock_threshold || "0.000"
   );
   if (lowStockThreshold === null) return;
+  const categoryKey = window.prompt("Product category key", item.category_key || "general");
+  if (categoryKey === null) return;
+  const marketCountry = window.prompt("Market country (2-letter code, blank if not set)", item.market_country || "");
+  if (marketCountry === null) return;
+  const complianceRequired = window.prompt(
+    "Require standards approval before sale? Enter yes or no",
+    item.compliance_required ? "yes" : "no"
+  );
+  if (complianceRequired === null) return;
+  if (!["yes", "no"].includes(complianceRequired.trim().toLowerCase())) {
+    return workspaceMessage("Enter yes or no for standards approval.");
+  }
   const currency = window.prompt("Currency (3-letter code)", item.currency);
   if (currency === null) return;
   try {
@@ -354,6 +369,8 @@ async function editProduct(item) {
         sku, name, description, unit_price: unitPrice,
         cost_price: costPrice, minimum_selling_price: minimumSellingPrice,
         track_inventory: trackInventory.trim().toLowerCase() === "yes",
+        compliance_required: complianceRequired.trim().toLowerCase() === "yes",
+        category_key: categoryKey, market_country: marketCountry.trim().toUpperCase() || null,
         low_stock_threshold: lowStockThreshold, currency,
       }),
     });
@@ -406,15 +423,18 @@ function renderCustomers() {
 function renderProducts() {
   const body = document.querySelector("#product-rows");
   body.replaceChildren();
-  if (!products.length) return emptyRow(body, 8, "No products yet. Add the first product above.");
+  if (!products.length) return emptyRow(body, 11, "No products yet. Add the first product above.");
   for (const item of products) {
     const row = document.createElement("tr");
     textCell(row, item.sku);
     textCell(row, item.name);
+    textCell(row, item.category_key || "general");
+    textCell(row, item.market_country || "—");
     textCell(row, amount(item.currency, item.unit_price));
     textCell(row, amount(item.currency, item.minimum_selling_price));
     textCell(row, item.currency);
     textCell(row, item.track_inventory ? "Tracked" : "Not tracked");
+    textCell(row, item.compliance_required ? "Approval required" : "Not required");
     textCell(row, item.is_active ? "Active" : "Archived");
     const actions = document.createElement("td");
     if (canManageProducts()) {
@@ -627,25 +647,302 @@ async function loadInventoryBatches(productId, generation = workspaceGeneration)
   const body = document.querySelector("#inventory-batches-rows");
   body.replaceChildren();
   if (!productId) {
-    emptyRow(body, 6, "Select a tracked product to view batches.");
+    emptyRow(body, 10, "Select a tracked product to view batches.");
     return;
   }
   const data = await workspaceRequest(
     "/api/products/" + encodeURIComponent(productId) + "/stock-batches"
   );
   if (generation !== workspaceGeneration) return;
+  const batchProduct = products.find((entry) => entry.id === productId);
   if (!data.items.length) {
-    emptyRow(body, 6, "No batches have been recorded for this product.");
+    emptyRow(body, 10, "No batches have been recorded for this product.");
     return;
   }
   for (const batch of data.items) {
     const row = document.createElement("tr");
     textCell(row, batch.batch_code);
+    textCell(row, [batch.supplier_name, batch.supplier_invoice_reference || batch.delivery_note_reference]
+      .filter(Boolean).join(" · ") || "Supplier details missing");
+    textCell(row, [batch.manufacturer_name, batch.country_of_origin].filter(Boolean).join(" · ") || "Origin details missing");
     textCell(row, batch.expiry_date || "No expiry date");
     textCell(row, batch.stock_on_hand);
     textCell(row, batch.reserved_quantity);
     textCell(row, batch.available_quantity);
+    textCell(row, batch.compliance_status.replaceAll("_", " "));
     textCell(row, batch.status.replaceAll("_", " "));
+    const actions = document.createElement("td");
+    if (batchProduct && batchProduct.market_country === "TZ") {
+      const tbsLink = document.createElement("a");
+      tbsLink.href = "https://tbs.go.tz/certified-product-companies";
+      tbsLink.target = "_blank";
+      tbsLink.rel = "noopener noreferrer";
+      tbsLink.textContent = "TBS product register (where applicable)";
+      tbsLink.className = "table-action";
+      tbsLink.style.display = "block";
+      actions.append(tbsLink);
+      const sadcasLink = document.createElement("a");
+      sadcasLink.href = "https://www.sadcas.org/accredited-organisations/product-certification-bodies";
+      sadcasLink.target = "_blank";
+      sadcasLink.rel = "noopener noreferrer";
+      sadcasLink.textContent = "SADCAS accreditation scope";
+      sadcasLink.className = "table-action";
+      sadcasLink.style.display = "block";
+      actions.append(sadcasLink);
+      const tmdaLink = document.createElement("a");
+      tmdaLink.href = "https://tmda.go.tz/pages/procedures-for-market-authorization";
+      tmdaLink.target = "_blank";
+      tmdaLink.rel = "noopener noreferrer";
+      tmdaLink.textContent = "TMDA market authorisation (where applicable)";
+      tmdaLink.className = "table-action";
+      tmdaLink.style.display = "block";
+      actions.append(tmdaLink);
+      const tmdaImportLink = document.createElement("a");
+      tmdaImportLink.href = "https://www.tmda.go.tz/pages/import-and-export-control";
+      tmdaImportLink.target = "_blank";
+      tmdaImportLink.rel = "noopener noreferrer";
+      tmdaImportLink.textContent = "TMDA import/export control";
+      tmdaImportLink.className = "table-action";
+      tmdaImportLink.style.display = "block";
+      actions.append(tmdaImportLink);
+    }
+    if (["pending_verification", "approved", "exception_approved", "verified_not_required"].includes(batch.compliance_status)) {
+      const review = document.createElement("button");
+      review.type = "button";
+      review.className = "table-action";
+      review.textContent = ["approved", "exception_approved", "verified_not_required"].includes(batch.compliance_status) ? "Recall" : "Review";
+      review.addEventListener("click", async () => {
+        const decision = ["approved", "exception_approved", "verified_not_required"].includes(batch.compliance_status)
+          ? "recall" : window.prompt(
+            "Evidence-based decision: approve, reject, release_not_required (only with a not-required category policy)" +
+            (workspaceRole === "admin" ? ", or exception (never for legal requirements)" : "") +
+            ". Missing or uncertain proof must remain quarantined.",
+            "approve"
+          );
+        if (!decision) return;
+        const normalized = decision.trim().toLowerCase();
+        const allowedDecisions = workspaceRole === "admin"
+          ? ["approve", "reject", "recall", "exception", "release_not_required"]
+          : ["approve", "reject", "recall", "release_not_required"];
+        if (!allowedDecisions.includes(normalized)) {
+          return workspaceMessage("Choose one of the available compliance decisions.");
+        }
+        const payload = {decision: normalized};
+        try {
+          if (["approve", "exception", "release_not_required"].includes(normalized)) {
+            let legacyProvenanceCompleted = false;
+            if (!batch.supplier_name) {
+              payload.supplier_name = window.prompt("Supplier name from invoice / delivery note", "");
+              if (payload.supplier_name === null || !payload.supplier_name.trim()) return;
+              legacyProvenanceCompleted = true;
+            }
+            if (!batch.supplier_invoice_reference && !batch.delivery_note_reference) {
+              const invoiceReference = window.prompt(
+                "Supplier invoice reference (leave blank if only a delivery note exists)",
+                "",
+              );
+              if (invoiceReference === null) return;
+              if (invoiceReference.trim()) {
+                payload.supplier_invoice_reference = invoiceReference.trim();
+              } else {
+                payload.delivery_note_reference = window.prompt(
+                  "Delivery note reference (required when no invoice exists)",
+                  "",
+                );
+                if (
+                  payload.delivery_note_reference === null
+                  || !payload.delivery_note_reference.trim()
+                ) return;
+              }
+              legacyProvenanceCompleted = true;
+            }
+            if (!batch.manufacturer_name) {
+              payload.manufacturer_name = window.prompt("Manufacturer name", "");
+              if (payload.manufacturer_name === null || !payload.manufacturer_name.trim()) return;
+              legacyProvenanceCompleted = true;
+            }
+            if (!batch.country_of_origin) {
+              payload.country_of_origin = window.prompt("Country of origin (2-letter code)", "");
+              if (payload.country_of_origin === null || !payload.country_of_origin.trim()) return;
+              legacyProvenanceCompleted = true;
+            }
+            if (legacyProvenanceCompleted && normalized === "approve") {
+              payload.notes = window.prompt(
+                "Reason for completing missing legacy supplier details",
+                "",
+              );
+              if (payload.notes === null || !payload.notes.trim()) return;
+            }
+          }
+          if (normalized === "approve") {
+          payload.qr_code = window.prompt("QR / traceability value (required)", "");
+          if (payload.qr_code === null) return;
+          payload.authority_name = window.prompt("Issuing standards authority (for example TBS)", batch.authority_name || "");
+          if (payload.authority_name === null) return;
+          payload.authority_country = window.prompt("Issuing country code (2 letters)", "TZ");
+          if (payload.authority_country === null) return;
+          payload.certificate_reference = window.prompt("Certificate reference", "");
+          if (payload.certificate_reference === null) return;
+          payload.authority_role = window.prompt(
+            "Issuer role: standards_body, regulator, certification_body, accreditation_body, testing_lab, inspection_body, other",
+            /tbs|tanzania bureau/i.test(payload.authority_name) ? "standards_body" : "regulator",
+          );
+          if (payload.authority_role === null) return;
+          payload.verification_method = window.prompt(
+            "How did you check it? official_registry, accreditation_scope, issuer_confirmation, document_review",
+            "official_registry",
+          );
+          if (payload.verification_method === null) return;
+          const isTbs = /tbs|tanzania bureau/i.test(payload.authority_name);
+          const defaultSource = payload.verification_method === "accreditation_scope" && isTbs
+            ? "https://www.sadcas.org/accredited-organisations/product-certification-bodies"
+            : isTbs ? "https://tbs.go.tz/certified-product-companies" : "";
+          payload.verification_source_url = window.prompt(
+            "HTTPS official registry / accreditation source URL (required for registry or scope checks)",
+            defaultSource,
+          ) || "";
+          payload.verification_reference = window.prompt(
+            "Registry licence, accreditation number, or issuer case reference",
+            payload.certificate_reference,
+          ) || "";
+          payload.verified_product_identifier = window.prompt(
+            "Exact product, brand, model or batch identity you matched",
+            batchProduct ? batchProduct.name + (batchProduct.sku ? " / " + batchProduct.sku : "") : "",
+          );
+          if (payload.verified_product_identifier === null) return;
+          payload.verified_scope = window.prompt(
+            "Exact product category, standard and market scope confirmed",
+            "",
+          );
+          if (payload.verified_scope === null) return;
+          if (payload.verification_method === "accreditation_scope") {
+            payload.accreditation_body_name = window.prompt(
+              "Accreditation body whose scope you checked",
+              isTbs ? "SADCAS" : "",
+            );
+            if (payload.accreditation_body_name === null) return;
+          }
+          payload.standard_reference = window.prompt("Standard / regulation reference (optional)", "") || "";
+          const fileInput = document.createElement("input");
+          fileInput.type = "file";
+          fileInput.accept = ".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp";
+          fileInput.style.position = "fixed";
+          fileInput.style.left = "-10000px";
+          document.body.append(fileInput);
+          const selectedFile = new Promise((resolve) => {
+            fileInput.addEventListener("change", () => resolve(fileInput.files[0] || null), {once: true});
+            fileInput.addEventListener("cancel", () => resolve(null), {once: true});
+          });
+          fileInput.click();
+          const evidenceFile = await selectedFile;
+          fileInput.remove();
+          if (!evidenceFile) return;
+          const evidenceForm = new FormData();
+          evidenceForm.append("file", evidenceFile);
+          const uploadedEvidence = await workspaceRequest(
+            "/api/stock-batches/" + encodeURIComponent(batch.id) + "/evidence",
+            {method: "POST", body: evidenceForm},
+          );
+          payload.evidence_file_id = uploadedEvidence.item.id;
+        } else {
+          payload.notes = window.prompt("Reason for " + normalized + " (required)", "");
+          if (payload.notes === null || !payload.notes.trim()) return;
+          if (normalized === "exception") {
+            payload.qr_code = window.prompt("QR / batch traceability value (required for exception)", "");
+            if (payload.qr_code === null || !payload.qr_code.trim()) return;
+          }
+          if (normalized === "release_not_required" || normalized === "exception") {
+            const fileInput = document.createElement("input");
+            fileInput.type = "file";
+            fileInput.accept = ".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp";
+            fileInput.style.position = "fixed";
+            fileInput.style.left = "-10000px";
+            document.body.append(fileInput);
+            const selectedFile = new Promise((resolve) => {
+              fileInput.addEventListener("change", () => resolve(fileInput.files[0] || null), {once: true});
+              fileInput.addEventListener("cancel", () => resolve(null), {once: true});
+            });
+            fileInput.click();
+            const evidenceFile = await selectedFile;
+            fileInput.remove();
+            if (!evidenceFile) return;
+            const evidenceForm = new FormData();
+            evidenceForm.append("file", evidenceFile);
+            const uploadedEvidence = await workspaceRequest(
+              "/api/stock-batches/" + encodeURIComponent(batch.id) + "/evidence",
+              {method: "POST", body: evidenceForm},
+            );
+            payload.evidence_file_id = uploadedEvidence.item.id;
+          }
+        }
+        review.disabled = true;
+          await workspaceRequest("/api/stock-batches/" + encodeURIComponent(batch.id) + "/compliance", {
+            method: "POST", body: JSON.stringify(payload),
+          });
+          await loadInventory();
+          workspaceMessage("Batch compliance decision recorded. The uploaded file is stored privately; QR values remain traceability inputs and do not prove official approval.");
+        } catch (error) {
+          workspaceMessage(error.message);
+          review.disabled = false;
+        }
+      });
+      actions.append(review);
+    }
+    if (batch.verification_method) {
+      const verificationSummary = document.createElement("small");
+      verificationSummary.textContent = [
+        batch.authority_role || "issuer",
+        batch.verification_method.replaceAll("_", " "),
+        batch.verified_scope || "",
+      ].filter(Boolean).join(" · ");
+      verificationSummary.style.display = "block";
+      verificationSummary.style.marginTop = "6px";
+      actions.append(verificationSummary);
+      if (batch.verification_source_url) {
+        const sourceLink = document.createElement("a");
+        sourceLink.href = batch.verification_source_url;
+        sourceLink.target = "_blank";
+        sourceLink.rel = "noopener noreferrer";
+        sourceLink.textContent = "Open recorded verification source";
+        sourceLink.className = "table-action";
+        sourceLink.style.display = "block";
+        actions.append(sourceLink);
+      }
+    }
+    const evidenceButton = document.createElement("button");
+    evidenceButton.type = "button";
+    evidenceButton.className = "table-action";
+    evidenceButton.textContent = "Evidence";
+    evidenceButton.addEventListener("click", async () => {
+      evidenceButton.disabled = true;
+      try {
+        const evidence = await workspaceRequest(
+          "/api/stock-batches/" + encodeURIComponent(batch.id) + "/evidence"
+        );
+        const links = evidence.items || [];
+        if (!links.length) {
+          workspaceMessage("No private evidence has been uploaded for this batch yet.");
+        } else {
+          for (const item of links) {
+            const link = document.createElement("a");
+            link.href = item.download_url;
+            link.textContent = "Download " + item.filename;
+            link.className = "table-action";
+            link.style.display = "block";
+            link.style.marginTop = "4px";
+            actions.append(link);
+          }
+          workspaceMessage(links.length + " private evidence file(s) available.");
+        }
+      } catch (error) {
+        workspaceMessage(error.message);
+      } finally {
+        evidenceButton.disabled = false;
+      }
+    });
+    actions.append(evidenceButton);
+    if (!actions.childElementCount) actions.textContent = "—";
+    row.append(actions);
     body.append(row);
   }
 }
@@ -696,6 +993,43 @@ async function loadInventory(generation = workspaceGeneration) {
 }
 
 
+
+async function loadCompliancePolicies(generation = workspaceGeneration) {
+  const body = document.querySelector("#compliance-policy-rows");
+  const message = document.querySelector("#compliance-policy-message");
+  if (workspaceRole !== "admin") return;
+  message.textContent = "";
+  const data = await workspaceRequest("/api/compliance-policies");
+  if (generation !== workspaceGeneration) return;
+  body.replaceChildren();
+  if (!data.items.length) {
+    emptyRow(body, 6, "No category rules configured.");
+    return;
+  }
+  for (const policy of data.items) {
+    const row = document.createElement("tr");
+    textCell(row, policy.category_key);
+    textCell(row, policy.market_country);
+    textCell(row, policy.approval_mode.replaceAll("_", " "));
+    textCell(row, policy.legal_requirement ? "Yes — no Admin override" : "No");
+    textCell(row, policy.accepted_authorities.join(", ") || "No authority allow-list");
+    const basis = document.createElement("td");
+    if (policy.requirement_source_url && policy.requirement_reference) {
+      const basisLink = document.createElement("a");
+      basisLink.href = policy.requirement_source_url;
+      basisLink.target = "_blank";
+      basisLink.rel = "noopener noreferrer";
+      basisLink.textContent = policy.requirement_reference;
+      basisLink.className = "table-action";
+      basis.append(basisLink);
+    } else {
+      basis.textContent = "Source missing — update required";
+    }
+    row.append(basis);
+    body.append(row);
+  }
+}
+
 async function loadWorkspace() {
   const generation = workspaceGeneration;
   workspaceMessage("Loading company data…");
@@ -717,6 +1051,8 @@ async function loadWorkspace() {
     renderCustomers();
     renderProducts();
     fillSaleChoices();
+    if (workspaceRole === "admin") await loadCompliancePolicies(generation);
+    else emptyRow(document.querySelector("#compliance-policy-rows"), 6, "Category compliance rules are managed by company Admins.");
     await loadSales(generation);
     await loadNotifications(generation);
     await loadSalesTargets(generation);
@@ -956,6 +1292,7 @@ document.addEventListener("salesdash:company-selected", (event) => {
   workspace.hidden = false;
   document.querySelector("#customer-form").hidden = workspaceRole === "viewer";
   document.querySelector("#product-form").hidden = !canManageProducts();
+  document.querySelector("#compliance-policy-form").hidden = workspaceRole !== "admin";
   document.querySelector("#sale-form").hidden = workspaceRole === "viewer";
   document.querySelector("#sale-floor-override").hidden = workspaceRole !== "admin";
   document.querySelector("#team-tab").hidden = workspaceRole !== "admin";
@@ -1146,6 +1483,37 @@ document.querySelector("#customer-form").addEventListener("submit", async (event
   }
 });
 
+
+document.querySelector("#compliance-policy-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (workspaceRole !== "admin") return;
+  const form = event.currentTarget;
+  const button = form.querySelector("button");
+  const message = document.querySelector("#compliance-policy-message");
+  const authorities = document.querySelector("#policy-authorities").value
+    .split("\n").map((value) => value.trim()).filter(Boolean);
+  button.disabled = true;
+  message.textContent = "";
+  try {
+    await workspaceRequest("/api/compliance-policies", {
+      method: "POST",
+      body: JSON.stringify({
+        category_key: document.querySelector("#policy-category-key").value,
+        market_country: document.querySelector("#policy-market-country").value.trim().toUpperCase(),
+        approval_mode: document.querySelector("#policy-approval-mode").value,
+        accepted_authorities: authorities,
+      }),
+    });
+    message.textContent = "Category compliance rule saved.";
+    await loadCompliancePolicies();
+    await loadWorkspace();
+  } catch (error) {
+    message.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+});
+
 document.querySelector("#product-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = event.currentTarget;
@@ -1161,6 +1529,9 @@ document.querySelector("#product-form").addEventListener("submit", async (event)
         cost_price: document.querySelector("#product-cost").value,
         minimum_selling_price: document.querySelector("#product-minimum-price").value,
         track_inventory: document.querySelector("#product-track-inventory").checked,
+        compliance_required: document.querySelector("#product-compliance-required").checked,
+        category_key: document.querySelector("#product-category-key").value,
+        market_country: document.querySelector("#product-market-country").value.trim().toUpperCase() || null,
         low_stock_threshold: document.querySelector("#product-low-stock-threshold").value,
         currency: document.querySelector("#product-currency").value,
       }),

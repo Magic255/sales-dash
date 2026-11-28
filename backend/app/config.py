@@ -58,6 +58,8 @@ class Config:
     MAIL_TIMEOUT = int(os.environ.get("MAIL_TIMEOUT", "10"))
     PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL")
     MFA_ENCRYPTION_KEY = os.environ.get("MFA_ENCRYPTION_KEY")
+    COMPLIANCE_EVIDENCE_ENCRYPTION_KEY = os.environ.get("COMPLIANCE_EVIDENCE_ENCRYPTION_KEY")
+    MAX_CONTENT_LENGTH = 9 * 1024 * 1024
 
 
 class TestingConfig(Config):

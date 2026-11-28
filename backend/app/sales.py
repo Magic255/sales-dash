@@ -1,22 +1,28 @@
 """Company-scoped customer, product, sales, and dashboard APIs."""
 
 import csv
+import hashlib
 import io
 from datetime import date, datetime, timedelta, timezone
 from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal, InvalidOperation
+from urllib.parse import urlsplit
 from uuid import UUID, uuid4
 
-from flask import Blueprint, Response, g, jsonify, request, session
+from cryptography.fernet import Fernet, InvalidToken
+from flask import Blueprint, Response, current_app, g, jsonify, request, send_file, session
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
+from werkzeug.utils import secure_filename
 
 from .audit import record_audit_event
 from .auth import login_required
 from .extensions import db
 from .models import (
     AppNotification,
+    CategoryCompliancePolicy,
     Company,
     CompanyMembership,
+    ComplianceEvidenceFile,
     Customer,
     DiscountApprovalRequest,
     Product,
@@ -35,6 +41,75 @@ MILLI = Decimal("0.001")
 
 def _company_id():
     return UUID(session["company_id"])
+
+
+def _country_code(value, *, required=False):
+    if value in (None, ""):
+        if required:
+            raise ValueError("A market country code is required.")
+        return None
+    if not isinstance(value, str):
+        raise ValueError("Country must be a two-letter ISO country code.")
+    result = value.strip().upper()
+    if len(result) != 2 or not result.isascii() or not result.isalpha():
+        raise ValueError("Country must be a two-letter ISO country code.")
+    return result
+
+
+def _ensure_batch_supplier_provenance(batch, data):
+    """Complete legacy batch provenance before any release decision."""
+    changed = False
+    if not batch.supplier_name:
+        batch.supplier_name = _text(data, "supplier_name", 160, required=True)
+        changed = True
+    if not batch.supplier_invoice_reference and not batch.delivery_note_reference:
+        invoice = _text(data, "supplier_invoice_reference", 120)
+        delivery_note = _text(data, "delivery_note_reference", 120)
+        if not (invoice or delivery_note):
+            raise ValueError("A supplier invoice or delivery note reference is required.")
+        batch.supplier_invoice_reference = invoice
+        batch.delivery_note_reference = delivery_note
+        changed = True
+    if not batch.manufacturer_name:
+        batch.manufacturer_name = _text(data, "manufacturer_name", 160, required=True)
+        changed = True
+    if not batch.country_of_origin:
+        batch.country_of_origin = _country_code(
+            data.get("country_of_origin"), required=True
+        )
+        changed = True
+    return changed
+
+
+def _category_compliance_policy(company_id, category_key, market_country):
+    if not market_country:
+        category_has_market_rules = db.session.scalar(
+            select(func.count()).select_from(CategoryCompliancePolicy).where(
+                CategoryCompliancePolicy.company_id == company_id,
+                CategoryCompliancePolicy.category_key == category_key,
+            )
+        )
+        if category_has_market_rules:
+            raise ValueError(
+                "Select the product's market country to apply its category compliance policy."
+            )
+        return None
+    return db.session.scalar(
+        select(CategoryCompliancePolicy).where(
+            CategoryCompliancePolicy.company_id == company_id,
+            CategoryCompliancePolicy.category_key == category_key,
+            CategoryCompliancePolicy.market_country == market_country,
+        )
+    )
+
+
+def _apply_category_compliance_policy(product):
+    policy = _category_compliance_policy(
+        product.company_id, product.category_key, product.market_country
+    )
+    if policy and policy.approval_mode in {"required", "admin_exception"}:
+        product.compliance_required = True
+    return policy
 
 
 def _discount_limit(company, role):
@@ -398,6 +473,9 @@ def _product_json(item, *, include_cost=False):
         "currency": item.currency, "is_active": item.is_active,
         "minimum_selling_price": str(item.minimum_selling_price),
         "track_inventory": item.track_inventory,
+        "compliance_required": item.compliance_required,
+        "category_key": item.category_key,
+        "market_country": item.market_country,
         "low_stock_threshold": str(item.low_stock_threshold),
         "created_at": item.created_at.isoformat(),
     }
@@ -573,6 +651,9 @@ def _batch_balances(company_id, product_id):
             "inflows": totals[batch.id]["inflows"],
             "writeoffs": totals[batch.id]["writeoffs"],
             "available": totals[batch.id]["on_hand"] - totals[batch.id]["reserved"],
+            "compliance_blocked": batch.compliance_status not in {
+                "approved", "exception_approved", "verified_not_required"
+            },
             "expired": batch.expiry_date is not None and batch.expiry_date < today,
             "expiring_soon": (
                 batch.expiry_date is not None
@@ -591,7 +672,7 @@ def _stock_balance(company_id, product_id):
     available = sum(
         (
             item["available"] for item in balances
-            if not item["expired"]
+            if not item["expired"] and not item["compliance_blocked"]
         ),
         Decimal("0.000"),
     )
@@ -607,7 +688,7 @@ def _allocate_fifo_movements(
     remaining = quantity
     created = []
     for item in balances:
-        if item["expired"] and not allow_expired:
+        if (item["expired"] or item["compliance_blocked"]) and not allow_expired:
             continue
         capacity = item["reserved"] if movement_type == "released" else item["available"]
         if capacity <= 0:
@@ -680,7 +761,7 @@ def inventory_summary(_user):
         available = sum(
             (
                 row["available"] for row in balances
-                if not row["expired"]
+                if not row["expired"] and not row["compliance_blocked"]
             ),
             Decimal("0.000"),
         )
@@ -691,12 +772,20 @@ def inventory_summary(_user):
             ),
             Decimal("0.000"),
         )
+        quarantine_quantity = sum(
+            (
+                max(row["on_hand"], Decimal("0.000"))
+                for row in balances if row["compliance_blocked"]
+            ),
+            Decimal("0.000"),
+        )
         sold_total = sum((row["sold"] for row in balances), Decimal("0.000"))
         inflows_total = sum((row["inflows"] for row in balances), Decimal("0.000"))
         writeoffs_total = sum((row["writeoffs"] for row in balances), Decimal("0.000"))
         status = (
             "discontinued" if not product.is_active
             else "expired" if available <= 0 and expired_quantity > 0
+            else "pending_verification" if available <= 0 and quarantine_quantity > 0
             else "reserved" if available <= 0 and reserved > 0 and on_hand > 0
             else "sold" if (
                 on_hand <= 0 and sold_total > 0
@@ -715,6 +804,7 @@ def inventory_summary(_user):
             "reserved_quantity": str(reserved),
             "available_quantity": str(available),
             "expired_quantity": str(expired_quantity),
+            "quarantine_quantity": str(quarantine_quantity),
             "expiring_soon_quantity": str(expiring_soon_quantity),
             "low_stock_threshold": str(product.low_stock_threshold),
             "status": status,
@@ -745,10 +835,29 @@ def list_stock_batches(_user, product_id):
             "id": str(batch.id),
             "batch_code": batch.batch_code,
             "expiry_date": batch.expiry_date.isoformat() if batch.expiry_date else None,
+            "compliance_status": batch.compliance_status,
+            "supplier_name": batch.supplier_name,
+            "supplier_invoice_reference": batch.supplier_invoice_reference,
+            "delivery_note_reference": batch.delivery_note_reference,
+            "manufacturer_name": batch.manufacturer_name,
+            "country_of_origin": batch.country_of_origin,
+            "qr_code_present": bool(batch.qr_code),
+            "authority_name": batch.authority_name,
+            "authority_role": batch.authority_role,
+            "certificate_reference": batch.certificate_reference,
+            "verification_method": batch.verification_method,
+            "verification_source_url": batch.verification_source_url,
+            "verification_reference": batch.verification_reference,
+            "verified_product_identifier": batch.verified_product_identifier,
+            "verified_scope": batch.verified_scope,
+            "accreditation_body_name": batch.accreditation_body_name,
+            "verified_at": batch.verified_at.isoformat() if batch.verified_at else None,
             "stock_on_hand": str(row["on_hand"]),
             "reserved_quantity": str(row["reserved"]),
             "available_quantity": str(
-                Decimal("0.000") if row["expired"] else row["available"]
+                Decimal("0.000")
+                if row["expired"] or row["compliance_blocked"]
+                else row["available"]
             ),
             "expired_quantity": str(
                 max(row["on_hand"], Decimal("0.000")) if row["expired"]
@@ -756,6 +865,7 @@ def list_stock_batches(_user, product_id):
             ),
             "status": (
                 "expired" if row["expired"] and row["on_hand"] > 0
+                else "pending_verification" if row["compliance_blocked"] and row["on_hand"] > 0
                 else "reserved" if row["available"] <= 0 and row["reserved"] > 0
                 else "sold" if (
                     row["on_hand"] <= 0 and row["sold"] > 0
@@ -768,6 +878,453 @@ def list_stock_batches(_user, product_id):
             "received_at": batch.created_at.isoformat(),
         })
     return jsonify({"items": items})
+
+
+
+def _compliance_evidence_cipher():
+    key = current_app.config.get("COMPLIANCE_EVIDENCE_ENCRYPTION_KEY")
+    if not isinstance(key, str) or not key:
+        return None
+    try:
+        return Fernet(key.encode("ascii"))
+    except (ValueError, UnicodeEncodeError):
+        return None
+
+
+def _detect_compliance_evidence_type(content):
+    if content.startswith(b"%PDF-"):
+        return "application/pdf"
+    if content.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if content.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if len(content) >= 12 and content[:4] == b"RIFF" and content[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
+@sales_bp.post("/stock-batches/<uuid:batch_id>/evidence")
+@login_required
+@company_permission_required("manage_inventory")
+def upload_stock_batch_compliance_evidence(user, batch_id):
+    """Store encrypted, private evidence for one company-owned stock batch."""
+    company_id = _company_id()
+    if g.company_membership.role not in {"admin", "manager"}:
+        return jsonify({"error": "Only authorised compliance verifiers can upload evidence."}), 403
+    cipher = _compliance_evidence_cipher()
+    if cipher is None:
+        return jsonify({"error": "Private evidence storage is not configured."}), 503
+    batch = db.session.scalar(
+        select(StockBatch).where(
+            StockBatch.id == batch_id,
+            StockBatch.company_id == company_id,
+        ).with_for_update()
+    )
+    if batch is None:
+        return jsonify({"error": "Stock batch not found."}), 404
+    upload = request.files.get("file")
+    if upload is None or not upload.filename:
+        return jsonify({"error": "Choose a certificate or evidence file."}), 400
+    filename = secure_filename(upload.filename)[:180]
+    if not filename:
+        return jsonify({"error": "The evidence filename is invalid."}), 400
+    content = upload.stream.read(8 * 1024 * 1024 + 1)
+    if not content or len(content) > 8 * 1024 * 1024:
+        return jsonify({"error": "Evidence files must be between 1 byte and 8 MB."}), 400
+    content_type = _detect_compliance_evidence_type(content)
+    expected_extensions = {
+        "application/pdf": {".pdf"},
+        "image/jpeg": {".jpg", ".jpeg"},
+        "image/png": {".png"},
+        "image/webp": {".webp"},
+    }
+    extension = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    if not content_type or extension not in expected_extensions.get(content_type, set()):
+        return jsonify({
+            "error": "Upload a genuine PDF, JPEG, PNG or WebP file with a matching extension."
+        }), 400
+
+    evidence = ComplianceEvidenceFile(
+        company_id=company_id,
+        batch_id=batch.id,
+        uploaded_by_user_id=user.id,
+        original_filename=filename,
+        content_type=content_type,
+        size_bytes=len(content),
+        sha256=hashlib.sha256(content).hexdigest(),
+        encrypted_content=cipher.encrypt(content),
+    )
+    db.session.add(evidence)
+    db.session.flush()
+    record_audit_event(
+        db.session, user.id, "product_compliance_evidence_uploaded", company_id,
+        {
+            "batch_id": str(batch.id),
+            "evidence_file_id": str(evidence.id),
+            "content_type": content_type,
+            "size_bytes": len(content),
+            "sha256": evidence.sha256,
+        },
+    )
+    result = {
+        "id": str(evidence.id),
+        "filename": evidence.original_filename,
+        "content_type": evidence.content_type,
+        "size_bytes": evidence.size_bytes,
+        "sha256": evidence.sha256,
+        "created_at": evidence.created_at.isoformat() if evidence.created_at else None,
+    }
+    db.session.commit()
+    return jsonify({"item": result}), 201
+
+
+@sales_bp.get("/stock-batches/<uuid:batch_id>/evidence")
+@login_required
+@company_permission_required("manage_inventory")
+def list_stock_batch_compliance_evidence(_user, batch_id):
+    company_id = _company_id()
+    if g.company_membership.role not in {"admin", "manager"}:
+        return jsonify({"error": "Only authorised compliance verifiers can view evidence."}), 403
+    batch = db.session.scalar(
+        select(StockBatch).where(
+            StockBatch.id == batch_id,
+            StockBatch.company_id == company_id,
+        )
+    )
+    if batch is None:
+        return jsonify({"error": "Stock batch not found."}), 404
+    rows = db.session.scalars(
+        select(ComplianceEvidenceFile).where(
+            ComplianceEvidenceFile.company_id == company_id,
+            ComplianceEvidenceFile.batch_id == batch_id,
+        ).order_by(ComplianceEvidenceFile.created_at.desc(), ComplianceEvidenceFile.id.desc())
+    ).all()
+    return jsonify({"items": [
+        {
+            "id": str(row.id),
+            "filename": row.original_filename,
+            "content_type": row.content_type,
+            "size_bytes": row.size_bytes,
+            "sha256": row.sha256,
+            "created_at": row.created_at.isoformat(),
+            "download_url": f"/api/stock-batches/{batch_id}/evidence/{row.id}",
+        }
+        for row in rows
+    ]})
+
+
+@sales_bp.get("/stock-batches/<uuid:batch_id>/evidence/<uuid:evidence_id>")
+@login_required
+@company_permission_required("manage_inventory")
+def download_stock_batch_compliance_evidence(user, batch_id, evidence_id):
+    company_id = _company_id()
+    if g.company_membership.role not in {"admin", "manager"}:
+        return jsonify({
+            "error": "Only authorised compliance verifiers can download evidence."
+        }), 403
+    evidence = db.session.scalar(
+        select(ComplianceEvidenceFile).where(
+            ComplianceEvidenceFile.id == evidence_id,
+            ComplianceEvidenceFile.batch_id == batch_id,
+            ComplianceEvidenceFile.company_id == company_id,
+        )
+    )
+    if evidence is None:
+        return jsonify({"error": "Evidence file not found."}), 404
+    cipher = _compliance_evidence_cipher()
+    if cipher is None:
+        return jsonify({"error": "Private evidence storage is not configured."}), 503
+    try:
+        content = cipher.decrypt(evidence.encrypted_content)
+    except InvalidToken:
+        current_app.logger.error(
+            "Compliance evidence decryption failed for an authorised tenant record."
+        )
+        return jsonify({"error": "Evidence file is unavailable."}), 500
+    if hashlib.sha256(content).hexdigest() != evidence.sha256:
+        current_app.logger.error(
+            "Compliance evidence integrity check failed for an authorised tenant record."
+        )
+        return jsonify({"error": "Evidence file is unavailable."}), 500
+    record_audit_event(
+        db.session, user.id, "product_compliance_evidence_downloaded", company_id,
+        {"batch_id": str(batch_id), "evidence_file_id": str(evidence_id)},
+    )
+    db.session.commit()
+    response = send_file(
+        io.BytesIO(content),
+        mimetype=evidence.content_type,
+        as_attachment=True,
+        download_name=evidence.original_filename,
+        conditional=False,
+        max_age=0,
+    )
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
+
+
+@sales_bp.post("/stock-batches/<uuid:batch_id>/compliance")
+@login_required
+@company_permission_required("manage_inventory")
+def verify_stock_batch_compliance(user, batch_id):
+    """Record an independent, evidence-backed compliance decision for one batch."""
+    company_id = _company_id()
+    batch = db.session.scalar(
+        select(StockBatch).where(
+            StockBatch.id == batch_id,
+            StockBatch.company_id == company_id,
+        ).with_for_update()
+    )
+    if batch is None:
+        return jsonify({"error": "Stock batch not found."}), 404
+    if g.company_membership.role not in {"admin", "manager"}:
+        return jsonify({"error": "Only authorised compliance verifiers can review stock."}), 403
+    if batch.received_by_user_id == user.id:
+        return jsonify({"error": "The person who received this batch cannot verify it."}), 403
+    data = _json_object()
+    if data is None:
+        return jsonify({"error": "Send a JSON object."}), 400
+    try:
+        decision = _text(data, "decision", 32, required=True, lower=True)
+        if decision not in {
+            "approve", "reject", "recall", "exception", "release_not_required"
+        }:
+            raise ValueError("Unsupported compliance decision.")
+        notes = _text(data, "notes", 1000, required=(decision != "approve"))
+        product = db.session.scalar(
+            select(Product).where(
+                Product.company_id == company_id, Product.id == batch.product_id
+            )
+        )
+        policy = _category_compliance_policy(
+            company_id, product.category_key, product.market_country
+        ) if product else None
+        if (
+            decision in {"approve", "exception", "release_not_required"}
+            and policy
+            and not (policy.requirement_source_url and policy.requirement_reference)
+        ):
+            return jsonify({
+                "error": (
+                    "Complete the category policy's source and reference before "
+                    "releasing stock."
+                ),
+            }), 409
+        if decision == "exception":
+            if (
+                g.company_membership.role != "admin"
+                or not policy
+                or policy.approval_mode != "admin_exception"
+                or policy.legal_requirement
+            ):
+                return jsonify({
+                    "error": "Admin exceptions are unavailable for legally required approvals."
+                }), 403
+            provenance_changed = _ensure_batch_supplier_provenance(batch, data)
+            if provenance_changed and not notes:
+                raise ValueError("Record a reason when completing legacy supplier details.")
+            exception_qr = _text(data, "qr_code", 500, required=True)
+            evidence_file_id = UUID(_text(data, "evidence_file_id", 36, required=True))
+            evidence_file = db.session.scalar(
+                select(ComplianceEvidenceFile).where(
+                    ComplianceEvidenceFile.id == evidence_file_id,
+                    ComplianceEvidenceFile.company_id == company_id,
+                    ComplianceEvidenceFile.batch_id == batch.id,
+                )
+            )
+            if evidence_file is None:
+                raise ValueError(
+                    "Upload private supplier/traceability evidence for this batch "
+                    "before an exception."
+                )
+            batch.qr_code = exception_qr
+            batch.evidence_reference = f"private-evidence:{evidence_file.id}"
+            batch.compliance_status = "exception_approved"
+            event_type = "product_compliance_exception"
+        elif decision == "release_not_required":
+            if (
+                not policy
+                or policy.approval_mode != "not_required"
+                or policy.legal_requirement
+                or (product is not None and product.compliance_required)
+            ):
+                return jsonify({
+                    "error": "A not-required category policy must be configured before release."
+                }), 409
+            provenance_changed = _ensure_batch_supplier_provenance(batch, data)
+            if provenance_changed and not notes:
+                raise ValueError("Record a reason when completing legacy supplier details.")
+            evidence_file_id = UUID(_text(data, "evidence_file_id", 36, required=True))
+            evidence_file = db.session.scalar(
+                select(ComplianceEvidenceFile).where(
+                    ComplianceEvidenceFile.id == evidence_file_id,
+                    ComplianceEvidenceFile.company_id == company_id,
+                    ComplianceEvidenceFile.batch_id == batch.id,
+                )
+            )
+            if evidence_file is None:
+                raise ValueError("Upload supplier/source evidence for this batch before release.")
+            batch.evidence_reference = f"private-evidence:{evidence_file.id}"
+            batch.compliance_status = "verified_not_required"
+            event_type = "product_compliance_not_required_release"
+        elif decision == "approve":
+            if not policy or policy.approval_mode == "not_required":
+                raise ValueError(
+                    "Configure a required category/market policy before authority approval."
+                )
+            provenance_changed = _ensure_batch_supplier_provenance(batch, data)
+            if provenance_changed and not notes:
+                raise ValueError("Record a reason when completing legacy supplier details.")
+            qr_code = _text(data, "qr_code", 500, required=True)
+            authority_name = _text(data, "authority_name", 160, required=True)
+            authority_country = _country_code(data.get("authority_country"), required=True)
+            authority_role = _text(data, "authority_role", 32, required=True, lower=True)
+            if authority_role not in {
+                "standards_body", "regulator", "certification_body",
+                "accreditation_body", "testing_lab", "inspection_body", "other",
+            }:
+                raise ValueError("Unsupported issuing authority role.")
+            certificate_reference = _text(
+                data, "certificate_reference", 160, required=True
+            )
+            verification_method = _text(
+                data, "verification_method", 32, required=True, lower=True
+            )
+            if verification_method not in {
+                "official_registry", "accreditation_scope",
+                "issuer_confirmation", "document_review",
+            }:
+                raise ValueError("Unsupported verification method.")
+            verification_source_url = _text(data, "verification_source_url", 500)
+            verification_reference = _text(data, "verification_reference", 200)
+            verified_product_identifier = _text(
+                data, "verified_product_identifier", 200, required=True
+            )
+            verified_scope = _text(data, "verified_scope", 300, required=True)
+            accreditation_body_name = _text(data, "accreditation_body_name", 160)
+            if verification_method in {"official_registry", "accreditation_scope"}:
+                if not verification_source_url:
+                    raise ValueError("An official HTTPS source URL is required.")
+                parsed_source = urlsplit(verification_source_url)
+                if (
+                    parsed_source.scheme != "https"
+                    or not parsed_source.hostname
+                    or parsed_source.username
+                    or parsed_source.password
+                ):
+                    raise ValueError("The verification source must be an HTTPS URL.")
+            if verification_method == "issuer_confirmation" and not verification_reference:
+                raise ValueError("Record the issuer confirmation reference.")
+            if verification_method == "accreditation_scope" and not accreditation_body_name:
+                raise ValueError("Record the accreditation body checked.")
+            evidence_file_id = UUID(_text(data, "evidence_file_id", 36, required=True))
+            evidence_file = db.session.scalar(
+                select(ComplianceEvidenceFile).where(
+                    ComplianceEvidenceFile.id == evidence_file_id,
+                    ComplianceEvidenceFile.company_id == company_id,
+                    ComplianceEvidenceFile.batch_id == batch.id,
+                )
+            )
+            if evidence_file is None:
+                raise ValueError("Upload private evidence for this batch before approval.")
+            if policy and policy.legal_requirement and verification_method not in {
+                "official_registry", "issuer_confirmation"
+            }:
+                raise ValueError(
+                    "Legally required approval must be checked against an official registry "
+                    "or confirmed directly with the issuing authority."
+                )
+            standard_reference = _text(data, "standard_reference", 160)
+            if (
+                policy
+                and policy.approval_mode in {"required", "admin_exception"}
+                and authority_name.casefold() not in {
+                    value.casefold() for value in policy.accepted_authorities
+                }
+            ):
+                raise ValueError("The issuing authority is not on this category policy allow-list.")
+            batch.qr_code = qr_code
+            batch.authority_name = authority_name
+            batch.authority_country = authority_country
+            batch.authority_role = authority_role
+            batch.certificate_reference = certificate_reference
+            batch.evidence_reference = f"private-evidence:{evidence_file.id}"
+            batch.standard_reference = standard_reference
+            batch.verification_method = verification_method
+            batch.verification_source_url = verification_source_url
+            batch.verification_reference = verification_reference
+            batch.verified_product_identifier = verified_product_identifier
+            batch.verified_scope = verified_scope
+            batch.accreditation_body_name = accreditation_body_name
+            batch.compliance_status = "approved"
+            event_type = "product_compliance_verified"
+        elif decision in {"reject", "recall"}:
+            batch.compliance_status = "rejected" if decision == "reject" else "recalled"
+            event_type = (
+                "product_compliance_rejected" if decision == "reject"
+                else "product_compliance_recalled"
+            )
+        batch.verified_by_user_id = user.id
+        batch.verified_at = datetime.now(timezone.utc)
+        batch.verification_notes = notes
+        record_audit_event(
+            db.session, user.id, event_type, company_id,
+            {
+                "product_id": str(batch.product_id),
+                "batch_id": str(batch.id),
+                "batch_code": batch.batch_code,
+                "decision": decision,
+                "authority_name": batch.authority_name,
+                "authority_country": batch.authority_country,
+                "authority_role": batch.authority_role,
+                "certificate_reference": batch.certificate_reference,
+                "verification_method": batch.verification_method,
+                "verification_source_url": batch.verification_source_url,
+                "verification_reference": batch.verification_reference,
+                "verified_product_identifier": batch.verified_product_identifier,
+                "verified_scope": batch.verified_scope,
+                "accreditation_body_name": batch.accreditation_body_name,
+                "qr_code_present": bool(batch.qr_code),
+                "evidence_reference_present": bool(batch.evidence_reference),
+                "evidence_file_id": (
+                    str(evidence_file.id)
+                    if decision in {"approve", "release_not_required", "exception"} else None
+                ),
+                "supplier_name": batch.supplier_name,
+                "supplier_invoice_reference": batch.supplier_invoice_reference,
+                "delivery_note_reference": batch.delivery_note_reference,
+                "manufacturer_name": batch.manufacturer_name,
+                "country_of_origin": batch.country_of_origin,
+                "notes": notes,
+            },
+        )
+        db.session.flush()
+        result = {
+            "id": str(batch.id),
+            "compliance_status": batch.compliance_status,
+            "authority_name": batch.authority_name,
+            "authority_country": batch.authority_country,
+            "authority_role": batch.authority_role,
+            "certificate_reference": batch.certificate_reference,
+            "verification_method": batch.verification_method,
+            "verification_source_url": batch.verification_source_url,
+            "verification_reference": batch.verification_reference,
+            "verified_product_identifier": batch.verified_product_identifier,
+            "verified_scope": batch.verified_scope,
+            "accreditation_body_name": batch.accreditation_body_name,
+            "verified_at": batch.verified_at.isoformat(),
+            "evidence_file_id": str(evidence_file.id) if decision == "approve" else None,
+        }
+        db.session.commit()
+    except ValueError:
+        if current_app.testing:
+            current_app.logger.exception("Compliance review validation failed in tests.")
+        db.session.rollback()
+        return jsonify({
+            "error": "Invalid compliance review. Check the required evidence and fields."
+        }), 400
+    return jsonify({"item": result})
 
 
 @sales_bp.get("/products/<uuid:product_id>/stock-movements")
@@ -851,6 +1408,23 @@ def create_stock_movement(user, product_id):
         created = []
         if movement_type in {"received", "returned", "adjustment_increase"}:
             batch_code = _text(data, "batch_code", 80, required=True)
+            supplier_name = _text(
+                data, "supplier_name", 160, required=(movement_type == "received")
+            )
+            supplier_invoice_reference = _text(
+                data, "supplier_invoice_reference", 120,
+            )
+            delivery_note_reference = _text(data, "delivery_note_reference", 120)
+            manufacturer_name = _text(
+                data, "manufacturer_name", 160, required=(movement_type == "received")
+            )
+            country_of_origin = _country_code(
+                data.get("country_of_origin"), required=(movement_type == "received")
+            )
+            if movement_type == "received" and not (
+                supplier_invoice_reference or delivery_note_reference
+            ):
+                raise ValueError("A supplier invoice or delivery note reference is required.")
             raw_expiry = data.get("expiry_date")
             if raw_expiry in (None, ""):
                 expiry_date = None
@@ -866,6 +1440,13 @@ def create_stock_movement(user, product_id):
                 product_id=product_id,
                 batch_code=batch_code,
                 expiry_date=expiry_date,
+                supplier_name=supplier_name,
+                supplier_invoice_reference=supplier_invoice_reference,
+                delivery_note_reference=delivery_note_reference,
+                manufacturer_name=manufacturer_name,
+                country_of_origin=country_of_origin,
+                compliance_status="pending_verification",
+                received_by_user_id=user.id,
                 created_at=datetime.now(timezone.utc),
             )
             db.session.add(batch)
@@ -917,6 +1498,168 @@ def create_stock_movement(user, product_id):
     }), 201
 
 
+
+
+@sales_bp.get("/compliance-policies")
+@login_required
+@company_permission_required("manage_product_catalog")
+def list_category_compliance_policies(_user):
+    rows = db.session.scalars(
+        select(CategoryCompliancePolicy)
+        .where(CategoryCompliancePolicy.company_id == _company_id())
+        .order_by(
+            CategoryCompliancePolicy.market_country,
+            CategoryCompliancePolicy.category_key,
+        )
+    ).all()
+    return jsonify({"items": [
+        {
+            "id": str(row.id),
+            "category_key": row.category_key,
+            "market_country": row.market_country,
+            "approval_mode": row.approval_mode,
+            "legal_requirement": row.legal_requirement,
+            "requirement_source_url": row.requirement_source_url,
+            "requirement_reference": row.requirement_reference,
+            "accepted_authorities": row.accepted_authorities,
+            "updated_at": row.updated_at.isoformat(),
+        }
+        for row in rows
+    ]})
+
+
+@sales_bp.post("/compliance-policies")
+@login_required
+@company_permission_required("manage_product_catalog")
+def save_category_compliance_policy(user):
+    data = _json_object()
+    if data is None:
+        return jsonify({"error": "Send a JSON object."}), 400
+    try:
+        category_key = _text(data, "category_key", 80, required=True, lower=True)
+        if not all(char.isascii() and (char.isalnum() or char in "-_") for char in category_key):
+            raise ValueError("Invalid category key.")
+        market_country = _country_code(data.get("market_country"), required=True)
+        approval_mode = _text(data, "approval_mode", 24, required=True, lower=True)
+        if approval_mode not in {"required", "admin_exception", "not_required"}:
+            raise ValueError("Unsupported category approval mode.")
+        legal_requirement = _boolean(data.get("legal_requirement", False), "legal_requirement")
+        requirement_source_url = _text(data, "requirement_source_url", 500)
+        requirement_reference = _text(data, "requirement_reference", 200)
+        if legal_requirement and approval_mode != "required":
+            raise ValueError("Legally required approvals must use the strict required mode.")
+        if requirement_source_url:
+            parsed_requirement_source = urlsplit(requirement_source_url)
+            if (
+                parsed_requirement_source.scheme != "https"
+                or not parsed_requirement_source.hostname
+                or parsed_requirement_source.username
+                or parsed_requirement_source.password
+            ):
+                raise ValueError("The legal requirement source must be an HTTPS URL.")
+        if not (requirement_source_url and requirement_reference):
+            raise ValueError(
+                "Record an HTTPS official requirement or business-policy source and its reference."
+            )
+        authorities = data.get("accepted_authorities", [])
+        if not isinstance(authorities, list) or len(authorities) > 30:
+            raise ValueError("Accepted authorities must be a list of up to 30 names.")
+        if approval_mode == "required" and not authorities:
+            raise ValueError("Add at least one accepted authority for a required-approval policy.")
+        cleaned = []
+        for authority in authorities:
+            if (
+                not isinstance(authority, str)
+                or not authority.strip()
+                or len(authority.strip()) > 160
+            ):
+                raise ValueError("Each authority must have a valid name.")
+            name = authority.strip()
+            if name.casefold() not in {entry.casefold() for entry in cleaned}:
+                cleaned.append(name)
+        company_id = _company_id()
+        policy = db.session.scalar(
+            select(CategoryCompliancePolicy).where(
+                CategoryCompliancePolicy.company_id == company_id,
+                CategoryCompliancePolicy.category_key == category_key,
+                CategoryCompliancePolicy.market_country == market_country,
+            ).with_for_update()
+        )
+        if policy is None:
+            policy = CategoryCompliancePolicy(
+                company_id=company_id, category_key=category_key,
+                market_country=market_country, approval_mode=approval_mode,
+                accepted_authorities=cleaned, updated_by_user_id=user.id,
+                legal_requirement=legal_requirement,
+                requirement_source_url=requirement_source_url,
+                requirement_reference=requirement_reference,
+            )
+            db.session.add(policy)
+        else:
+            if policy.legal_requirement and not legal_requirement:
+                raise ValueError(
+                    "A recorded legal requirement cannot be removed from this screen. "
+                    "Use a separately reviewed legal-policy change process."
+                )
+            policy.approval_mode = approval_mode
+            policy.accepted_authorities = cleaned
+            policy.legal_requirement = legal_requirement
+            policy.requirement_source_url = requirement_source_url
+            policy.requirement_reference = requirement_reference
+            policy.updated_by_user_id = user.id
+        affected = db.session.scalars(
+            select(Product).where(
+                Product.company_id == company_id,
+                Product.category_key == category_key,
+                Product.market_country == market_country,
+            ).with_for_update()
+        ).all()
+        if approval_mode in {"required", "admin_exception"}:
+            for product in affected:
+                product.compliance_required = True
+        for product in affected:
+            batches = db.session.scalars(
+                select(StockBatch).where(
+                    StockBatch.company_id == company_id,
+                    StockBatch.product_id == product.id,
+                    StockBatch.compliance_status.in_(
+                        ["approved", "exception_approved", "verified_not_required"]
+                    ),
+                ).with_for_update()
+            ).all()
+            for batch in batches:
+                batch.compliance_status = "pending_verification"
+        record_audit_event(
+            db.session, user.id, "product_compliance_policy_updated", company_id,
+            {
+                "category_key": category_key, "market_country": market_country,
+                "approval_mode": approval_mode, "accepted_authorities": cleaned,
+                "legal_requirement": legal_requirement,
+                "requirement_source_url": requirement_source_url,
+                "requirement_reference": requirement_reference,
+                "affected_products": len(affected),
+            },
+        )
+        result = {
+            "category_key": policy.category_key,
+            "market_country": policy.market_country,
+            "approval_mode": policy.approval_mode,
+            "legal_requirement": policy.legal_requirement,
+            "requirement_source_url": policy.requirement_source_url,
+            "requirement_reference": policy.requirement_reference,
+            "accepted_authorities": policy.accepted_authorities,
+            "affected_products": len(affected),
+        }
+        db.session.commit()
+        return jsonify({"item": result})
+    except ValueError:
+        db.session.rollback()
+        return jsonify({"error": "Invalid category compliance policy."}), 400
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({"error": "A category policy already exists for this market."}), 409
+
+
 @sales_bp.get("/products")
 @login_required
 @company_permission_required("view_reports")
@@ -961,11 +1704,22 @@ def create_product(user):
                 "minimum_selling_price",
             ),
             track_inventory=_boolean(data.get("track_inventory", False), "track_inventory"),
+            compliance_required=_boolean(
+                data.get("compliance_required", False), "compliance_required"
+            ),
+            category_key=_text(data, "category_key", 80, lower=True) or "general",
+            market_country=_country_code(data.get("market_country")),
             low_stock_threshold=_decimal(
                 data.get("low_stock_threshold", "0"), "low_stock_threshold",
                 places=MILLI,
             ),
         )
+        if not all(
+            char.isascii() and (char.isalnum() or char in "-_")
+            for char in item.category_key
+        ):
+            raise ValueError("Category must use letters, numbers, hyphens or underscores.")
+        _apply_category_compliance_policy(item)
         if len(item.currency) != 3:
             raise ValueError("Currency must be a 3-letter code, such as TZS.")
         if item.minimum_selling_price < item.cost_price:
@@ -982,6 +1736,9 @@ def create_product(user):
              "unit_price": str(item.unit_price), "cost_price": str(item.cost_price),
              "minimum_selling_price": str(item.minimum_selling_price),
              "track_inventory": item.track_inventory,
+             "category_key": item.category_key,
+             "market_country": item.market_country,
+             "compliance_required": item.compliance_required,
              "low_stock_threshold": str(item.low_stock_threshold),
              "currency": item.currency},
         )
@@ -1026,9 +1783,32 @@ def update_product(user, product_id):
         "unit_price": str(item.unit_price), "cost_price": str(item.cost_price),
         "minimum_selling_price": str(item.minimum_selling_price),
         "track_inventory": item.track_inventory,
+        "compliance_required": item.compliance_required,
+        "category_key": item.category_key,
+        "market_country": item.market_country,
         "low_stock_threshold": str(item.low_stock_threshold),
         "currency": item.currency, "is_active": item.is_active,
     }
+    current_policy = (
+        _category_compliance_policy(
+            item.company_id, item.category_key, item.market_country
+        )
+        if item.market_country else None
+    )
+    if current_policy and current_policy.legal_requirement:
+        requested_category = data.get("category_key", item.category_key)
+        requested_market = data.get("market_country", item.market_country)
+        if (
+            requested_category != item.category_key
+            or requested_market != item.market_country
+        ):
+            return jsonify({
+                "error": (
+                    "A product governed by a legal requirement cannot be reclassified "
+                    "through the normal product edit. Use a separately reviewed "
+                    "legal-policy process."
+                )
+            }), 409
     try:
         if "sku" in data:
             item.sku = _text(data, "sku", 64, required=True, upper=True)
@@ -1046,6 +1826,52 @@ def update_product(user, product_id):
             )
         if "track_inventory" in data:
             item.track_inventory = _boolean(data["track_inventory"], "track_inventory")
+        if "category_key" in data:
+            item.category_key = _text(data, "category_key", 80, required=True, lower=True)
+            if not all(
+                char.isascii() and (char.isalnum() or char in "-_")
+                for char in item.category_key
+            ):
+                raise ValueError("Category must use letters, numbers, hyphens or underscores.")
+        if "market_country" in data:
+            item.market_country = _country_code(data["market_country"])
+        if "compliance_required" in data:
+            item.compliance_required = _boolean(
+                data["compliance_required"], "compliance_required"
+            )
+        _apply_category_compliance_policy(item)
+        compliance_enabled = (
+            not before["compliance_required"] and item.compliance_required
+        )
+        identity_changed = item.sku != before["sku"] or item.name != before["name"]
+        reclassified = (
+            "category_key" in data or "market_country" in data
+            or compliance_enabled or identity_changed
+        )
+        if reclassified:
+            eligible_statuses = ["approved", "exception_approved", "verified_not_required"]
+            require_unverified = False
+        elif item.compliance_required:
+            eligible_statuses = ["approved"]
+            require_unverified = True
+        else:
+            eligible_statuses = []
+            require_unverified = False
+        if eligible_statuses:
+            batch_query = select(StockBatch).where(
+                StockBatch.company_id == item.company_id,
+                StockBatch.product_id == item.id,
+                StockBatch.compliance_status.in_(eligible_statuses),
+            )
+            if require_unverified:
+                batch_query = batch_query.where(
+                    StockBatch.verified_by_user_id.is_(None)
+                )
+            existing_batches = db.session.scalars(
+                batch_query.with_for_update()
+            ).all()
+            for batch in existing_batches:
+                batch.compliance_status = "pending_verification"
         if "low_stock_threshold" in data:
             item.low_stock_threshold = _decimal(
                 data["low_stock_threshold"], "low_stock_threshold", places=MILLI
@@ -1070,6 +1896,9 @@ def update_product(user, product_id):
             "unit_price": str(item.unit_price), "cost_price": str(item.cost_price),
             "minimum_selling_price": str(item.minimum_selling_price),
             "track_inventory": item.track_inventory,
+            "compliance_required": item.compliance_required,
+            "category_key": item.category_key,
+            "market_country": item.market_country,
             "low_stock_threshold": str(item.low_stock_threshold),
             "currency": item.currency, "is_active": item.is_active,
         }
@@ -1851,6 +2680,11 @@ def complete_sale(user, sale_id):
             item.company_id, tracked_product_id
         )
         if required_quantity > available:
+            balances = _batch_balances(item.company_id, tracked_product_id)
+            if any(row["compliance_blocked"] and row["available"] > 0 for row in balances):
+                return jsonify({
+                    "error": "Stock is quarantined pending product compliance verification."
+                }), 409
             return jsonify({
                 "error": "Insufficient available stock in non-expired batches for "
                 + products_by_id[tracked_product_id].sku + "."

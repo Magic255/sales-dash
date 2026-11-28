@@ -244,6 +244,8 @@ def test_admin_sales_reporting_invitation_and_audit_flows_work_in_browser(browse
             data = {"item": product}
         elif path == "/api/products":
             data = {"items": state["products"]}
+        elif path == "/api/compliance-policies":
+            data = {"items": []}
         elif path == "/api/sales" and method == "POST":
             customer = state["customers"][0]
             product = state["products"][0]

@@ -54,6 +54,21 @@ def create_app(test_config=None):
     ):
         raise RuntimeError("Production requires Redis-backed login rate limiting.")
     if app.config.get("APP_ENV") == "production":
+        evidence_key = app.config.get("COMPLIANCE_EVIDENCE_ENCRYPTION_KEY")
+        if not isinstance(evidence_key, str) or not evidence_key:
+            raise RuntimeError("COMPLIANCE_EVIDENCE_ENCRYPTION_KEY must be set in production.")
+        try:
+            Fernet(evidence_key.encode("ascii"))
+        except (ValueError, UnicodeEncodeError) as error:
+            raise RuntimeError(
+                "COMPLIANCE_EVIDENCE_ENCRYPTION_KEY must be a valid Fernet key."
+            ) from error
+        if evidence_key == app.config.get("MFA_ENCRYPTION_KEY"):
+            raise RuntimeError(
+                "COMPLIANCE_EVIDENCE_ENCRYPTION_KEY must be distinct from MFA_ENCRYPTION_KEY."
+            )
+
+    if app.config.get("APP_ENV") == "production":
         encryption_key = app.config.get("MFA_ENCRYPTION_KEY")
         if not isinstance(encryption_key, str) or not encryption_key:
             raise RuntimeError("MFA_ENCRYPTION_KEY must be set in production.")

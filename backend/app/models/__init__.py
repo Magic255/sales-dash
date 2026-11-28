@@ -4,7 +4,16 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 from uuid import UUID, uuid4
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, String, Uuid, func
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Integer,
+    LargeBinary,
+    String,
+    Uuid,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
 from ..company_invitation import CompanyInvitation  # noqa: F401
@@ -154,7 +163,12 @@ class AuditLog(db.Model):
             "'team_member_role_changed', 'team_member_suspended', "
             "'team_member_reactivated', 'product_created', 'product_updated', "
             "'discount_limits_updated', 'discount_approval_requested', "
-            "'discount_approval_decided', 'price_floor_override', 'discount_applied')",
+            "'discount_approval_decided', 'price_floor_override', 'discount_applied', "
+            "'product_compliance_verified', 'product_compliance_rejected', "
+            "'product_compliance_recalled', 'product_compliance_exception', "
+            "'product_compliance_policy_updated', 'product_compliance_not_required_release', "
+            "'product_compliance_evidence_uploaded', "
+            "'product_compliance_evidence_downloaded')",
             name="event_type_is_supported",
         ),
         db.Index("ix_audit_logs_company_time", "company_id", "occurred_at"),
@@ -232,6 +246,15 @@ class Product(db.Model):
         CheckConstraint("unit_price >= minimum_selling_price", name="unit_price_covers_floor"),
         CheckConstraint("low_stock_threshold >= 0", name="low_stock_threshold_nonnegative"),
         CheckConstraint(
+            "category_key = lower(trim(category_key)) AND length(category_key) > 0",
+            name="category_key_normalized",
+        ),
+        CheckConstraint(
+            "market_country IS NULL OR "
+            "(market_country = upper(market_country) AND length(market_country) = 2)",
+            name="market_country_iso_code",
+        ),
+        CheckConstraint(
             "currency = upper(currency) AND length(currency) = 3",
             name="currency_iso_code",
         ),
@@ -255,6 +278,13 @@ class Product(db.Model):
     track_inventory: Mapped[bool] = mapped_column(
         nullable=False, default=False, server_default="false"
     )
+    compliance_required: Mapped[bool] = mapped_column(
+        nullable=False, default=False, server_default="false"
+    )
+    category_key: Mapped[str] = mapped_column(
+        String(80), nullable=False, default="general", server_default="general"
+    )
+    market_country: Mapped[str | None] = mapped_column(String(2))
     low_stock_threshold: Mapped[Decimal] = mapped_column(
         db.Numeric(12, 3), nullable=False, default=0, server_default="0"
     )
@@ -266,6 +296,63 @@ class Product(db.Model):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=utc_now
+    )
+
+
+
+class CategoryCompliancePolicy(db.Model):
+    """Company-specific compliance rules for a product category and market."""
+
+    __tablename__ = "category_compliance_policies"
+    __table_args__ = (
+        db.UniqueConstraint(
+            "company_id", "category_key", "market_country",
+            name="uq_compliance_policy_company_category_country",
+        ),
+        db.ForeignKeyConstraint(
+            ["company_id", "updated_by_user_id"],
+            ["company_memberships.company_id", "company_memberships.user_id"],
+            ondelete="NO ACTION",
+            name="fk_compliance_policy_updater_membership",
+        ),
+        CheckConstraint(
+            "approval_mode IN ('required', 'admin_exception', 'not_required')",
+            name="approval_mode_supported",
+        ),
+        CheckConstraint(
+            "NOT legal_requirement OR approval_mode = 'required'",
+            name="legal_requirement_no_exception",
+        ),
+        CheckConstraint(
+            "requirement_source_url IS NULL OR requirement_source_url LIKE 'https://%'",
+            name="requirement_source_https",
+        ),
+        CheckConstraint(
+            "category_key = lower(trim(category_key)) AND length(category_key) > 0",
+            name="category_key_normalized",
+        ),
+        CheckConstraint(
+            "market_country = upper(market_country) AND length(market_country) = 2",
+            name="market_country_iso_code",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    company_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False
+    )
+    category_key: Mapped[str] = mapped_column(String(80), nullable=False)
+    market_country: Mapped[str] = mapped_column(String(2), nullable=False)
+    approval_mode: Mapped[str] = mapped_column(String(24), nullable=False)
+    legal_requirement: Mapped[bool] = mapped_column(
+        nullable=False, default=False, server_default="false"
+    )
+    requirement_source_url: Mapped[str | None] = mapped_column(String(500))
+    requirement_reference: Mapped[str | None] = mapped_column(String(200))
+    accepted_authorities: Mapped[list] = mapped_column(db.JSON, nullable=False, default=list)
+    updated_by_user_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=utc_now
     )
@@ -287,7 +374,45 @@ class StockBatch(db.Model):
             ondelete="NO ACTION",
             name="fk_stock_batches_product_same_company",
         ),
+        db.ForeignKeyConstraint(
+            ["company_id", "received_by_user_id"],
+            ["company_memberships.company_id", "company_memberships.user_id"],
+            ondelete="NO ACTION",
+            name="fk_stock_batches_receiver_membership",
+        ),
+        db.ForeignKeyConstraint(
+            ["company_id", "verified_by_user_id"],
+            ["company_memberships.company_id", "company_memberships.user_id"],
+            ondelete="NO ACTION",
+            name="fk_stock_batches_verifier_membership",
+        ),
         CheckConstraint("length(trim(batch_code)) > 0", name="batch_code_not_empty"),
+        CheckConstraint(
+            "compliance_status IN ('approved', 'exception_approved', 'verified_not_required', "
+            "'pending_verification', 'rejected', 'recalled')",
+            name="compliance_status_supported",
+        ),
+        CheckConstraint(
+            "authority_role IS NULL OR authority_role IN "
+            "('standards_body', 'regulator', 'certification_body', "
+            "'accreditation_body', 'testing_lab', 'inspection_body', 'other')",
+            name="authority_role_supported",
+        ),
+        CheckConstraint(
+            "verification_method IS NULL OR verification_method IN "
+            "('official_registry', 'accreditation_scope', "
+            "'issuer_confirmation', 'document_review')",
+            name="verification_method_supported",
+        ),
+        CheckConstraint(
+            "verification_source_url IS NULL OR verification_source_url LIKE 'https://%'",
+            name="verification_source_https",
+        ),
+        CheckConstraint(
+            "country_of_origin IS NULL OR (country_of_origin = upper(country_of_origin) "
+            "AND length(country_of_origin) = 2)",
+            name="country_of_origin_iso_code",
+        ),
         db.Index("ix_stock_batches_company_product_expiry",
                  "company_id", "product_id", "expiry_date"),
     )
@@ -297,6 +422,77 @@ class StockBatch(db.Model):
     product_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
     batch_code: Mapped[str] = mapped_column(String(80), nullable=False)
     expiry_date: Mapped[date | None] = mapped_column(db.Date)
+    supplier_name: Mapped[str | None] = mapped_column(String(160))
+    supplier_invoice_reference: Mapped[str | None] = mapped_column(String(120))
+    delivery_note_reference: Mapped[str | None] = mapped_column(String(120))
+    manufacturer_name: Mapped[str | None] = mapped_column(String(160))
+    country_of_origin: Mapped[str | None] = mapped_column(String(2))
+    compliance_status: Mapped[str] = mapped_column(
+        String(24), nullable=False, default="pending_verification",
+        server_default="pending_verification"
+    )
+    received_by_user_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True))
+    qr_code: Mapped[str | None] = mapped_column(String(500))
+    authority_name: Mapped[str | None] = mapped_column(String(160))
+    authority_country: Mapped[str | None] = mapped_column(String(2))
+    authority_role: Mapped[str | None] = mapped_column(String(32))
+    standard_reference: Mapped[str | None] = mapped_column(String(160))
+    certificate_reference: Mapped[str | None] = mapped_column(String(160))
+    evidence_reference: Mapped[str | None] = mapped_column(String(500))
+    verification_method: Mapped[str | None] = mapped_column(String(32))
+    verification_source_url: Mapped[str | None] = mapped_column(String(500))
+    verification_reference: Mapped[str | None] = mapped_column(String(200))
+    verified_product_identifier: Mapped[str | None] = mapped_column(String(200))
+    verified_scope: Mapped[str | None] = mapped_column(String(300))
+    accreditation_body_name: Mapped[str | None] = mapped_column(String(160))
+    verified_by_user_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True))
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    verification_notes: Mapped[str | None] = mapped_column(String(1000))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class ComplianceEvidenceFile(db.Model):
+    """Encrypted, tenant-scoped certificate evidence attached to one stock batch."""
+
+    __tablename__ = "compliance_evidence_files"
+    __table_args__ = (
+        db.UniqueConstraint("company_id", "id", name="uq_compliance_evidence_company_id"),
+        db.ForeignKeyConstraint(
+            ["company_id", "batch_id"],
+            ["stock_batches.company_id", "stock_batches.id"],
+            ondelete="NO ACTION",
+            name="fk_compliance_evidence_batch_same_company",
+        ),
+        db.ForeignKeyConstraint(
+            ["company_id", "uploaded_by_user_id"],
+            ["company_memberships.company_id", "company_memberships.user_id"],
+            ondelete="NO ACTION",
+            name="fk_compliance_evidence_uploader_membership",
+        ),
+        CheckConstraint("length(trim(original_filename)) > 0", name="filename_not_empty"),
+        CheckConstraint(
+            "content_type IN ('application/pdf', 'image/jpeg', 'image/png', 'image/webp')",
+            name="content_type_supported",
+        ),
+        CheckConstraint(
+            "size_bytes > 0 AND size_bytes <= 8388608",
+            name="size_bytes_supported",
+        ),
+        CheckConstraint("length(sha256) = 64", name="sha256_length"),
+        db.Index("ix_compliance_evidence_company_batch", "company_id", "batch_id", "created_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    company_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    batch_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    uploaded_by_user_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    original_filename: Mapped[str] = mapped_column(String(180), nullable=False)
+    content_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    encrypted_content: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
