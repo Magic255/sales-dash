@@ -218,6 +218,9 @@ def download_supplier_document(user, supplier_id, document_id):
     except (RuntimeError, InvalidToken):
         db.session.rollback()
         return jsonify({"error": "Supplier document could not be decrypted."}), 503
+    if hashlib.sha256(raw).hexdigest() != document.sha256:
+        db.session.rollback()
+        return jsonify({"error": "Supplier document integrity verification failed."}), 503
 
     record_audit_event(
         db.session, user.id, "supplier_document_downloaded", company_id,
