@@ -466,7 +466,7 @@ def test_supplier_credit_note_reference_is_unique_per_supplier():
     try:
         client = app.test_client()
         _login(client, company_id)
-        created = _order(client, supplier_id, product_id, quantity="1.000")
+        created = _order(client, supplier_id, product_id, quantity="2.000")
         order = created.json["item"]
         invoice_response = client.post(
             f"/api/purchase-orders/{order['id']}/supplier-invoices",
@@ -476,7 +476,7 @@ def test_supplier_credit_note_reference_is_unique_per_supplier():
                 "currency": "TZS",
                 "lines": [{
                     "purchase_order_line_id": order["lines"][0]["id"],
-                    "quantity": "1.000",
+                    "quantity": "2.000",
                     "unit_price": "10.00",
                 }],
             },
