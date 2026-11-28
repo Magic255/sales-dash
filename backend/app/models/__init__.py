@@ -168,7 +168,7 @@ class AuditLog(db.Model):
             "'product_compliance_recalled', 'product_compliance_exception', "
             "'product_compliance_policy_updated', 'product_compliance_not_required_release', "
             "'product_compliance_evidence_uploaded', "
-            "'product_compliance_evidence_downloaded', 'supplier_created', 'supplier_approved', 'supplier_restricted', 'supplier_suspended', 'supplier_rejected', 'supplier_re_review_required')",
+            "'product_compliance_evidence_downloaded', 'supplier_created', 'supplier_approved', 'supplier_restricted', 'supplier_suspended', 'supplier_rejected', 'supplier_re_review_required', 'supplier_document_uploaded', 'supplier_document_rejected', 'supplier_document_downloaded')",
             name="event_type_is_supported",
         ),
         db.Index("ix_audit_logs_company_time", "company_id", "occurred_at"),
