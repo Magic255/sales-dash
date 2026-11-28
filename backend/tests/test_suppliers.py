@@ -18,6 +18,7 @@ def _seed_app():
         "WTF_CSRF_ENABLED": False,
         "RATELIMIT_ENABLED": False,
         "COMPLIANCE_EVIDENCE_ENCRYPTION_KEY": Fernet.generate_key().decode("ascii"),
+        "SUPPLIER_DOCUMENT_ENCRYPTION_KEY": Fernet.generate_key().decode("ascii"),
         "SUPPLIER_DOCUMENT_CLAMD_HOST": None,
     })
     with app.app_context():
