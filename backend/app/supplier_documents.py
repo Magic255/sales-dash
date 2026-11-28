@@ -46,7 +46,9 @@ def _clamav_scan(data):
     port = current_app.config.get("SUPPLIER_DOCUMENT_CLAMD_PORT", 3310)
     timeout = current_app.config.get("SUPPLIER_DOCUMENT_CLAMD_TIMEOUT", 8)
     if not host:
-        raise RuntimeError("Malware scanning is unavailable; supplier document uploads are disabled.")
+        raise RuntimeError(
+            "Malware scanning is unavailable; supplier document uploads are disabled."
+        )
 
     try:
         with socket.create_connection((host, port), timeout=timeout) as connection:
@@ -83,7 +85,9 @@ def _encryption_cipher():
     try:
         return Fernet(key.encode("ascii"))
     except (ValueError, UnicodeEncodeError) as error:
-        raise RuntimeError("Supplier document encryption is unavailable; uploads are disabled.") from error
+        raise RuntimeError(
+            "Supplier document encryption is unavailable; uploads are disabled."
+        ) from error
 
 
 def _document_json(document):
@@ -124,7 +128,9 @@ def upload_supplier_document(user, supplier_id):
 
     detected_type = _detected_content_type(raw)
     if detected_type is None:
-        return jsonify({"error": "Only valid PDF, JPEG, PNG, and WebP documents are accepted."}), 400
+        return jsonify({
+            "error": "Only valid PDF, JPEG, PNG, and WebP documents are accepted."
+        }), 400
     if uploaded.mimetype != detected_type:
         return jsonify({"error": "The file content does not match its declared media type."}), 400
 
