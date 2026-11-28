@@ -1,7 +1,7 @@
 """Add unique supplier stock serial references.
 
-Revision ID: 0032_stock_batch_serial_reference
-Revises: 0031_purchase_order_receipts
+Revision ID: 0032_batch_serial_ref
+Revises: 0031_po_receipts
 """
 
 # ruff: noqa: I001
@@ -9,8 +9,8 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = "0032_stock_batch_serial_reference"
-down_revision = "0031_purchase_order_receipts"
+revision = "0032_batch_serial_ref"
+down_revision = "0031_po_receipts"
 branch_labels = None
 depends_on = None
 
