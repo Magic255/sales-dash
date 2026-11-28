@@ -3,6 +3,8 @@
 Revision ID: 0031_purchase_order_receipts
 Revises: 0030_supplier_documents_receipt_gate
 """
+
+# ruff: noqa: I001
 from alembic import op
 import sqlalchemy as sa
 
@@ -37,7 +39,10 @@ def upgrade():
         sa.Column("currency", sa.String(length=3), nullable=False),
         sa.Column("notes", sa.String(length=1000), nullable=True),
         sa.Column("created_by_user_id", sa.Uuid(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True),
+            server_default=sa.func.now(), nullable=False,
+        ),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("company_id", "id", name="uq_purchase_orders_company_id"),
         sa.UniqueConstraint("company_id", "order_number", name="uq_purchase_orders_number"),
@@ -52,7 +57,9 @@ def upgrade():
         ),
         sa.CheckConstraint("status IN ('issued', 'partially_received', 'received', 'cancelled')",
                            name="purchase_order_status_supported"),
-        sa.CheckConstraint("length(trim(order_number)) > 0", name="purchase_order_number_not_empty"),
+        sa.CheckConstraint(
+            "length(trim(order_number)) > 0", name="purchase_order_number_not_empty"
+        ),
         sa.CheckConstraint("length(currency) = 3 AND currency = upper(currency)",
                            name="purchase_order_currency_iso"),
     )
@@ -98,7 +105,10 @@ def upgrade():
         sa.Column("delivery_note_reference", sa.String(length=120), nullable=False),
         sa.Column("supplier_invoice_reference", sa.String(length=120), nullable=True),
         sa.Column("received_by_user_id", sa.Uuid(), nullable=False),
-        sa.Column("received_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "received_at", sa.DateTime(timezone=True),
+            server_default=sa.func.now(), nullable=False,
+        ),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("company_id", "id", name="uq_purchase_order_receipts_company_id"),
         sa.UniqueConstraint("company_id", "supplier_id", "delivery_note_reference",
@@ -211,7 +221,10 @@ def downgrade():
         op.execute(f"ALTER TABLE {table} NO FORCE ROW LEVEL SECURITY")
         op.execute(f"ALTER TABLE {table} DISABLE ROW LEVEL SECURITY")
         op.execute(f"REVOKE SELECT, INSERT, UPDATE ON {table} FROM sales_dash_app")
-    op.drop_index("ix_purchase_receipt_lines_company_receipt", table_name="purchase_order_receipt_lines")
+    op.drop_index(
+        "ix_purchase_receipt_lines_company_receipt",
+        table_name="purchase_order_receipt_lines",
+    )
     op.drop_table("purchase_order_receipt_lines")
     op.drop_index("ix_purchase_receipts_company_order", table_name="purchase_order_receipts")
     op.drop_table("purchase_order_receipts")
