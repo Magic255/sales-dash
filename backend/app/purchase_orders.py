@@ -275,6 +275,7 @@ def receive_purchase_order(user, purchase_order_id):
             serial_reference = _text(raw, "serial_reference", 160)
             serial_reference = serial_reference.upper() if serial_reference else None
             certificate_reference = _text(raw, "certificate_reference", 160)
+            certificate_reference = certificate_reference.upper() if certificate_reference else None
             if serial_reference and quantity != Decimal("1.000"):
                 raise ValueError("A serial-numbered receipt line must have a quantity of exactly one.")
             duplicate_certificate = False
