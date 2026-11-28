@@ -3,7 +3,7 @@ from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
 from uuid import UUID
 
-from flask import Blueprint, g, jsonify, request
+from flask import Blueprint, jsonify, request, session
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
@@ -27,7 +27,7 @@ purchase_orders_bp = Blueprint("purchase_orders", __name__, url_prefix="/api")
 
 
 def _company_id():
-    return UUID(request.environ.get("sales_dash.company_id") or __import__("flask").session["company_id"])
+    return UUID(session["company_id"])
 
 
 def _object():
