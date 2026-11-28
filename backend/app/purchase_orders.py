@@ -368,6 +368,34 @@ def receive_purchase_order(user, purchase_order_id):
             ))
             line.received_quantity += quantity
         db.session.add_all(receipt_items + movements)
+        pending_invoices = db.session.scalars(
+            select(SupplierInvoice).where(
+                SupplierInvoice.company_id == company_id,
+                SupplierInvoice.purchase_order_id == order.id,
+                SupplierInvoice.match_status == "pending_receipt",
+            ).with_for_update()
+        ).all()
+        for pending_invoice in pending_invoices:
+            pending_lines = db.session.scalars(
+                select(SupplierInvoiceLine).where(
+                    SupplierInvoiceLine.company_id == company_id,
+                    SupplierInvoiceLine.invoice_id == pending_invoice.id,
+                )
+            ).all()
+            if all(
+                item.quantity <= by_id[item.purchase_order_line_id].received_quantity
+                and item.unit_price == by_id[item.purchase_order_line_id].unit_cost
+                for item in pending_lines
+            ):
+                pending_invoice.match_status = "matched"
+                record_audit_event(
+                    db.session, user.id, "supplier_invoice_matched", company_id,
+                    {
+                        "purchase_order_id": str(order.id),
+                        "supplier_invoice_id": str(pending_invoice.id),
+                        "invoice_reference": pending_invoice.invoice_reference,
+                    },
+                )
         order.status = (
             "received"
             if all(
