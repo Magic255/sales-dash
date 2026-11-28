@@ -2026,6 +2026,58 @@ document.querySelector("#purchase-receipt-form").addEventListener("submit",async
 document.querySelector("#suppliers-tab").addEventListener("click",loadSuppliers);
 document.querySelector("#purchasing-tab").addEventListener("click",async()=>{await loadSuppliers();await loadPurchaseOrders();});
 document.addEventListener("salesdash:company-selected",()=>{
-  const allowed=["admin","manager"].includes(workspaceRole);document.querySelector("#suppliers-tab").hidden=!allowed;document.querySelector("#purchasing-tab").hidden=!allowed;
+  const allowed=["admin","manager"].includes(workspaceRole);document.querySelector("#suppliers-tab").hidden=!allowed;document.querySelector("#purchasing-tab").hidden=!allowed;document.querySelector("#expenses-tab").hidden=!allowed;
   supplierRecords=[];purchaseOrderRecords=[];
 });
+
+async function loadExpenses() {
+  const body=document.querySelector("#expense-rows"),message=document.querySelector("#expenses-message");
+  message.textContent="";
+  try {
+    const data=await workspaceRequest("/api/expenses");
+    body.replaceChildren();
+    if(!data.items.length) emptyRow(body,7,"No expenses recorded yet.");
+    for(const item of data.items) {
+      const row=document.createElement("tr");
+      textCell(row,item.expense_date);textCell(row,item.description);textCell(row,item.category.replaceAll("_"," "));
+      textCell(row,amount(item.currency,item.amount));textCell(row,item.payment_method);textCell(row,item.status);
+      const actions=document.createElement("td");
+      if(item.status==="recorded" && workspaceRole==="admin") {
+        addCatalogAction(actions,"Void",async()=>{
+          const reason=window.prompt("Reason for voiding this expense");
+          if(reason===null)return;
+          if(!reason.trim()){message.textContent="A reason is required.";return;}
+          try{await workspaceRequest("/api/expenses/"+encodeURIComponent(item.id)+"/void",{method:"POST",body:JSON.stringify({reason})});await loadExpenses();message.textContent="Expense voided; the original record remains in the ledger.";}
+          catch(error){message.textContent=error.message;}
+        },true);
+      }
+      if(!actions.childElementCount)actions.textContent="—";
+      row.append(actions);body.append(row);
+    }
+    message.textContent="Showing "+data.items.length+" expense records (maximum 500).";
+    document.querySelector("#expenses-totals").textContent="Recorded totals: "+(data.totals_by_currency||[]).map(item=>amount(item.currency,item.amount)).join(" · ")||"Recorded totals: —";
+  } catch(error) {
+    emptyRow(body,7,"Expenses could not be loaded.");message.textContent=error.message;
+  }
+}
+document.querySelector("#expense-date").value=localDate();
+document.querySelector("#expense-form").addEventListener("submit",async(event)=>{
+  event.preventDefault();const form=event.currentTarget,button=form.querySelector("button");button.disabled=true;
+  try{
+    await workspaceRequest("/api/expenses",{method:"POST",body:JSON.stringify({
+      description:document.querySelector("#expense-description").value,
+      category:document.querySelector("#expense-category").value,
+      amount:document.querySelector("#expense-amount").value,
+      currency:document.querySelector("#expense-currency").value,
+      expense_date:document.querySelector("#expense-date").value,
+      payment_method:document.querySelector("#expense-payment-method").value,
+      reference:document.querySelector("#expense-reference").value,
+      notes:document.querySelector("#expense-notes").value
+    })});
+    form.reset();document.querySelector("#expense-currency").value="TZS";document.querySelector("#expense-date").value=localDate();
+    await loadExpenses();document.querySelector("#expenses-message").textContent="Expense recorded.";
+  }catch(error){document.querySelector("#expenses-message").textContent=error.message;}
+  finally{button.disabled=false;}
+});
+document.querySelector("#expenses-refresh").addEventListener("click",loadExpenses);
+document.querySelector("#expenses-tab").addEventListener("click",loadExpenses);
