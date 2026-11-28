@@ -1,7 +1,7 @@
 """Add company-scoped purchase orders and partial receipt matching.
 
-Revision ID: 0031_purchase_order_receipts
-Revises: 0030_supplier_documents_receipt_gate
+Revision ID: 0031_po_receipts
+Revises: 0030_supplier_docs_gate
 """
 
 # ruff: noqa: I001
@@ -9,8 +9,8 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = "0031_purchase_order_receipts"
-down_revision = "0030_supplier_documents_receipt_gate"
+revision = "0031_po_receipts"
+down_revision = "0030_supplier_docs_gate"
 branch_labels = None
 depends_on = None
 
