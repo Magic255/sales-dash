@@ -3,8 +3,6 @@
 import csv
 import hashlib
 import io
-import socket
-import struct
 from datetime import date, datetime, timedelta, timezone
 from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal, InvalidOperation
 from urllib.parse import urlsplit
@@ -33,7 +31,6 @@ from .models import (
     StockBatch,
     StockMovement,
     Supplier,
-    SupplierDocument,
     User,
 )
 from .permissions import company_permission_required
@@ -886,46 +883,6 @@ def list_stock_batches(_user, product_id):
 
 
 
-def _supplier_document_cipher():
-    key = current_app.config.get("SUPPLIER_DOCUMENT_ENCRYPTION_KEY")
-    if not isinstance(key, str) or not key:
-        return None
-    try:
-        return Fernet(key.encode("ascii"))
-    except (ValueError, UnicodeEncodeError):
-        return None
-
-
-def _scan_supplier_document(content):
-    """Scan plaintext with a configured local ClamAV daemon; fail closed."""
-    host = current_app.config.get("SUPPLIER_DOCUMENT_CLAMD_HOST")
-    port = int(current_app.config.get("SUPPLIER_DOCUMENT_CLAMD_PORT", 3310))
-    timeout = float(current_app.config.get("SUPPLIER_DOCUMENT_CLAMD_TIMEOUT", 8))
-    if not host:
-        raise RuntimeError("Supplier document malware scanning is not configured.")
-    with socket.create_connection((host, port), timeout=timeout) as connection:
-        connection.settimeout(timeout)
-        connection.sendall(b"zINSTREAM\0")
-        for offset in range(0, len(content), 64 * 1024):
-            chunk = content[offset:offset + 64 * 1024]
-            connection.sendall(struct.pack("!I", len(chunk)) + chunk)
-        connection.sendall(struct.pack("!I", 0))
-        response = bytearray()
-        while len(response) < 4096:
-            part = connection.recv(1024)
-            if not part:
-                break
-            response.extend(part)
-            if b"\0" in part:
-                break
-    result = bytes(response).rstrip(b"\0").decode("utf-8", errors="replace")
-    if result.endswith("OK"):
-        return "clean"
-    if "FOUND" in result:
-        return "infected"
-    raise RuntimeError("The malware scanner returned an inconclusive result.")
-
-
 def _compliance_evidence_cipher():
     key = current_app.config.get("COMPLIANCE_EVIDENCE_ENCRYPTION_KEY")
     if not isinstance(key, str) or not key:
@@ -1568,158 +1525,6 @@ def create_stock_movement(user, product_id):
 
 
 
-
-@sales_bp.post("/suppliers/<uuid:supplier_id>/documents")
-@login_required
-@company_permission_required("manage_suppliers")
-def upload_supplier_document(user, supplier_id):
-    company_id = _company_id()
-    if g.company_membership.role not in {"admin", "manager"}:
-        return jsonify({"error": "Only Admins and Managers can upload supplier evidence."}), 403
-    supplier = db.session.scalar(
-        select(Supplier).where(
-            Supplier.id == supplier_id, Supplier.company_id == company_id
-        ).with_for_update()
-    )
-    if supplier is None:
-        return jsonify({"error": "Supplier not found."}), 404
-    cipher = _supplier_document_cipher()
-    if cipher is None:
-        return jsonify({"error": "Encrypted supplier document storage is not configured."}), 503
-    upload = request.files.get("file")
-    if upload is None or not upload.filename:
-        return jsonify({"error": "Choose a supplier licence or business document."}), 400
-    filename = secure_filename(upload.filename)[:180]
-    if not filename:
-        return jsonify({"error": "The document filename is invalid."}), 400
-    content = upload.stream.read(8 * 1024 * 1024 + 1)
-    if not content or len(content) > 8 * 1024 * 1024:
-        return jsonify({"error": "Supplier documents must be between 1 byte and 8 MB."}), 400
-    content_type = _detect_compliance_evidence_type(content)
-    expected_extensions = {
-        "application/pdf": {".pdf"},
-        "image/jpeg": {".jpg", ".jpeg"},
-        "image/png": {".png"},
-        "image/webp": {".webp"},
-    }
-    extension = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
-    if not content_type or extension not in expected_extensions.get(content_type, set()):
-        return jsonify({"error": "Upload a genuine PDF, JPEG, PNG or WebP file with a matching extension."}), 400
-    try:
-        scan_result = _scan_supplier_document(content)
-    except (OSError, RuntimeError, ValueError):
-        current_app.logger.warning("Supplier document malware scan unavailable or inconclusive.")
-        return jsonify({"error": "Malware scanning is unavailable; the document was not accepted."}), 503
-    if scan_result != "clean":
-        record_audit_event(
-            db.session, user.id, "supplier_document_rejected", company_id,
-            {"supplier_id": str(supplier.id), "sha256": hashlib.sha256(content).hexdigest()},
-        )
-        db.session.commit()
-        return jsonify({"error": "The document failed malware scanning and was rejected."}), 422
-    document = SupplierDocument(
-        company_id=company_id,
-        supplier_id=supplier.id,
-        uploaded_by_user_id=user.id,
-        original_filename=filename,
-        content_type=content_type,
-        size_bytes=len(content),
-        sha256=hashlib.sha256(content).hexdigest(),
-        encrypted_content=cipher.encrypt(content),
-        scan_status="clean",
-        scanned_at=datetime.now(timezone.utc),
-    )
-    db.session.add(document)
-    db.session.flush()
-    record_audit_event(
-        db.session, user.id, "supplier_document_uploaded", company_id,
-        {
-            "supplier_id": str(supplier.id),
-            "document_id": str(document.id),
-            "content_type": content_type,
-            "size_bytes": len(content),
-            "sha256": document.sha256,
-            "scan_status": "clean",
-        },
-    )
-    result = {
-        "id": str(document.id),
-        "filename": document.original_filename,
-        "content_type": document.content_type,
-        "size_bytes": document.size_bytes,
-        "sha256": document.sha256,
-        "scan_status": document.scan_status,
-        "scanned_at": document.scanned_at.isoformat(),
-        "created_at": document.created_at.isoformat() if document.created_at else None,
-    }
-    db.session.commit()
-    return jsonify({"item": result}), 201
-
-
-@sales_bp.get("/suppliers/<uuid:supplier_id>/documents")
-@login_required
-@company_permission_required("manage_suppliers")
-def list_supplier_documents(_user, supplier_id):
-    company_id = _company_id()
-    if g.company_membership.role not in {"admin", "manager"}:
-        return jsonify({"error": "Only Admins and Managers can view supplier evidence."}), 403
-    supplier = db.session.scalar(select(Supplier).where(
-        Supplier.id == supplier_id, Supplier.company_id == company_id
-    ))
-    if supplier is None:
-        return jsonify({"error": "Supplier not found."}), 404
-    rows = db.session.scalars(select(SupplierDocument).where(
-        SupplierDocument.company_id == company_id,
-        SupplierDocument.supplier_id == supplier_id,
-    ).order_by(SupplierDocument.created_at.desc(), SupplierDocument.id.desc())).all()
-    return jsonify({"items": [{
-        "id": str(row.id), "filename": row.original_filename,
-        "content_type": row.content_type, "size_bytes": row.size_bytes,
-        "sha256": row.sha256, "scan_status": row.scan_status,
-        "scanned_at": row.scanned_at.isoformat(),
-        "created_at": row.created_at.isoformat(),
-        "download_url": f"/api/suppliers/{supplier_id}/documents/{row.id}",
-    } for row in rows]})
-
-
-@sales_bp.get("/suppliers/<uuid:supplier_id>/documents/<uuid:document_id>")
-@login_required
-@company_permission_required("manage_suppliers")
-def download_supplier_document(user, supplier_id, document_id):
-    company_id = _company_id()
-    if g.company_membership.role not in {"admin", "manager"}:
-        return jsonify({"error": "Only Admins and Managers can download supplier evidence."}), 403
-    document = db.session.scalar(select(SupplierDocument).where(
-        SupplierDocument.id == document_id,
-        SupplierDocument.supplier_id == supplier_id,
-        SupplierDocument.company_id == company_id,
-        SupplierDocument.scan_status == "clean",
-    ))
-    if document is None:
-        return jsonify({"error": "Supplier document not found."}), 404
-    cipher = _supplier_document_cipher()
-    if cipher is None:
-        return jsonify({"error": "Encrypted supplier document storage is not configured."}), 503
-    try:
-        content = cipher.decrypt(document.encrypted_content)
-    except InvalidToken:
-        current_app.logger.error("Supplier document decryption failed for a tenant record.")
-        return jsonify({"error": "Supplier document is unavailable."}), 500
-    if hashlib.sha256(content).hexdigest() != document.sha256:
-        current_app.logger.error("Supplier document integrity check failed for a tenant record.")
-        return jsonify({"error": "Supplier document is unavailable."}), 500
-    record_audit_event(
-        db.session, user.id, "supplier_document_downloaded", company_id,
-        {"supplier_id": str(supplier_id), "document_id": str(document_id)},
-    )
-    db.session.commit()
-    response = send_file(
-        io.BytesIO(content), mimetype=document.content_type, as_attachment=True,
-        download_name=document.original_filename, conditional=False, max_age=0,
-    )
-    response.headers["Cache-Control"] = "no-store"
-    response.headers["X-Content-Type-Options"] = "nosniff"
-    return response
 
 
 @sales_bp.get("/compliance-policies")
