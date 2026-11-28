@@ -5,7 +5,7 @@ from decimal import Decimal, InvalidOperation
 from uuid import UUID
 
 from flask import Blueprint, jsonify, request, session
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
 from .audit import record_audit_event
@@ -20,6 +20,8 @@ from .models import (
     StockBatch,
     StockMovement,
     Supplier,
+    SupplierInvoice,
+    SupplierInvoiceLine,
 )
 from .permissions import company_permission_required
 
@@ -366,6 +368,34 @@ def receive_purchase_order(user, purchase_order_id):
             ))
             line.received_quantity += quantity
         db.session.add_all(receipt_items + movements)
+        pending_invoices = db.session.scalars(
+            select(SupplierInvoice).where(
+                SupplierInvoice.company_id == company_id,
+                SupplierInvoice.purchase_order_id == order.id,
+                SupplierInvoice.match_status == "pending_receipt",
+            ).with_for_update()
+        ).all()
+        for pending_invoice in pending_invoices:
+            pending_lines = db.session.scalars(
+                select(SupplierInvoiceLine).where(
+                    SupplierInvoiceLine.company_id == company_id,
+                    SupplierInvoiceLine.invoice_id == pending_invoice.id,
+                )
+            ).all()
+            if all(
+                item.quantity <= by_id[item.purchase_order_line_id].received_quantity
+                and item.unit_price == by_id[item.purchase_order_line_id].unit_cost
+                for item in pending_lines
+            ):
+                pending_invoice.match_status = "matched"
+                record_audit_event(
+                    db.session, user.id, "supplier_invoice_matched", company_id,
+                    {
+                        "purchase_order_id": str(order.id),
+                        "supplier_invoice_id": str(pending_invoice.id),
+                        "invoice_reference": pending_invoice.invoice_reference,
+                    },
+                )
         order.status = (
             "received"
             if all(
@@ -421,3 +451,192 @@ def receive_purchase_order(user, purchase_order_id):
             "error": "Duplicate delivery note, batch code or invalid receipt reference."
         }), 409
     return jsonify({"item": result, "purchase_order": _order_json(order)}), 201
+
+
+
+def _supplier_invoice_json(invoice):
+    lines = db.session.scalars(
+        select(SupplierInvoiceLine).where(
+            SupplierInvoiceLine.company_id == invoice.company_id,
+            SupplierInvoiceLine.invoice_id == invoice.id,
+        ).order_by(SupplierInvoiceLine.id)
+    ).all()
+    return {
+        "id": str(invoice.id),
+        "purchase_order_id": str(invoice.purchase_order_id),
+        "supplier_id": str(invoice.supplier_id),
+        "invoice_reference": invoice.invoice_reference,
+        "invoice_date": invoice.invoice_date.isoformat(),
+        "currency": invoice.currency,
+        "subtotal": str(invoice.subtotal),
+        "tax_amount": str(invoice.tax_amount),
+        "total_amount": str(invoice.total_amount),
+        "match_status": invoice.match_status,
+        "lines": [{
+            "purchase_order_line_id": str(line.purchase_order_line_id),
+            "quantity": str(line.quantity),
+            "unit_price": str(line.unit_price),
+            "line_total": str(line.line_total),
+        } for line in lines],
+    }
+
+
+@purchase_orders_bp.get("/purchase-orders/<uuid:order_id>/supplier-invoices")
+@login_required
+@company_permission_required("manage_inventory")
+def list_supplier_invoices(_user, order_id):
+    company_id = _company_id()
+    order = db.session.scalar(select(PurchaseOrder).where(
+        PurchaseOrder.id == order_id, PurchaseOrder.company_id == company_id
+    ))
+    if order is None:
+        return jsonify({"error": "Purchase order not found."}), 404
+    invoices = db.session.scalars(
+        select(SupplierInvoice).where(
+            SupplierInvoice.company_id == company_id,
+            SupplierInvoice.purchase_order_id == order.id,
+        ).order_by(SupplierInvoice.invoice_date.desc(), SupplierInvoice.created_at.desc())
+    ).all()
+    return jsonify({"items": [_supplier_invoice_json(item) for item in invoices]})
+
+
+@purchase_orders_bp.post("/purchase-orders/<uuid:order_id>/supplier-invoices")
+@login_required
+@company_permission_required("manage_inventory")
+def record_supplier_invoice(user, order_id):
+    company_id = _company_id()
+    data = _object()
+    if data is None:
+        return jsonify({"error": "Send a JSON object."}), 400
+    try:
+        order = db.session.scalar(select(PurchaseOrder).where(
+            PurchaseOrder.id == order_id, PurchaseOrder.company_id == company_id
+        ).with_for_update())
+        if order is None:
+            return jsonify({"error": "Purchase order not found."}), 404
+        supplier = db.session.scalar(select(Supplier).where(
+            Supplier.id == order.supplier_id, Supplier.company_id == company_id
+        ).with_for_update())
+        if supplier is None:
+            return jsonify({"error": "Supplier not found."}), 404
+
+        invoice_reference = _text(data, "invoice_reference", 120, required=True)
+        currency = _text(data, "currency", 3, required=True).upper()
+        if currency != order.currency:
+            raise ValueError("Supplier invoice currency must match the purchase order currency.")
+        try:
+            invoice_date = date.fromisoformat(_text(data, "invoice_date", 10, required=True))
+        except ValueError:
+            raise ValueError("Invoice date must use YYYY-MM-DD.") from None
+        tax_amount = _quantity(data.get("tax_amount", "0"), "tax amount", 2, allow_zero=True)
+        raw_lines = data.get("lines")
+        if not isinstance(raw_lines, list) or not raw_lines or len(raw_lines) > 200:
+            raise ValueError("Add between 1 and 200 supplier invoice lines.")
+
+        order_lines = db.session.scalars(select(PurchaseOrderLine).where(
+            PurchaseOrderLine.company_id == company_id,
+            PurchaseOrderLine.purchase_order_id == order.id,
+        ).with_for_update()).all()
+        by_id = {line.id: line for line in order_lines}
+        seen = set()
+        parsed = []
+        subtotal = Decimal("0.00")
+        has_price_variance = False
+        has_unreceived_quantity = False
+        for raw in raw_lines:
+            if not isinstance(raw, dict):
+                raise ValueError("Each supplier invoice line must be an object.")
+            try:
+                line_id = UUID(_text(raw, "purchase_order_line_id", 36, required=True))
+            except ValueError:
+                raise ValueError("Each invoice line must reference a valid purchase-order line.") from None
+            if line_id in seen:
+                raise ValueError("A purchase-order line may appear only once per invoice.")
+            seen.add(line_id)
+            order_line = by_id.get(line_id)
+            if order_line is None:
+                raise ValueError("Invoice line does not belong to this purchase order.")
+            quantity = _quantity(raw.get("quantity"), "invoiced quantity", 3)
+            unit_price = _quantity(raw.get("unit_price"), "invoice unit price", 2, allow_zero=True)
+            already_invoiced = db.session.scalar(
+                select(func.coalesce(func.sum(SupplierInvoiceLine.quantity), 0))
+                .join(SupplierInvoice, SupplierInvoice.id == SupplierInvoiceLine.invoice_id)
+                .where(
+                    SupplierInvoiceLine.company_id == company_id,
+                    SupplierInvoiceLine.purchase_order_line_id == order_line.id,
+                )
+            )
+            if Decimal(str(already_invoiced or 0)) + quantity > order_line.ordered_quantity:
+                raise ValueError("Cumulative invoiced quantity exceeds the purchase-order quantity.")
+            if unit_price != order_line.unit_cost:
+                has_price_variance = True
+            if quantity > order_line.received_quantity:
+                has_unreceived_quantity = True
+            line_total = (quantity * unit_price).quantize(Decimal("0.01"))
+            subtotal += line_total
+            parsed.append((order_line, quantity, unit_price, line_total))
+
+        declared_subtotal = data.get("subtotal")
+        if declared_subtotal not in (None, ""):
+            supplied = _quantity(declared_subtotal, "invoice subtotal", 2, allow_zero=True)
+            if supplied != subtotal:
+                raise ValueError("Invoice subtotal must equal the server-calculated line total.")
+        total_amount = (subtotal + tax_amount).quantize(Decimal("0.01"))
+        declared_total = data.get("total_amount")
+        if declared_total not in (None, ""):
+            supplied_total = _quantity(declared_total, "invoice total", 2, allow_zero=True)
+            if supplied_total != total_amount:
+                raise ValueError("Invoice total must equal the server-calculated subtotal plus tax.")
+
+        match_status = (
+            "disputed" if has_price_variance
+            else "pending_receipt" if has_unreceived_quantity
+            else "matched"
+        )
+        invoice = SupplierInvoice(
+            company_id=company_id,
+            purchase_order_id=order.id,
+            supplier_id=supplier.id,
+            invoice_reference=invoice_reference,
+            invoice_date=invoice_date,
+            currency=currency,
+            subtotal=subtotal,
+            tax_amount=tax_amount,
+            total_amount=total_amount,
+            match_status=match_status,
+            created_by_user_id=user.id,
+        )
+        db.session.add(invoice)
+        db.session.flush()
+        db.session.add_all([
+            SupplierInvoiceLine(
+                company_id=company_id,
+                invoice_id=invoice.id,
+                purchase_order_line_id=line.id,
+                quantity=quantity,
+                unit_price=unit_price,
+                line_total=line_total,
+            )
+            for line, quantity, unit_price, line_total in parsed
+        ])
+        record_audit_event(
+            db.session, user.id, "supplier_invoice_recorded", company_id,
+            {
+                "purchase_order_id": str(order.id),
+                "supplier_invoice_id": str(invoice.id),
+                "supplier_id": str(supplier.id),
+                "invoice_reference": invoice.invoice_reference,
+                "match_status": match_status,
+                "total_amount": str(total_amount),
+                "currency": currency,
+            },
+        )
+        result = _supplier_invoice_json(invoice)
+        db.session.commit()
+    except ValueError as error:
+        db.session.rollback()
+        return jsonify({"error": str(error)}), 400
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({"error": "Supplier invoice reference already exists for this supplier."}), 409
+    return jsonify({"item": result}), 201

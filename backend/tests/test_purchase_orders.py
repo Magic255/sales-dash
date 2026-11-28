@@ -9,7 +9,7 @@ from app.extensions import db
 from app.models import (
     Company, CompanyMembership, Product, PurchaseOrder, PurchaseOrderLine,
     PurchaseOrderReceipt, PurchaseOrderReceiptLine, StockBatch, StockMovement,
-    Supplier, User,
+    Supplier, SupplierInvoice, User,
 )
 
 
@@ -228,3 +228,139 @@ def test_duplicate_serial_number_is_rejected_across_partial_receipts():
             db.session.remove()
             db.drop_all()
 
+
+
+
+def _supplier_invoice(client, order_id, line_id, reference, quantity, unit_price="10.00"):
+    return client.post(f"/api/purchase-orders/{order_id}/supplier-invoices", json={
+        "invoice_reference": reference,
+        "invoice_date": date.today().isoformat(),
+        "currency": "TZS",
+        "tax_amount": "0.00",
+        "lines": [{
+            "purchase_order_line_id": line_id,
+            "quantity": quantity,
+            "unit_price": unit_price,
+        }],
+    })
+
+
+def test_supplier_invoice_three_way_match_waits_for_receipt_and_matches_price():
+    app, (company_id, supplier_id, product_id) = _app()
+    try:
+        client = app.test_client()
+        _login(client, company_id)
+        created = _order(client, supplier_id, product_id, quantity="5.000")
+        order = created.json["item"]
+        line_id = order["lines"][0]["id"]
+        received = _receipt(
+            client, order["id"], line_id, "DN-INVOICE-001", "2.000",
+            "BATCH-INVOICE-001",
+        )
+        assert received.status_code == 201
+
+        matched = _supplier_invoice(
+            client, order["id"], line_id, "INV-MATCHED-001", "2.000"
+        )
+        assert matched.status_code == 201
+        assert matched.json["item"]["match_status"] == "matched"
+        assert matched.json["item"]["subtotal"] == "20.00"
+        assert matched.json["item"]["total_amount"] == "20.00"
+
+        pending = _supplier_invoice(
+            client, order["id"], line_id, "INV-PENDING-001", "3.000"
+        )
+        assert pending.status_code == 201
+        assert pending.json["item"]["match_status"] == "pending_receipt"
+
+        second_receipt = _receipt(
+            client, order["id"], line_id, "DN-INVOICE-003", "3.000",
+            "BATCH-INVOICE-003",
+        )
+        assert second_receipt.status_code == 201
+        listed = client.get(f"/api/purchase-orders/{order['id']}/supplier-invoices")
+        assert listed.status_code == 200
+        assert len(listed.json["items"]) == 2
+        pending_after_receipt = next(
+            item for item in listed.json["items"]
+            if item["invoice_reference"] == "INV-PENDING-001"
+        )
+        assert pending_after_receipt["match_status"] == "matched"
+    finally:
+        with app.app_context():
+            db.session.remove()
+            db.drop_all()
+
+
+def test_supplier_invoice_price_variance_is_disputed_and_cumulative_overbilling_rejected():
+    app, (company_id, supplier_id, product_id) = _app()
+    try:
+        client = app.test_client()
+        _login(client, company_id)
+        created = _order(client, supplier_id, product_id, quantity="2.000")
+        order = created.json["item"]
+        line_id = order["lines"][0]["id"]
+        received = _receipt(
+            client, order["id"], line_id, "DN-INVOICE-002", "2.000",
+            "BATCH-INVOICE-002",
+        )
+        assert received.status_code == 201
+
+        disputed = _supplier_invoice(
+            client, order["id"], line_id, "INV-DISPUTED-001", "1.000", "11.00"
+        )
+        assert disputed.status_code == 201
+        assert disputed.json["item"]["match_status"] == "disputed"
+
+        overbilled = _supplier_invoice(
+            client, order["id"], line_id, "INV-OVERBILLED-001", "2.000"
+        )
+        assert overbilled.status_code == 400
+        assert "Cumulative invoiced quantity exceeds" in overbilled.json["error"]
+        with app.app_context():
+            assert db.session.query(SupplierInvoice).count() == 1
+    finally:
+        with app.app_context():
+            db.session.remove()
+            db.drop_all()
+
+
+def test_supplier_invoice_rejects_client_calculated_totals_and_duplicate_reference():
+    app, (company_id, supplier_id, product_id) = _app()
+    try:
+        client = app.test_client()
+        _login(client, company_id)
+        created = _order(client, supplier_id, product_id, quantity="2.000")
+        order = created.json["item"]
+        line_id = order["lines"][0]["id"]
+        body = {
+            "invoice_reference": "INV-TOTAL-001",
+            "invoice_date": date.today().isoformat(),
+            "currency": "TZS",
+            "tax_amount": "0.00",
+            "total_amount": "999.00",
+            "lines": [{
+                "purchase_order_line_id": line_id,
+                "quantity": "1.000",
+                "unit_price": "10.00",
+            }],
+        }
+        invalid_total = client.post(
+            f"/api/purchase-orders/{order['id']}/supplier-invoices", json=body
+        )
+        assert invalid_total.status_code == 400
+        assert "server-calculated" in invalid_total.json["error"]
+
+        body["total_amount"] = "10.00"
+        created_invoice = client.post(
+            f"/api/purchase-orders/{order['id']}/supplier-invoices", json=body
+        )
+        assert created_invoice.status_code == 201
+        duplicate = client.post(
+            f"/api/purchase-orders/{order['id']}/supplier-invoices", json=body
+        )
+        assert duplicate.status_code == 409
+    finally:
+        with app.app_context():
+            db.session.remove()
+            db.drop_all()

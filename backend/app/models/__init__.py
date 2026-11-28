@@ -174,7 +174,7 @@ class AuditLog(db.Model):
             "'supplier_rejected', 'supplier_re_review_required', "
             "'supplier_document_uploaded', 'supplier_document_rejected', "
             "'supplier_document_downloaded', 'purchase_order_created', "
-            "'purchase_order_receipt_recorded', 'expense_created', 'expense_voided')",
+            "'purchase_order_receipt_recorded', 'supplier_invoice_recorded', 'supplier_invoice_matched', 'expense_created', 'expense_voided')",
             name="event_type_is_supported",
         ),
         db.Index("ix_audit_logs_company_time", "company_id", "occurred_at"),
@@ -1141,3 +1141,93 @@ class Supplier(db.Model):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=utc_now
     )
+
+
+class SupplierInvoice(db.Model):
+    """Immutable supplier invoice captured against a purchase order and its receipts."""
+
+    __tablename__ = "supplier_invoices"
+    __table_args__ = (
+        db.UniqueConstraint(
+            "company_id", "supplier_id", "invoice_reference",
+            name="uq_supplier_invoice_reference",
+        ),
+        db.UniqueConstraint("company_id", "id", name="uq_supplier_invoices_company_id"),
+        db.ForeignKeyConstraint(
+            ["company_id", "purchase_order_id"],
+            ["purchase_orders.company_id", "purchase_orders.id"],
+            ondelete="NO ACTION", name="fk_supplier_invoices_order_same_company",
+        ),
+        db.ForeignKeyConstraint(
+            ["company_id", "supplier_id"],
+            ["suppliers.company_id", "suppliers.id"],
+            ondelete="NO ACTION", name="fk_supplier_invoices_supplier_same_company",
+        ),
+        db.ForeignKeyConstraint(
+            ["company_id", "created_by_user_id"],
+            ["company_memberships.company_id", "company_memberships.user_id"],
+            ondelete="NO ACTION", name="fk_supplier_invoices_creator_membership",
+        ),
+        CheckConstraint(
+            "match_status IN ('matched', 'pending_receipt', 'disputed')",
+            name="supplier_invoice_match_status_supported",
+        ),
+        CheckConstraint("length(trim(invoice_reference)) > 0",
+                        name="supplier_invoice_reference_not_empty"),
+        CheckConstraint("length(currency) = 3 AND currency = upper(currency)",
+                        name="supplier_invoice_currency_iso"),
+        CheckConstraint("subtotal >= 0 AND tax_amount >= 0 AND total_amount >= 0",
+                        name="supplier_invoice_amounts_nonnegative"),
+        db.Index("ix_supplier_invoices_company_order", "company_id", "purchase_order_id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    company_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    purchase_order_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    supplier_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    invoice_reference: Mapped[str] = mapped_column(String(120), nullable=False)
+    invoice_date: Mapped[date] = mapped_column(Date, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    subtotal: Mapped[Decimal] = mapped_column(db.Numeric(14, 2), nullable=False)
+    tax_amount: Mapped[Decimal] = mapped_column(db.Numeric(14, 2), nullable=False)
+    total_amount: Mapped[Decimal] = mapped_column(db.Numeric(14, 2), nullable=False)
+    match_status: Mapped[str] = mapped_column(String(24), nullable=False)
+    created_by_user_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class SupplierInvoiceLine(db.Model):
+    """Supplier-invoiced quantity and price matched to one purchase-order line."""
+
+    __tablename__ = "supplier_invoice_lines"
+    __table_args__ = (
+        db.UniqueConstraint("company_id", "id", name="uq_supplier_invoice_lines_company_id"),
+        db.UniqueConstraint(
+            "company_id", "invoice_id", "purchase_order_line_id",
+            name="uq_supplier_invoice_line_order_line",
+        ),
+        db.ForeignKeyConstraint(
+            ["company_id", "invoice_id"],
+            ["supplier_invoices.company_id", "supplier_invoices.id"],
+            ondelete="NO ACTION", name="fk_supplier_invoice_lines_invoice_same_company",
+        ),
+        db.ForeignKeyConstraint(
+            ["company_id", "purchase_order_line_id"],
+            ["purchase_order_lines.company_id", "purchase_order_lines.id"],
+            ondelete="NO ACTION", name="fk_supplier_invoice_lines_order_line_same_company",
+        ),
+        CheckConstraint("quantity > 0", name="supplier_invoice_line_quantity_positive"),
+        CheckConstraint("unit_price >= 0 AND line_total >= 0",
+                        name="supplier_invoice_line_amounts_nonnegative"),
+        db.Index("ix_supplier_invoice_lines_company_invoice", "company_id", "invoice_id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    company_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    invoice_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    purchase_order_line_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(db.Numeric(12, 3), nullable=False)
+    unit_price: Mapped[Decimal] = mapped_column(db.Numeric(12, 2), nullable=False)
+    line_total: Mapped[Decimal] = mapped_column(db.Numeric(14, 2), nullable=False)
