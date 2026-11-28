@@ -532,6 +532,8 @@ class PurchaseOrderReceiptLine(db.Model):
 
     __tablename__ = "purchase_order_receipt_lines"
     __table_args__ = (
+        db.UniqueConstraint("company_id", "receipt_id", "purchase_order_line_id",
+                            name="uq_purchase_receipt_line_order_line"),
         db.ForeignKeyConstraint(
             ["company_id", "receipt_id"],
             ["purchase_order_receipts.company_id", "purchase_order_receipts.id"],
