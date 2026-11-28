@@ -155,7 +155,7 @@ def upgrade():
             ondelete="NO ACTION", name="fk_purchase_receipt_lines_order_line_same_company",
         ),
         sa.ForeignKeyConstraint(
-            ["company_id", "batch_id"], ["stock_batches.company_id", "id"],
+            ["company_id", "batch_id"], ["stock_batches.company_id", "stock_batches.id"],
             ondelete="NO ACTION", name="fk_purchase_receipt_lines_batch_same_company",
         ),
         sa.CheckConstraint("quantity > 0", name="purchase_receipt_line_qty_positive"),
