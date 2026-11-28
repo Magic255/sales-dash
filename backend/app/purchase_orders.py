@@ -271,6 +271,18 @@ def receive_purchase_order(user, purchase_order_id):
             if product.category_key not in (supplier.authorised_categories or []):
                 raise ValueError("Supplier authorisation no longer covers this product category.")
             batch_code = _text(raw, "batch_code", 80, required=True)
+            serial_reference = _text(raw, "serial_reference", 160)
+            certificate_reference = _text(raw, "certificate_reference", 160)
+            if serial_reference and quantity != Decimal("1.000"):
+                raise ValueError("A serial-numbered receipt line must have a quantity of exactly one.")
+            duplicate_certificate = False
+            if certificate_reference:
+                duplicate_certificate = db.session.scalar(
+                    select(StockBatch.id).where(
+                        StockBatch.company_id == company_id,
+                        StockBatch.certificate_reference == certificate_reference,
+                    ).limit(1)
+                ) is not None
             manufacturer = _text(raw, "manufacturer_name", 160, required=True)
             origin = _text(raw, "country_of_origin", 2, required=True).upper()
             if len(origin) != 2 or not origin.isascii() or not origin.isalpha():
@@ -300,9 +312,15 @@ def receive_purchase_order(user, purchase_order_id):
         for line, product, quantity, batch_code, manufacturer, origin, expiry in parsed:
             batch = StockBatch(
                 company_id=company_id, product_id=product.id, batch_code=batch_code,
-                expiry_date=expiry, supplier_id=supplier.id, supplier_name=supplier.legal_name,
+                expiry_date=expiry, serial_reference=serial_reference,
+                supplier_id=supplier.id, supplier_name=supplier.legal_name,
                 supplier_invoice_reference=invoice, delivery_note_reference=delivery_note,
                 manufacturer_name=manufacturer, country_of_origin=origin,
+                certificate_reference=certificate_reference,
+                verification_notes=(
+                    "Duplicate certificate reference detected; independent issuer/registry verification required."
+                    if duplicate_certificate else None
+                ),
                 compliance_status="pending_verification", received_by_user_id=user.id,
                 created_at=datetime.now(timezone.utc),
             )
@@ -335,9 +353,13 @@ def receive_purchase_order(user, purchase_order_id):
         result = {
             "id": str(receipt.id), "purchase_order_id": str(order.id),
             "delivery_note_reference": delivery_note, "status": order.status,
-            "lines": [{"purchase_order_line_id": str(item.purchase_order_line_id),
-                       "batch_id": str(item.batch_id), "quantity": str(item.quantity)}
-                      for item in receipt_items],
+            "lines": [{
+                "purchase_order_line_id": str(item.purchase_order_line_id),
+                "batch_id": str(item.batch_id), "quantity": str(item.quantity),
+                "serial_reference": next(
+                    (entry[3] for entry in parsed if entry[0].id == item.purchase_order_line_id), None
+                ),
+            } for item in receipt_items],
             "inventory_status": "quarantined_pending_compliance",
         }
         db.session.commit()
