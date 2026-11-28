@@ -20,16 +20,28 @@ def _app():
     with app.app_context():
         db.create_all()
         password = PasswordHasher().hash("a-very-strong-test-password")
-        admin = User(email="expense-admin@example.test", password_hash=password, email_verified=True)
-        manager = User(email="expense-manager@example.test", password_hash=password, email_verified=True)
-        salesperson = User(email="expense-sales@example.test", password_hash=password, email_verified=True)
+        admin = User(
+            email="expense-admin@example.test", password_hash=password, email_verified=True
+        )
+        manager = User(
+            email="expense-manager@example.test", password_hash=password, email_verified=True
+        )
+        salesperson = User(
+            email="expense-sales@example.test", password_hash=password, email_verified=True
+        )
         company = Company(name="Expense Test", slug="expense-test")
         db.session.add_all([admin, manager, salesperson, company])
         db.session.flush()
         db.session.add_all([
-            CompanyMembership(user_id=admin.id, company_id=company.id, role="admin", status="active"),
-            CompanyMembership(user_id=manager.id, company_id=company.id, role="manager", status="active"),
-            CompanyMembership(user_id=salesperson.id, company_id=company.id, role="salesperson", status="active"),
+            CompanyMembership(
+                user_id=admin.id, company_id=company.id, role="admin", status="active"
+            ),
+            CompanyMembership(
+                user_id=manager.id, company_id=company.id, role="manager", status="active"
+            ),
+            CompanyMembership(
+                user_id=salesperson.id, company_id=company.id, role="salesperson", status="active"
+            ),
         ])
         db.session.commit()
         return app, str(company.id), str(admin.id)
