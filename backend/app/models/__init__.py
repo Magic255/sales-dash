@@ -456,7 +456,7 @@ class PurchaseOrderLine(db.Model):
 
     __tablename__ = "purchase_order_lines"
     __table_args__ = (
-        db.UniqueConstraint("company_id", "id", name="uq_purchase_order_lines_company_id"),
+        db.UniqueConstraint("company_id", "id", name="uq_purchase_order_lines_company_id"),\n        db.UniqueConstraint("company_id", "purchase_order_id", "product_id",\n                            name="uq_purchase_order_line_product"),
         db.ForeignKeyConstraint(
             ["company_id", "purchase_order_id"],
             ["purchase_orders.company_id", "purchase_orders.id"],
