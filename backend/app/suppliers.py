@@ -1,4 +1,5 @@
 """Company-scoped supplier onboarding and independent approval APIs."""
+# ruff: noqa: I001
 
 from datetime import date, datetime, timezone
 from uuid import UUID
@@ -350,7 +351,8 @@ def review_supplier(user, supplier_id):
 
             if item.country not in item.authorised_territories:
                 raise ValueError(
-                    "The supplier's registered country must be included in its authorised territories."
+                    "The supplier's registered country must be included in its "
+                    "authorised territories."
                 )
             item.status = "approved"
             event_type = "supplier_approved"
