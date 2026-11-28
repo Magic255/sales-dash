@@ -69,7 +69,7 @@ def upgrade():
         sa.Column("received_quantity", sa.Numeric(12, 3), server_default="0", nullable=False),
         sa.Column("unit_cost", sa.Numeric(12, 2), nullable=False),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("company_id", "id", name="uq_purchase_order_lines_company_id"),
+        sa.UniqueConstraint("company_id", "id", name="uq_purchase_order_lines_company_id"),\n        sa.UniqueConstraint("company_id", "purchase_order_id", "product_id",\n                            name="uq_purchase_order_line_product"),
         sa.ForeignKeyConstraint(
             ["company_id", "purchase_order_id"],
             ["purchase_orders.company_id", "purchase_orders.id"],
