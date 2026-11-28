@@ -11,7 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from .audit import record_audit_event
 from .auth import login_required
 from .extensions import db
-from .models import Supplier
+from .models import Supplier, SupplierDocument
 from .permissions import company_permission_required
 
 suppliers_bp = Blueprint("suppliers", __name__, url_prefix="/api")
@@ -325,6 +325,15 @@ def review_supplier(user, supplier_id):
                 raise ValueError("A current, unexpired supplier licence is required.")
             if not item.authorised_categories or not item.authorised_territories:
                 raise ValueError("At least one authorised category and territory are required.")
+            clean_document_count = db.session.scalar(
+                select(db.func.count()).select_from(SupplierDocument).where(
+                    SupplierDocument.company_id == company_id,
+                    SupplierDocument.supplier_id == item.id,
+                    SupplierDocument.scan_status == "clean",
+                )
+            )
+            if not clean_document_count:
+                raise ValueError("Upload at least one malware-scanned supplier licence or business document before approval.")
 
             if item.country not in item.authorised_territories:
                 raise ValueError("The supplier's registered country must be included in its authorised territories.")
