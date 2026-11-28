@@ -99,7 +99,9 @@ def test_compliance_required_stock_is_received_to_quarantine_until_independent_v
                 company_id=company.id,
                 legal_name="Synthetic Approved Supplier Ltd",
                 country="TZ",
-                authorised_categories=["general", "food", "tools", "medical-device", "stationery", "unconfigured"],
+                authorised_categories=[
+                    "general", "food", "tools", "medical-device", "stationery", "unconfigured"
+                ],
                 authorised_brands=[],
                 authorised_territories=["TZ", "CN", "DE"],
                 licence_number="LIC-SYNTHETIC-001",
@@ -364,7 +366,9 @@ def test_category_market_policy_enforces_quarantine_authorities_and_admin_except
                 company_id=company.id,
                 legal_name="Synthetic Approved Supplier Ltd",
                 country="TZ",
-                authorised_categories=["general", "food", "tools", "medical-device", "stationery", "unconfigured"],
+                authorised_categories=[
+                    "general", "food", "tools", "medical-device", "stationery", "unconfigured"
+                ],
                 authorised_brands=[],
                 authorised_territories=["TZ", "CN", "DE"],
                 licence_number="LIC-SYNTHETIC-002",
@@ -793,16 +797,29 @@ def test_certificate_recall_propagates_to_all_matching_company_batches():
         with app.app_context():
             db.create_all()
             password = PasswordHasher().hash("a-very-strong-test-password")
-            admin = User(email="recall-admin@example.test", password_hash=password, email_verified=True)
-            manager = User(email="recall-manager@example.test", password_hash=password, email_verified=True)
-            receiver = User(email="recall-receiver@example.test", password_hash=password, email_verified=True)
+            admin = User(
+                email="recall-admin@example.test", password_hash=password, email_verified=True
+            )
+            manager = User(
+                email="recall-manager@example.test", password_hash=password, email_verified=True
+            )
+            receiver = User(
+                email="recall-receiver@example.test", password_hash=password, email_verified=True
+            )
             company = Company(name="Recall Test", slug="recall-test")
             db.session.add_all([admin, manager, receiver, company])
             db.session.flush()
             db.session.add_all([
-                CompanyMembership(user_id=admin.id, company_id=company.id, role="admin", status="active"),
-                CompanyMembership(user_id=manager.id, company_id=company.id, role="manager", status="active"),
-                CompanyMembership(user_id=receiver.id, company_id=company.id, role="salesperson", status="active"),
+                CompanyMembership(
+                    user_id=admin.id, company_id=company.id, role="admin", status="active"
+                ),
+                CompanyMembership(
+                    user_id=manager.id, company_id=company.id, role="manager", status="active"
+                ),
+                CompanyMembership(
+                    user_id=receiver.id, company_id=company.id,
+                    role="salesperson", status="active",
+                ),
             ])
             supplier = Supplier(
                 company_id=company.id, legal_name="Synthetic Recall Supplier",
