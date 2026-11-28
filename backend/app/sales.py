@@ -3,10 +3,10 @@
 import csv
 import hashlib
 import io
-from datetime import date, datetime, timedelta, timezone
-from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal, InvalidOperation
 import socket
 import struct
+from datetime import date, datetime, timedelta, timezone
+from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal, InvalidOperation
 from urllib.parse import urlsplit
 from uuid import UUID, uuid4
 
@@ -840,6 +840,7 @@ def list_stock_batches(_user, product_id):
             "batch_code": batch.batch_code,
             "expiry_date": batch.expiry_date.isoformat() if batch.expiry_date else None,
             "compliance_status": batch.compliance_status,
+            "supplier_id": str(batch.supplier_id) if batch.supplier_id else None,
             "supplier_name": batch.supplier_name,
             "supplier_invoice_reference": batch.supplier_invoice_reference,
             "delivery_note_reference": batch.delivery_note_reference,
