@@ -60,6 +60,7 @@ def record_audit_event(
         "supplier_document_downloaded",
         "purchase_order_created",
         "purchase_order_receipt_recorded",
+        "supplier_invoice_recorded",
         "expense_created",
         "expense_voided",
     }
