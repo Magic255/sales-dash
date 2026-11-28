@@ -360,3 +360,19 @@ def test_supplier_document_rejects_mismatched_file_signature_before_scanning(mon
         with app.app_context():
             db.session.remove()
             db.drop_all()
+
+def test_supplier_document_routes_are_owned_once_by_dedicated_blueprint():
+    app, _ids = _seed_app()
+    try:
+        upload_rules = [
+            rule for rule in app.url_map.iter_rules()
+            if rule.rule == "/api/suppliers/<uuid:supplier_id>/documents"
+            and "POST" in rule.methods
+        ]
+        assert len(upload_rules) == 1
+        assert upload_rules[0].endpoint.startswith("supplier_documents.")
+    finally:
+        with app.app_context():
+            db.session.remove()
+            db.drop_all()
+
