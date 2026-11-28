@@ -52,15 +52,23 @@ def upgrade():
         sa.Column("void_reason", sa.String(length=500), nullable=True),
         sa.Column("voided_by_user_id", sa.Uuid(), nullable=True),
         sa.Column("voided_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True),
+            server_default=sa.func.now(), nullable=False,
+        ),
         sa.CheckConstraint("amount > 0", name="expense_amount_positive"),
         sa.CheckConstraint("length(trim(description)) > 0", name="expense_description_not_empty"),
         sa.CheckConstraint("length(trim(category)) > 0", name="expense_category_not_empty"),
-        sa.CheckConstraint("currency = upper(currency) AND length(currency) = 3", name="expense_currency_iso"),
+        sa.CheckConstraint(
+            "currency = upper(currency) AND length(currency) = 3",
+            name="expense_currency_iso",
+        ),
         sa.CheckConstraint("status IN ('recorded', 'void')", name="expense_status_supported"),
         sa.CheckConstraint(
-            "(status = 'recorded' AND void_reason IS NULL AND voided_by_user_id IS NULL AND voided_at IS NULL) "
-            "OR (status = 'void' AND length(trim(void_reason)) > 0 AND voided_by_user_id IS NOT NULL AND voided_at IS NOT NULL)",
+            "(status = 'recorded' AND void_reason IS NULL AND "
+            "voided_by_user_id IS NULL AND voided_at IS NULL) "
+            "OR (status = 'void' AND length(trim(void_reason)) > 0 AND "
+            "voided_by_user_id IS NOT NULL AND voided_at IS NOT NULL)",
             name="expense_void_fields_consistent",
         ),
         sa.ForeignKeyConstraint(
