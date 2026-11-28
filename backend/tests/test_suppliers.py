@@ -24,14 +24,22 @@ def _seed_app():
     with app.app_context():
         db.create_all()
         password = PasswordHasher().hash("a-very-strong-test-password")
-        admin = User(email="supplier-admin@example.test", password_hash=password, email_verified=True)
-        manager = User(email="supplier-manager@example.test", password_hash=password, email_verified=True)
+        admin = User(
+            email="supplier-admin@example.test", password_hash=password, email_verified=True
+        )
+        manager = User(
+            email="supplier-manager@example.test", password_hash=password, email_verified=True
+        )
         company = Company(name="Supplier Test", slug="supplier-test")
         db.session.add_all([admin, manager, company])
         db.session.flush()
         db.session.add_all([
-            CompanyMembership(user_id=admin.id, company_id=company.id, role="admin", status="active"),
-            CompanyMembership(user_id=manager.id, company_id=company.id, role="manager", status="active"),
+            CompanyMembership(
+                user_id=admin.id, company_id=company.id, role="admin", status="active"
+            ),
+            CompanyMembership(
+                user_id=manager.id, company_id=company.id, role="manager", status="active"
+            ),
         ])
         db.session.commit()
         ids = (str(company.id), str(admin.id), str(manager.id))
@@ -321,7 +329,13 @@ def test_supplier_document_detected_as_malware_is_never_persisted(monkeypatch):
         monkeypatch.setattr(supplier_documents, "_clamav_scan", lambda _data: "infected")
         response = client.post(
             f"/api/suppliers/{supplier_id}/documents",
-            data={"file": (BytesIO(b"%PDF-1.7\\nsynthetic malware sample"), "blocked.pdf", "application/pdf")},
+            data={
+                "file": (
+                    BytesIO(b"%PDF-1.7\\nsynthetic malware sample"),
+                    "blocked.pdf",
+                    "application/pdf",
+                )
+            },
             content_type="multipart/form-data",
         )
         assert response.status_code == 422
