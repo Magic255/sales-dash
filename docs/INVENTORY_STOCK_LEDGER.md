@@ -71,3 +71,17 @@ Expiry is evaluated against the server's current calendar date when inventory is
 or a sale is completed; no scheduled job is required for the status to update. Expiry
 notifications, supplier integrations, barcode scanning, and automatic disposal workflows
 are not included. This phase does not deploy or provision external infrastructure.
+
+
+## Supplier-controlled intake
+
+New supplier-controlled receipts must include a company-owned `supplier_id`. The supplier
+must be approved, have a current licence and review date, and be authorised for both the
+product category and the batch country of origin. The supplier's registered legal name is
+copied onto the batch as the canonical provenance value. Legacy batches and non-receipt
+movements remain readable; returns and Admin adjustments retain their existing workflow.
+
+Supplier approval requires at least one clean supplier document. Documents are signature-
+checked, malware-scanned with a configured ClamAV daemon, encrypted at rest, and tenant-
+scoped. If ClamAV or the evidence encryption key is unavailable, uploads fail closed and
+the supplier cannot complete approval without scanned evidence.
