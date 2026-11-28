@@ -90,6 +90,7 @@ def test_production_accepts_valid_mfa_encryption_key():
             "RATELIMIT_STORAGE_URI": "redis://localhost:6379/0",
             "MFA_ENCRYPTION_KEY": Fernet.generate_key().decode(),
             "COMPLIANCE_EVIDENCE_ENCRYPTION_KEY": Fernet.generate_key().decode(),
+            "SUPPLIER_DOCUMENT_ENCRYPTION_KEY": Fernet.generate_key().decode(),
             "SQLALCHEMY_DATABASE_URI": "sqlite://",
         }
     )
@@ -201,3 +202,32 @@ def test_database_and_migrations_are_registered():
     assert "migrate" in app.extensions
     assert db is not None
     assert migrate is not None
+
+
+def test_production_requires_supplier_document_encryption_key():
+    with pytest.raises(RuntimeError, match="SUPPLIER_DOCUMENT_ENCRYPTION_KEY must be set"):
+        create_app({
+            "TESTING": True,
+            "APP_ENV": "production",
+            "SECRET_KEY": "production-test-secret",
+            "RATELIMIT_STORAGE_URI": "redis://localhost:6379/0",
+            "MFA_ENCRYPTION_KEY": Fernet.generate_key().decode(),
+            "COMPLIANCE_EVIDENCE_ENCRYPTION_KEY": Fernet.generate_key().decode(),
+            "SUPPLIER_DOCUMENT_ENCRYPTION_KEY": None,
+            "SQLALCHEMY_DATABASE_URI": "sqlite://",
+        })
+
+
+def test_production_requires_distinct_supplier_document_encryption_key():
+    shared_key = Fernet.generate_key().decode()
+    with pytest.raises(RuntimeError, match="distinct from compliance evidence and MFA"):
+        create_app({
+            "TESTING": True,
+            "APP_ENV": "production",
+            "SECRET_KEY": "production-test-secret",
+            "RATELIMIT_STORAGE_URI": "redis://localhost:6379/0",
+            "MFA_ENCRYPTION_KEY": Fernet.generate_key().decode(),
+            "COMPLIANCE_EVIDENCE_ENCRYPTION_KEY": shared_key,
+            "SUPPLIER_DOCUMENT_ENCRYPTION_KEY": shared_key,
+            "SQLALCHEMY_DATABASE_URI": "sqlite://",
+        })

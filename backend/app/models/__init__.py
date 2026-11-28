@@ -6,6 +6,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import (
     CheckConstraint,
+    Date,
     DateTime,
     ForeignKey,
     Integer,
@@ -168,7 +169,12 @@ class AuditLog(db.Model):
             "'product_compliance_recalled', 'product_compliance_exception', "
             "'product_compliance_policy_updated', 'product_compliance_not_required_release', "
             "'product_compliance_evidence_uploaded', "
-            "'product_compliance_evidence_downloaded')",
+            "'product_compliance_evidence_downloaded', 'supplier_created', "
+            "'supplier_approved', 'supplier_restricted', 'supplier_suspended', "
+            "'supplier_rejected', 'supplier_re_review_required', "
+            "'supplier_document_uploaded', 'supplier_document_rejected', "
+            "'supplier_document_downloaded', 'purchase_order_created', "
+            "'purchase_order_receipt_recorded', 'expense_created', 'expense_voided')",
             name="event_type_is_supported",
         ),
         db.Index("ix_audit_logs_company_time", "company_id", "occurred_at"),
@@ -222,6 +228,68 @@ class Customer(db.Model):
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=utc_now
+    )
+
+
+class Expense(db.Model):
+    """Append-only company expense record; voiding preserves the original entry."""
+
+    __tablename__ = "expenses"
+    __table_args__ = (
+        db.UniqueConstraint("company_id", "id", name="uq_expenses_company_id"),
+        db.ForeignKeyConstraint(
+            ["company_id", "created_by_user_id"],
+            ["company_memberships.company_id", "company_memberships.user_id"],
+            ondelete="NO ACTION",
+            name="fk_expenses_creator_membership",
+        ),
+        db.ForeignKeyConstraint(
+            ["company_id", "voided_by_user_id"],
+            ["company_memberships.company_id", "company_memberships.user_id"],
+            ondelete="NO ACTION",
+            name="fk_expenses_voider_membership",
+        ),
+        CheckConstraint("amount > 0", name="expense_amount_positive"),
+        CheckConstraint("length(trim(description)) > 0", name="expense_description_not_empty"),
+        CheckConstraint("length(trim(category)) > 0", name="expense_category_not_empty"),
+        CheckConstraint(
+            "currency = upper(currency) AND length(currency) = 3",
+            name="expense_currency_iso",
+        ),
+        CheckConstraint("status IN ('recorded', 'void')", name="expense_status_supported"),
+        CheckConstraint(
+            "(status = 'recorded' AND void_reason IS NULL AND voided_by_user_id IS NULL "
+            "AND voided_at IS NULL) OR (status = 'void' AND length(trim(void_reason)) > 0 "
+            "AND voided_by_user_id IS NOT NULL AND voided_at IS NOT NULL)",
+            name="expense_void_fields_consistent",
+        ),
+        db.Index("ix_expenses_company_date", "company_id", "expense_date"),
+        db.Index("ix_expenses_company_category", "company_id", "category"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    company_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False
+    )
+    created_by_user_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    category: Mapped[str] = mapped_column(String(60), nullable=False)
+    description: Mapped[str] = mapped_column(String(500), nullable=False)
+    amount: Mapped[Decimal] = mapped_column(db.Numeric(12, 2), nullable=False)
+    currency: Mapped[str] = mapped_column(
+        String(3), nullable=False, default="TZS", server_default="TZS"
+    )
+    expense_date: Mapped[date] = mapped_column(Date, nullable=False)
+    payment_method: Mapped[str | None] = mapped_column(String(40))
+    reference: Mapped[str | None] = mapped_column(String(120))
+    notes: Mapped[str | None] = mapped_column(String(1000))
+    status: Mapped[str] = mapped_column(
+        String(12), nullable=False, default="recorded", server_default="recorded"
+    )
+    void_reason: Mapped[str | None] = mapped_column(String(500))
+    voided_by_user_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True))
+    voided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
 
@@ -358,6 +426,208 @@ class CategoryCompliancePolicy(db.Model):
     )
 
 
+class SupplierDocument(db.Model):
+    """Encrypted, malware-scanned supplier licence and business evidence."""
+
+    __tablename__ = "supplier_documents"
+    __table_args__ = (
+        db.UniqueConstraint("company_id", "id", name="uq_supplier_documents_company_id"),
+        db.ForeignKeyConstraint(
+            ["company_id", "supplier_id"],
+            ["suppliers.company_id", "suppliers.id"],
+            ondelete="NO ACTION",
+            name="fk_supplier_documents_supplier_same_company",
+        ),
+        db.ForeignKeyConstraint(
+            ["company_id", "uploaded_by_user_id"],
+            ["company_memberships.company_id", "company_memberships.user_id"],
+            ondelete="NO ACTION",
+            name="fk_supplier_documents_uploader_membership",
+        ),
+        CheckConstraint(
+            "content_type IN ('application/pdf', 'image/jpeg', 'image/png', 'image/webp')",
+            name="supplier_document_content_type_supported",
+        ),
+        CheckConstraint(
+            "size_bytes > 0 AND size_bytes <= 8388608",
+            name="supplier_document_size_supported",
+        ),
+        CheckConstraint("length(sha256) = 64", name="supplier_document_sha256_length"),
+        CheckConstraint("scan_status = 'clean'", name="supplier_document_must_be_clean"),
+        db.Index(
+            "ix_supplier_documents_company_supplier",
+            "company_id", "supplier_id", "created_at",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    company_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    supplier_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    uploaded_by_user_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    original_filename: Mapped[str] = mapped_column(String(180), nullable=False)
+    content_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    encrypted_content: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    scan_status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="clean", server_default="clean"
+    )
+    scanned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+
+
+class PurchaseOrder(db.Model):
+    """Company-scoped purchase order issued to an approved supplier."""
+
+    __tablename__ = "purchase_orders"
+    __table_args__ = (
+        db.UniqueConstraint("company_id", "id", name="uq_purchase_orders_company_id"),
+        db.UniqueConstraint("company_id", "order_number", name="uq_purchase_orders_number"),
+        db.ForeignKeyConstraint(
+            ["company_id", "supplier_id"], ["suppliers.company_id", "suppliers.id"],
+            ondelete="NO ACTION", name="fk_purchase_orders_supplier_same_company",
+        ),
+        db.ForeignKeyConstraint(
+            ["company_id", "created_by_user_id"],
+            ["company_memberships.company_id", "company_memberships.user_id"],
+            ondelete="NO ACTION", name="fk_purchase_orders_creator_membership",
+        ),
+        CheckConstraint("status IN ('issued', 'partially_received', 'received', 'cancelled')",
+                        name="purchase_order_status_supported"),
+        CheckConstraint("length(trim(order_number)) > 0", name="purchase_order_number_not_empty"),
+        CheckConstraint("length(currency) = 3 AND currency = upper(currency)",
+                        name="purchase_order_currency_iso"),
+        db.Index("ix_purchase_orders_company_supplier_status",
+                 "company_id", "supplier_id", "status"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    company_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    supplier_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    order_number: Mapped[str] = mapped_column(String(80), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="issued",
+                                        server_default="issued")
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    notes: Mapped[str | None] = mapped_column(String(1000))
+    created_by_user_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class PurchaseOrderLine(db.Model):
+    """Ordered product quantity and cumulative accepted quantity."""
+
+    __tablename__ = "purchase_order_lines"
+    __table_args__ = (
+        db.UniqueConstraint("company_id", "id", name="uq_purchase_order_lines_company_id"),
+        db.UniqueConstraint("company_id", "purchase_order_id", "product_id",
+                            name="uq_purchase_order_line_product"),
+        db.ForeignKeyConstraint(
+            ["company_id", "purchase_order_id"],
+            ["purchase_orders.company_id", "purchase_orders.id"],
+            ondelete="NO ACTION", name="fk_purchase_order_lines_order_same_company",
+        ),
+        db.ForeignKeyConstraint(
+            ["company_id", "product_id"], ["products.company_id", "products.id"],
+            ondelete="NO ACTION", name="fk_purchase_order_lines_product_same_company",
+        ),
+        CheckConstraint("ordered_quantity > 0", name="purchase_order_ordered_qty_positive"),
+        CheckConstraint("received_quantity >= 0 AND received_quantity <= ordered_quantity",
+                        name="purchase_order_received_qty_in_range"),
+        CheckConstraint("unit_cost >= 0", name="purchase_order_unit_cost_nonnegative"),
+        db.Index("ix_purchase_order_lines_company_order",
+                 "company_id", "purchase_order_id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    company_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    purchase_order_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    product_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    ordered_quantity: Mapped[Decimal] = mapped_column(db.Numeric(12, 3), nullable=False)
+    received_quantity: Mapped[Decimal] = mapped_column(
+        db.Numeric(12, 3), nullable=False, default=Decimal("0"), server_default="0"
+    )
+    unit_cost: Mapped[Decimal] = mapped_column(db.Numeric(12, 2), nullable=False)
+
+
+class PurchaseOrderReceipt(db.Model):
+    """One partial or complete delivery against a purchase order."""
+
+    __tablename__ = "purchase_order_receipts"
+    __table_args__ = (
+        db.UniqueConstraint("company_id", "id", name="uq_purchase_order_receipts_company_id"),
+        db.UniqueConstraint("company_id", "supplier_id", "delivery_note_reference",
+                            name="uq_purchase_receipt_delivery_note"),
+        db.ForeignKeyConstraint(
+            ["company_id", "purchase_order_id"],
+            ["purchase_orders.company_id", "purchase_orders.id"],
+            ondelete="NO ACTION", name="fk_purchase_receipts_order_same_company",
+        ),
+        db.ForeignKeyConstraint(
+            ["company_id", "supplier_id"], ["suppliers.company_id", "suppliers.id"],
+            ondelete="NO ACTION", name="fk_purchase_receipts_supplier_same_company",
+        ),
+        db.ForeignKeyConstraint(
+            ["company_id", "received_by_user_id"],
+            ["company_memberships.company_id", "company_memberships.user_id"],
+            ondelete="NO ACTION", name="fk_purchase_receipts_receiver_membership",
+        ),
+        CheckConstraint("length(trim(delivery_note_reference)) > 0",
+                        name="purchase_receipt_delivery_note_not_empty"),
+        db.Index("ix_purchase_receipts_company_order",
+                 "company_id", "purchase_order_id", "received_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    company_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    purchase_order_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    supplier_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    delivery_note_reference: Mapped[str] = mapped_column(String(120), nullable=False)
+    supplier_invoice_reference: Mapped[str | None] = mapped_column(String(120))
+    received_by_user_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class PurchaseOrderReceiptLine(db.Model):
+    """A received quantity tied to an order line and quarantined stock batch."""
+
+    __tablename__ = "purchase_order_receipt_lines"
+    __table_args__ = (
+        db.UniqueConstraint("company_id", "receipt_id", "purchase_order_line_id",
+                            name="uq_purchase_receipt_line_order_line"),
+        db.ForeignKeyConstraint(
+            ["company_id", "receipt_id"],
+            ["purchase_order_receipts.company_id", "purchase_order_receipts.id"],
+            ondelete="NO ACTION", name="fk_purchase_receipt_lines_receipt_same_company",
+        ),
+        db.ForeignKeyConstraint(
+            ["company_id", "purchase_order_line_id"],
+            ["purchase_order_lines.company_id", "purchase_order_lines.id"],
+            ondelete="NO ACTION", name="fk_purchase_receipt_lines_order_line_same_company",
+        ),
+        db.ForeignKeyConstraint(
+            ["company_id", "batch_id"], ["stock_batches.company_id", "stock_batches.id"],
+            ondelete="NO ACTION", name="fk_purchase_receipt_lines_batch_same_company",
+        ),
+        CheckConstraint("quantity > 0", name="purchase_receipt_line_qty_positive"),
+        db.Index("ix_purchase_receipt_lines_company_receipt", "company_id", "receipt_id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    company_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    receipt_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    purchase_order_line_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    batch_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(db.Numeric(12, 3), nullable=False)
+
+
 class StockBatch(db.Model):
     """A traceable stock receipt batch with an optional expiry date."""
 
@@ -368,11 +638,21 @@ class StockBatch(db.Model):
             "company_id", "product_id", "batch_code",
             name="uq_stock_batches_company_product_code",
         ),
+        db.UniqueConstraint(
+            "company_id", "serial_reference",
+            name="uq_stock_batches_company_serial_reference",
+        ),
         db.ForeignKeyConstraint(
             ["company_id", "product_id"],
             ["products.company_id", "products.id"],
             ondelete="NO ACTION",
             name="fk_stock_batches_product_same_company",
+        ),
+        db.ForeignKeyConstraint(
+            ["company_id", "supplier_id"],
+            ["suppliers.company_id", "suppliers.id"],
+            ondelete="NO ACTION",
+            name="fk_stock_batches_supplier_same_company",
         ),
         db.ForeignKeyConstraint(
             ["company_id", "received_by_user_id"],
@@ -421,7 +701,9 @@ class StockBatch(db.Model):
     company_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
     product_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
     batch_code: Mapped[str] = mapped_column(String(80), nullable=False)
+    serial_reference: Mapped[str | None] = mapped_column(String(160))
     expiry_date: Mapped[date | None] = mapped_column(db.Date)
+    supplier_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True))
     supplier_name: Mapped[str | None] = mapped_column(String(160))
     supplier_invoice_reference: Mapped[str | None] = mapped_column(String(120))
     delivery_note_reference: Mapped[str | None] = mapped_column(String(120))
@@ -778,4 +1060,84 @@ class SaleItem(db.Model):
     line_total: Mapped[Decimal] = mapped_column(db.Numeric(14, 2), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class Supplier(db.Model):
+    """Company-scoped supplier with independent approval and licence review."""
+
+    __tablename__ = "suppliers"
+    __table_args__ = (
+        db.UniqueConstraint("company_id", "id", name="uq_suppliers_company_id_id"),
+        db.ForeignKeyConstraint(
+            ["company_id", "submitted_by_user_id"],
+            ["company_memberships.company_id", "company_memberships.user_id"],
+            ondelete="NO ACTION",
+            name="fk_suppliers_submitter_membership",
+        ),
+        db.ForeignKeyConstraint(
+            ["company_id", "reviewed_by_user_id"],
+            ["company_memberships.company_id", "company_memberships.user_id"],
+            ondelete="NO ACTION",
+            name="fk_suppliers_reviewer_membership",
+        ),
+        CheckConstraint(
+            "status IN ('pending_review', 'approved', 'restricted', "
+            "'suspended', 'rejected', 'expired')",
+            name="supplier_status_supported",
+        ),
+        CheckConstraint(
+            "length(trim(legal_name)) > 0",
+            name="supplier_legal_name_not_empty",
+        ),
+        CheckConstraint(
+            "country = upper(country) AND length(country) = 2",
+            name="supplier_country_iso_code",
+        ),
+        CheckConstraint(
+            "reviewed_by_user_id IS NULL OR reviewed_by_user_id <> submitted_by_user_id",
+            name="supplier_no_self_approval",
+        ),
+        CheckConstraint(
+            "licence_source_url IS NULL OR licence_source_url LIKE 'https://%'",
+            name="supplier_licence_source_https",
+        ),
+        db.Index("ix_suppliers_company_status", "company_id", "status"),
+        db.Index("ix_suppliers_company_licence_expiry", "company_id", "licence_valid_until"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    company_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("companies.id", ondelete="CASCADE", name="fk_suppliers_company"),
+        nullable=False
+    )
+    legal_name: Mapped[str] = mapped_column(String(180), nullable=False)
+    registration_number: Mapped[str | None] = mapped_column(String(120))
+    tax_identifier: Mapped[str | None] = mapped_column(String(120))
+    country: Mapped[str] = mapped_column(String(2), nullable=False)
+    address: Mapped[str | None] = mapped_column(String(500))
+    contact_name: Mapped[str | None] = mapped_column(String(160))
+    contact_email: Mapped[str | None] = mapped_column(String(320))
+    contact_phone: Mapped[str | None] = mapped_column(String(40))
+    authorised_categories: Mapped[list] = mapped_column(db.JSON, nullable=False, default=list)
+    authorised_brands: Mapped[list] = mapped_column(db.JSON, nullable=False, default=list)
+    authorised_territories: Mapped[list] = mapped_column(db.JSON, nullable=False, default=list)
+    licence_number: Mapped[str | None] = mapped_column(String(160))
+    licence_issuer: Mapped[str | None] = mapped_column(String(180))
+    licence_source_url: Mapped[str | None] = mapped_column(String(500))
+    licence_valid_until: Mapped[date | None] = mapped_column(db.Date)
+    next_review_date: Mapped[date | None] = mapped_column(db.Date)
+    status: Mapped[str] = mapped_column(
+        String(24), nullable=False, default="pending_review", server_default="pending_review"
+    )
+    submitted_by_user_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    reviewed_by_user_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True))
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    review_notes: Mapped[str | None] = mapped_column(String(1000))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=utc_now
     )

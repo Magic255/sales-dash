@@ -77,6 +77,25 @@ def create_app(test_config=None):
         except (ValueError, UnicodeEncodeError) as error:
             raise RuntimeError("MFA_ENCRYPTION_KEY must be a valid Fernet key.") from error
 
+    if app.config.get("APP_ENV") == "production":
+        supplier_key = app.config.get("SUPPLIER_DOCUMENT_ENCRYPTION_KEY")
+        if not isinstance(supplier_key, str) or not supplier_key:
+            raise RuntimeError("SUPPLIER_DOCUMENT_ENCRYPTION_KEY must be set in production.")
+        try:
+            Fernet(supplier_key.encode("ascii"))
+        except (ValueError, UnicodeEncodeError) as error:
+            raise RuntimeError(
+                "SUPPLIER_DOCUMENT_ENCRYPTION_KEY must be a valid Fernet key."
+            ) from error
+        if supplier_key in {
+            app.config.get("COMPLIANCE_EVIDENCE_ENCRYPTION_KEY"),
+            app.config.get("MFA_ENCRYPTION_KEY"),
+        }:
+            raise RuntimeError(
+                "Supplier document encryption key must be distinct from "
+                "compliance evidence and MFA keys."
+            )
+
     db.init_app(app)
     migrate.init_app(app, db)
     csrf.init_app(app)
@@ -85,18 +104,26 @@ def create_app(test_config=None):
     from .audit import audit_bp
     from .auth import auth_bp
     from .company_settings import company_settings_bp
+    from .expenses import expenses_bp
     from .mfa import mfa_bp
+    from .purchase_orders import purchase_orders_bp
     from .sales import sales_bp
     from .sales_targets import targets_bp
+    from .supplier_documents import supplier_documents_bp
+    from .suppliers import suppliers_bp
     from .team import team_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(company_settings_bp)
     app.register_blueprint(mfa_bp)
+    app.register_blueprint(expenses_bp)
     app.register_blueprint(audit_bp)
     app.register_blueprint(sales_bp)
     app.register_blueprint(targets_bp)
     app.register_blueprint(team_bp)
+    app.register_blueprint(suppliers_bp)
+    app.register_blueprint(supplier_documents_bp)
+    app.register_blueprint(purchase_orders_bp)
     register_commands(app)
 
     @app.errorhandler(CSRFError)

@@ -30,6 +30,7 @@ from .models import (
     SaleItem,
     StockBatch,
     StockMovement,
+    Supplier,
     User,
 )
 from .permissions import company_permission_required
@@ -834,8 +835,19 @@ def list_stock_batches(_user, product_id):
         items.append({
             "id": str(batch.id),
             "batch_code": batch.batch_code,
+            "serial_reference": batch.serial_reference,
+            "duplicate_certificate_reference": bool(
+                batch.certificate_reference and db.session.scalar(
+                    select(StockBatch.id).where(
+                        StockBatch.company_id == company_id,
+                        StockBatch.certificate_reference == batch.certificate_reference,
+                        StockBatch.id != batch.id,
+                    ).limit(1)
+                )
+            ),
             "expiry_date": batch.expiry_date.isoformat() if batch.expiry_date else None,
             "compliance_status": batch.compliance_status,
+            "supplier_id": str(batch.supplier_id) if batch.supplier_id else None,
             "supplier_name": batch.supplier_name,
             "supplier_invoice_reference": batch.supplier_invoice_reference,
             "delivery_note_reference": batch.delivery_note_reference,
@@ -1187,7 +1199,7 @@ def verify_stock_batch_compliance(user, batch_id):
                 raise ValueError("Unsupported issuing authority role.")
             certificate_reference = _text(
                 data, "certificate_reference", 160, required=True
-            )
+            ).upper()
             verification_method = _text(
                 data, "verification_method", 32, required=True, lower=True
             )
@@ -1196,6 +1208,20 @@ def verify_stock_batch_compliance(user, batch_id):
                 "issuer_confirmation", "document_review",
             }:
                 raise ValueError("Unsupported verification method.")
+            duplicate_certificate = db.session.scalar(
+                select(StockBatch.id).where(
+                    StockBatch.company_id == company_id,
+                    StockBatch.certificate_reference == certificate_reference,
+                    StockBatch.id != batch.id,
+                ).limit(1)
+            ) is not None
+            if duplicate_certificate and verification_method not in {
+                "official_registry", "issuer_confirmation"
+            }:
+                raise ValueError(
+                    "A duplicated certificate reference requires official-registry "
+                    "or direct issuer confirmation."
+                )
             verification_source_url = _text(data, "verification_source_url", 500)
             verification_reference = _text(data, "verification_reference", 200)
             verified_product_identifier = _text(
@@ -1259,46 +1285,82 @@ def verify_stock_batch_compliance(user, batch_id):
             batch.accreditation_body_name = accreditation_body_name
             batch.compliance_status = "approved"
             event_type = "product_compliance_verified"
-        elif decision in {"reject", "recall"}:
+        affected_batches = [batch]
+        recall_scope = "batch"
+        if decision in {"reject", "recall"}:
             batch.compliance_status = "rejected" if decision == "reject" else "recalled"
             event_type = (
                 "product_compliance_rejected" if decision == "reject"
                 else "product_compliance_recalled"
             )
-        batch.verified_by_user_id = user.id
-        batch.verified_at = datetime.now(timezone.utc)
-        batch.verification_notes = notes
-        record_audit_event(
-            db.session, user.id, event_type, company_id,
-            {
-                "product_id": str(batch.product_id),
-                "batch_id": str(batch.id),
-                "batch_code": batch.batch_code,
-                "decision": decision,
-                "authority_name": batch.authority_name,
-                "authority_country": batch.authority_country,
-                "authority_role": batch.authority_role,
-                "certificate_reference": batch.certificate_reference,
-                "verification_method": batch.verification_method,
-                "verification_source_url": batch.verification_source_url,
-                "verification_reference": batch.verification_reference,
-                "verified_product_identifier": batch.verified_product_identifier,
-                "verified_scope": batch.verified_scope,
-                "accreditation_body_name": batch.accreditation_body_name,
-                "qr_code_present": bool(batch.qr_code),
-                "evidence_reference_present": bool(batch.evidence_reference),
-                "evidence_file_id": (
-                    str(evidence_file.id)
-                    if decision in {"approve", "release_not_required", "exception"} else None
-                ),
-                "supplier_name": batch.supplier_name,
-                "supplier_invoice_reference": batch.supplier_invoice_reference,
-                "delivery_note_reference": batch.delivery_note_reference,
-                "manufacturer_name": batch.manufacturer_name,
-                "country_of_origin": batch.country_of_origin,
-                "notes": notes,
-            },
-        )
+            if decision == "recall":
+                recall_scope = _text(data, "recall_scope", 24, lower=True) or "batch"
+                if recall_scope not in {"batch", "certificate", "supplier", "product"}:
+                    raise ValueError("Unsupported recall scope.")
+                recall_query = select(StockBatch).where(
+                    StockBatch.company_id == company_id,
+                )
+                if recall_scope == "certificate":
+                    if not batch.certificate_reference:
+                        raise ValueError("This batch has no certificate reference to propagate.")
+                    recall_query = recall_query.where(
+                        StockBatch.certificate_reference == batch.certificate_reference
+                    )
+                elif recall_scope == "supplier":
+                    if not batch.supplier_id:
+                        raise ValueError("This batch has no verified supplier to propagate.")
+                    recall_query = recall_query.where(StockBatch.supplier_id == batch.supplier_id)
+                elif recall_scope == "product":
+                    recall_query = recall_query.where(StockBatch.product_id == batch.product_id)
+                else:
+                    recall_query = recall_query.where(StockBatch.id == batch.id)
+                affected_batches = db.session.scalars(
+                    recall_query.order_by(StockBatch.id).with_for_update()
+                ).all()
+                if not affected_batches:
+                    raise ValueError("No affected stock batches were found.")
+                for affected in affected_batches:
+                    affected.compliance_status = "recalled"
+        reviewed_at = datetime.now(timezone.utc)
+        for affected in affected_batches:
+            affected.verified_by_user_id = user.id
+            affected.verified_at = reviewed_at
+            affected.verification_notes = notes
+        audit_batches = affected_batches if decision == "recall" else [batch]
+        for affected in audit_batches:
+            record_audit_event(
+                db.session, user.id, event_type, company_id,
+                {
+                    "product_id": str(affected.product_id),
+                    "batch_id": str(affected.id),
+                    "batch_code": affected.batch_code,
+                    "decision": decision,
+                    "recall_scope": recall_scope if decision == "recall" else None,
+                    "affected_batch_count": len(affected_batches),
+                    "authority_name": affected.authority_name,
+                    "authority_country": affected.authority_country,
+                    "authority_role": affected.authority_role,
+                    "certificate_reference": affected.certificate_reference,
+                    "verification_method": affected.verification_method,
+                    "verification_source_url": affected.verification_source_url,
+                    "verification_reference": affected.verification_reference,
+                    "verified_product_identifier": affected.verified_product_identifier,
+                    "verified_scope": affected.verified_scope,
+                    "accreditation_body_name": affected.accreditation_body_name,
+                    "qr_code_present": bool(affected.qr_code),
+                    "evidence_reference_present": bool(affected.evidence_reference),
+                    "evidence_file_id": (
+                        str(evidence_file.id)
+                        if decision in {"approve", "release_not_required", "exception"} else None
+                    ),
+                    "supplier_name": affected.supplier_name,
+                    "supplier_invoice_reference": affected.supplier_invoice_reference,
+                    "delivery_note_reference": affected.delivery_note_reference,
+                    "manufacturer_name": affected.manufacturer_name,
+                    "country_of_origin": affected.country_of_origin,
+                    "notes": notes,
+                },
+            )
         db.session.flush()
         result = {
             "id": str(batch.id),
@@ -1315,6 +1377,8 @@ def verify_stock_batch_compliance(user, batch_id):
             "accreditation_body_name": batch.accreditation_body_name,
             "verified_at": batch.verified_at.isoformat(),
             "evidence_file_id": str(evidence_file.id) if decision == "approve" else None,
+            "recall_scope": recall_scope if decision == "recall" else None,
+            "affected_batch_ids": [str(item.id) for item in affected_batches],
         }
         db.session.commit()
     except ValueError:
@@ -1408,9 +1472,33 @@ def create_stock_movement(user, product_id):
         created = []
         if movement_type in {"received", "returned", "adjustment_increase"}:
             batch_code = _text(data, "batch_code", 80, required=True)
-            supplier_name = _text(
-                data, "supplier_name", 160, required=(movement_type == "received")
-            )
+            supplier_id = None
+            supplier_name = _text(data, "supplier_name", 160)
+            if movement_type == "received":
+                raw_supplier_id = _text(data, "supplier_id", 36, required=True)
+                try:
+                    supplier_id = UUID(raw_supplier_id)
+                except ValueError:
+                    raise ValueError("Select a valid approved supplier.") from None
+                supplier = db.session.scalar(select(Supplier).where(
+                    Supplier.id == supplier_id, Supplier.company_id == company_id
+                ).with_for_update())
+                if supplier is None:
+                    raise ValueError("The selected supplier does not belong to this company.")
+                if supplier.status != "approved":
+                    raise ValueError("Stock can only be received from an approved supplier.")
+                if (
+                    supplier.licence_valid_until is None
+                    or supplier.licence_valid_until < date.today()
+                ):
+                    raise ValueError("The supplier licence is missing or expired.")
+                if supplier.next_review_date and supplier.next_review_date < date.today():
+                    raise ValueError("The supplier review is overdue.")
+                if product.category_key not in supplier.authorised_categories:
+                    raise ValueError("The supplier is not authorised for this product category.")
+                supplier_name = supplier.legal_name
+            else:
+                supplier_name = supplier_name or None
             supplier_invoice_reference = _text(
                 data, "supplier_invoice_reference", 120,
             )
@@ -1425,6 +1513,11 @@ def create_stock_movement(user, product_id):
                 supplier_invoice_reference or delivery_note_reference
             ):
                 raise ValueError("A supplier invoice or delivery note reference is required.")
+            if (
+                movement_type == "received"
+                and country_of_origin not in supplier.authorised_territories
+            ):
+                raise ValueError("The supplier is not authorised for this country of origin.")
             raw_expiry = data.get("expiry_date")
             if raw_expiry in (None, ""):
                 expiry_date = None
@@ -1440,6 +1533,7 @@ def create_stock_movement(user, product_id):
                 product_id=product_id,
                 batch_code=batch_code,
                 expiry_date=expiry_date,
+                supplier_id=supplier_id,
                 supplier_name=supplier_name,
                 supplier_invoice_reference=supplier_invoice_reference,
                 delivery_note_reference=delivery_note_reference,
@@ -1496,6 +1590,7 @@ def create_stock_movement(user, product_id):
             "available_quantity": str(available),
         },
     }), 201
+
 
 
 
