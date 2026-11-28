@@ -1,10 +1,10 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from argon2 import PasswordHasher
 
 from app import create_app
 from app.extensions import db
-from app.models import Company, CompanyMembership, Supplier, User
+from app.models import Company, CompanyMembership, Supplier, SupplierDocument, User
 
 
 def _seed_app():
@@ -69,6 +69,20 @@ def test_supplier_submitter_cannot_self_approve_but_second_reviewer_can():
         assert created.status_code == 201
         supplier_id = created.json["item"]["id"]
         assert created.json["item"]["status"] == "pending_review"
+        with app.app_context():
+            db.session.add(SupplierDocument(
+                company_id=__import__("uuid").UUID(company_id),
+                supplier_id=__import__("uuid").UUID(supplier_id),
+                uploaded_by_user_id=__import__("uuid").UUID(_admin_id),
+                original_filename="synthetic-licence.pdf",
+                content_type="application/pdf",
+                size_bytes=12,
+                sha256="a" * 64,
+                encrypted_content=b"synthetic-test-ciphertext",
+                scan_status="clean",
+                scanned_at=datetime.now(timezone.utc),
+            ))
+            db.session.commit()
 
         self_review = submitter.post(
             f"/api/suppliers/{supplier_id}/review",
