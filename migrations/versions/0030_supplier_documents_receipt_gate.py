@@ -90,6 +90,10 @@ def upgrade():
 
 
 def downgrade():
+    op.execute(
+        "UPDATE audit_logs SET event_type = 'supplier_re_review_required' "
+        "WHERE event_type IN ('supplier_document_uploaded', 'supplier_document_rejected')"
+    )
     op.drop_constraint("event_type_is_supported", "audit_logs", type_="check")
     op.create_check_constraint(
         "event_type_is_supported", "audit_logs",
