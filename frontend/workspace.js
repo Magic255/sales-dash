@@ -1918,3 +1918,113 @@ document.querySelector("#company-settings-form").addEventListener("submit", asyn
     button.disabled = false;
   }
 });
+
+
+
+let supplierRecords = [];
+let purchaseOrderRecords = [];
+function supplierCsv(value) { return value.split(",").map((part) => part.trim()).filter(Boolean); }
+function fillSupplierSelect(select) {
+  const previous=select.value; select.replaceChildren(new Option("Choose supplier",""));
+  for (const item of supplierRecords) select.add(new Option(item.legal_name+" · "+item.status,item.id));
+  if (supplierRecords.some((item)=>item.id===previous)) select.value=previous;
+}
+async function loadSuppliers() {
+  const message=document.querySelector("#suppliers-message"), body=document.querySelector("#supplier-rows");
+  if (!["admin","manager"].includes(workspaceRole)) return;
+  message.textContent="";
+  try {
+    const data=await workspaceRequest("/api/suppliers"); supplierRecords=data.items; body.replaceChildren();
+    if (!data.items.length) emptyRow(body,6,"No suppliers registered yet.");
+    for (const item of data.items) {
+      const row=document.createElement("tr");
+      textCell(row,item.legal_name); textCell(row,item.country); textCell(row,item.licence_valid_until||"Not recorded");
+      textCell(row,(item.authorised_categories||[]).join(", ")||"—"); textCell(row,item.status.replaceAll("_"," "));
+      const actions=document.createElement("td");
+      if (item.status==="pending_review" && item.submitted_by_user_id!==workspaceUserId) {
+        for (const [label,decision] of [["Approve","approve"],["Restrict","restrict"],["Reject","reject"]]) {
+          const b=document.createElement("button"); b.type="button"; b.className=decision==="approve"?"table-action":"table-action table-action-danger"; b.textContent=label;
+          b.addEventListener("click",async()=>{
+            let notes="";
+            if(decision!=="approve"){notes=window.prompt("Reason for "+decision+"ing this supplier");if(notes===null)return;if(!notes.trim()){message.textContent="A reason is required.";return;}}
+            b.disabled=true;
+            try{await workspaceRequest("/api/suppliers/"+encodeURIComponent(item.id)+"/review",{method:"POST",body:JSON.stringify({decision,notes})});await loadSuppliers();}
+            catch(error){message.textContent=error.message;b.disabled=false;}
+          }); actions.append(b);
+        }
+      } else actions.textContent=item.submitted_by_user_id===workspaceUserId&&item.status==="pending_review"?"Independent reviewer required":(item.review_notes||"—");
+      row.append(actions); body.append(row);
+    }
+    fillSupplierSelect(document.querySelector("#supplier-document-owner")); fillSupplierSelect(document.querySelector("#po-supplier"));
+  } catch(error){message.textContent=error.message;emptyRow(body,6,"Supplier data could not be loaded.");}
+}
+async function loadSupplierDocuments(id) {
+  const body=document.querySelector("#supplier-document-rows"); body.replaceChildren();
+  if(!id)return emptyRow(body,4,"Choose a supplier to view evidence.");
+  const data=await workspaceRequest("/api/suppliers/"+encodeURIComponent(id)+"/documents");
+  if(!data.items.length)return emptyRow(body,4,"No evidence files uploaded.");
+  for(const item of data.items){
+    const row=document.createElement("tr");textCell(row,item.original_filename);textCell(row,item.scan_status);textCell(row,new Date(item.created_at).toLocaleString());
+    const cell=document.createElement("td"),button=document.createElement("button");button.type="button";button.className="table-action";button.textContent="Download";
+    button.addEventListener("click",async()=>{try{const response=await fetch("/api/suppliers/"+encodeURIComponent(id)+"/documents/"+encodeURIComponent(item.id),{credentials:"same-origin"});if(!response.ok){const data=await response.json().catch(()=>({}));throw new Error(data.error||"Download failed.");}const blob=await response.blob(),url=URL.createObjectURL(blob),link=document.createElement("a");link.href=url;link.download=item.original_filename;link.click();URL.revokeObjectURL(url);}catch(error){document.querySelector("#supplier-document-message").textContent=error.message;}});
+    cell.append(button);row.append(cell);body.append(row);
+  }
+}
+async function loadPurchaseOrders(){
+  const body=document.querySelector("#purchase-order-rows"),message=document.querySelector("#purchase-orders-message");message.textContent="";
+  try{
+    const data=await workspaceRequest("/api/purchase-orders");purchaseOrderRecords=data.items;body.replaceChildren();
+    if(!data.items.length)emptyRow(body,5,"No purchase orders created yet.");
+    for(const order of data.items){const row=document.createElement("tr");textCell(row,order.order_number);const supplier=supplierRecords.find((item)=>item.id===order.supplier_id);textCell(row,supplier?supplier.legal_name:order.supplier_id);textCell(row,order.status.replaceAll("_"," "));textCell(row,order.currency);textCell(row,order.lines.map((line)=>line.received_quantity+" / "+line.ordered_quantity).join(", "));body.append(row);}
+    const select=document.querySelector("#receipt-order");select.replaceChildren(new Option("Choose an open order",""));
+    for(const order of data.items.filter((item)=>!["received","cancelled"].includes(item.status)))select.add(new Option(order.order_number,order.id));
+    populateReceiptLines();
+    const productSelect=document.querySelector("#po-product");productSelect.replaceChildren(new Option("Choose product",""));
+    for(const product of products.filter((item)=>item.track_inventory&&item.is_active!==false))productSelect.add(new Option(product.name+" · "+product.sku,product.id));
+  }catch(error){message.textContent=error.message;emptyRow(body,5,"Purchase orders could not be loaded.");}
+}
+function populateReceiptLines(){
+  const order=purchaseOrderRecords.find((item)=>item.id===document.querySelector("#receipt-order").value),select=document.querySelector("#receipt-line");
+  select.replaceChildren(new Option("Choose outstanding line",""));if(!order)return;
+  for(const line of order.lines.filter((item)=>Number(item.remaining_quantity)>0)){const product=products.find((item)=>item.id===line.product_id);select.add(new Option((product?product.name:line.product_id)+" · remaining "+line.remaining_quantity,line.id));}
+}
+document.querySelector("#supplier-form").addEventListener("submit",async(event)=>{
+  event.preventDefault();const form=event.currentTarget,button=form.querySelector("button");button.disabled=true;
+  try{
+    await workspaceRequest("/api/suppliers",{method:"POST",body:JSON.stringify({
+      legal_name:document.querySelector("#supplier-legal-name").value,country:document.querySelector("#supplier-country").value,
+      registration_number:document.querySelector("#supplier-registration").value,tax_identifier:document.querySelector("#supplier-tax").value,
+      contact_name:document.querySelector("#supplier-contact-name").value,contact_email:document.querySelector("#supplier-contact-email").value,contact_phone:document.querySelector("#supplier-contact-phone").value,
+      authorised_categories:supplierCsv(document.querySelector("#supplier-categories").value),authorised_territories:supplierCsv(document.querySelector("#supplier-territories").value),
+      licence_number:document.querySelector("#supplier-licence-number").value,licence_issuer:document.querySelector("#supplier-licence-issuer").value,licence_source_url:document.querySelector("#supplier-licence-url").value,
+      licence_valid_until:document.querySelector("#supplier-licence-expiry").value,next_review_date:document.querySelector("#supplier-review-date").value,
+    })});
+    form.reset();document.querySelector("#supplier-country").value="TZ";document.querySelector("#supplier-territories").value="TZ";await loadSuppliers();document.querySelector("#suppliers-message").textContent="Supplier submitted for independent review.";
+  }catch(error){document.querySelector("#suppliers-message").textContent=error.message;}finally{button.disabled=false;}
+});
+document.querySelector("#suppliers-refresh").addEventListener("click",loadSuppliers);
+document.querySelector("#supplier-document-owner").addEventListener("change",(event)=>loadSupplierDocuments(event.currentTarget.value).catch((error)=>{document.querySelector("#supplier-document-message").textContent=error.message;}));
+document.querySelector("#supplier-document-form").addEventListener("submit",async(event)=>{
+  event.preventDefault();const id=document.querySelector("#supplier-document-owner").value,file=document.querySelector("#supplier-document-file").files[0];if(!id||!file)return;
+  const button=event.currentTarget.querySelector("button");button.disabled=true;
+  try{const body=new FormData();body.append("file",file);await workspaceRequest("/api/suppliers/"+encodeURIComponent(id)+"/documents",{method:"POST",body});document.querySelector("#supplier-document-file").value="";document.querySelector("#supplier-document-message").textContent="Document scanned and stored securely.";await loadSupplierDocuments(id);}
+  catch(error){document.querySelector("#supplier-document-message").textContent=error.message;}finally{button.disabled=false;}
+});
+document.querySelector("#purchase-order-form").addEventListener("submit",async(event)=>{
+  event.preventDefault();const form=event.currentTarget,button=form.querySelector("button");button.disabled=true;
+  try{await workspaceRequest("/api/purchase-orders",{method:"POST",body:JSON.stringify({supplier_id:document.querySelector("#po-supplier").value,order_number:document.querySelector("#po-number").value,currency:document.querySelector("#po-currency").value,notes:document.querySelector("#po-notes").value,lines:[{product_id:document.querySelector("#po-product").value,ordered_quantity:document.querySelector("#po-quantity").value,unit_cost:document.querySelector("#po-unit-cost").value}]})});form.reset();document.querySelector("#po-currency").value="TZS";await loadPurchaseOrders();document.querySelector("#purchase-orders-message").textContent="Purchase order created.";}
+  catch(error){document.querySelector("#purchase-orders-message").textContent=error.message;}finally{button.disabled=false;}
+});
+document.querySelector("#purchase-orders-refresh").addEventListener("click",async()=>{await loadSuppliers();await loadPurchaseOrders();});
+document.querySelector("#receipt-order").addEventListener("change",populateReceiptLines);
+document.querySelector("#purchase-receipt-form").addEventListener("submit",async(event)=>{
+  event.preventDefault();const form=event.currentTarget,button=form.querySelector("button"),id=document.querySelector("#receipt-order").value;button.disabled=true;
+  try{await workspaceRequest("/api/purchase-orders/"+encodeURIComponent(id)+"/receipts",{method:"POST",body:JSON.stringify({delivery_note_reference:document.querySelector("#receipt-delivery-note").value,supplier_invoice_reference:document.querySelector("#receipt-invoice").value,lines:[{purchase_order_line_id:document.querySelector("#receipt-line").value,quantity:document.querySelector("#receipt-quantity").value,batch_code:document.querySelector("#receipt-batch").value,serial_reference:document.querySelector("#receipt-serial").value,certificate_reference:document.querySelector("#receipt-certificate").value,country_of_origin:document.querySelector("#receipt-origin").value,manufacturer_name:document.querySelector("#receipt-manufacturer").value,expiry_date:document.querySelector("#receipt-expiry").value}]})});form.reset();document.querySelector("#receipt-origin").value="TZ";await loadPurchaseOrders();document.querySelector("#receipt-message").textContent="Receipt recorded. Stock is quarantined pending verification.";}
+  catch(error){document.querySelector("#receipt-message").textContent=error.message;}finally{button.disabled=false;}
+});
+document.querySelector("#suppliers-tab").addEventListener("click",loadSuppliers);
+document.querySelector("#purchasing-tab").addEventListener("click",async()=>{await loadSuppliers();await loadPurchaseOrders();});
+document.addEventListener("salesdash:company-selected",()=>{
+  const allowed=["admin","manager"].includes(workspaceRole);document.querySelector("#suppliers-tab").hidden=!allowed;document.querySelector("#purchasing-tab").hidden=!allowed;
+  supplierRecords=[];purchaseOrderRecords=[];
+});
