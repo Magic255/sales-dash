@@ -905,7 +905,7 @@ def _scan_supplier_document(content):
         raise RuntimeError("Supplier document malware scanning is not configured.")
     with socket.create_connection((host, port), timeout=timeout) as connection:
         connection.settimeout(timeout)
-        connection.sendall(b"zINSTREAM\\0")
+        connection.sendall(b"zINSTREAM\0")
         for offset in range(0, len(content), 64 * 1024):
             chunk = content[offset:offset + 64 * 1024]
             connection.sendall(struct.pack("!I", len(chunk)) + chunk)
@@ -916,9 +916,9 @@ def _scan_supplier_document(content):
             if not part:
                 break
             response.extend(part)
-            if b"\\0" in part:
+            if b"\0" in part:
                 break
-    result = bytes(response).rstrip(b"\\0").decode("utf-8", errors="replace")
+    result = bytes(response).rstrip(b"\0").decode("utf-8", errors="replace")
     if result.endswith("OK"):
         return "clean"
     if "FOUND" in result:
