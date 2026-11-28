@@ -51,14 +51,14 @@ def _clamav_scan(data):
     try:
         with socket.create_connection((host, port), timeout=timeout) as connection:
             connection.settimeout(timeout)
-            connection.sendall(b"zINSTREAM\\0")
+            connection.sendall(b"zINSTREAM\0")
             for offset in range(0, len(data), CHUNK_BYTES):
                 chunk = data[offset:offset + CHUNK_BYTES]
                 connection.sendall(struct.pack("!I", len(chunk)))
                 connection.sendall(chunk)
             connection.sendall(struct.pack("!I", 0))
             response = bytearray()
-            while len(response) <= 1024 and not response.endswith(b"\\n"):
+            while len(response) <= 1024 and not response.endswith(b"\n"):
                 part = connection.recv(256)
                 if not part:
                     break
