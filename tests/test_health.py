@@ -227,7 +227,7 @@ def test_production_requires_distinct_supplier_document_encryption_key():
             "SECRET_KEY": "production-test-secret",
             "RATELIMIT_STORAGE_URI": "redis://localhost:6379/0",
             "MFA_ENCRYPTION_KEY": Fernet.generate_key().decode(),
-            "COMPLIANCE_EVIDENCE_ENCRYPTION_KEY": Fernet.generate_key().decode(),
+            "COMPLIANCE_EVIDENCE_ENCRYPTION_KEY": shared_key,
             "SUPPLIER_DOCUMENT_ENCRYPTION_KEY": shared_key,
             "SQLALCHEMY_DATABASE_URI": "sqlite://",
         })
