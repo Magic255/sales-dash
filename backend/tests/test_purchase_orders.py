@@ -273,9 +273,19 @@ def test_supplier_invoice_three_way_match_waits_for_receipt_and_matches_price():
         assert pending.status_code == 201
         assert pending.json["item"]["match_status"] == "pending_receipt"
 
+        second_receipt = _receipt(
+            client, order["id"], line_id, "DN-INVOICE-003", "3.000",
+            "BATCH-INVOICE-003",
+        )
+        assert second_receipt.status_code == 201
         listed = client.get(f"/api/purchase-orders/{order['id']}/supplier-invoices")
         assert listed.status_code == 200
         assert len(listed.json["items"]) == 2
+        pending_after_receipt = next(
+            item for item in listed.json["items"]
+            if item["invoice_reference"] == "INV-PENDING-001"
+        )
+        assert pending_after_receipt["match_status"] == "matched"
     finally:
         with app.app_context():
             db.session.remove()
