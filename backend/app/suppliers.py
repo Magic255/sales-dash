@@ -330,6 +330,7 @@ def review_supplier(user, supplier_id):
                     SupplierDocument.company_id == company_id,
                     SupplierDocument.supplier_id == item.id,
                     SupplierDocument.scan_status == "clean",
+                    SupplierDocument.created_at >= item.updated_at,
                 )
             )
             if not clean_document_count:
