@@ -51,12 +51,12 @@ def _text(value, field, limit, required=False):
     return result or None
 
 
-def _quantity(value, field, places):
+def _quantity(value, field, places, allow_zero=False):
     try:
         number = Decimal(str(value))
     except (InvalidOperation, TypeError, ValueError):
         raise ValueError(f"{field} must be a valid number.") from None
-    if not number.is_finite() or number <= 0 or number.as_tuple().exponent < -places:
+    if (not number.is_finite() or number < 0 or (number == 0 and not allow_zero)\n            or number.as_tuple().exponent < -places):
         raise ValueError(f"{field} must be positive with at most {places} decimal places.")
     if number > Decimal("999999999.999"):
         raise ValueError(f"{field} is too large.")
@@ -169,7 +169,7 @@ def create_purchase_order(user):
             if product.category_key not in (supplier.authorised_categories or []):
                 raise ValueError("Supplier is not authorised for one or more product categories.")
             quantity = _quantity(raw.get("ordered_quantity"), "ordered quantity", 3)
-            unit_cost = _quantity(raw.get("unit_cost"), "unit cost", 2)
+            unit_cost = _quantity(raw.get("unit_cost"), "unit cost", 2, allow_zero=True)
             parsed.append((product, quantity, unit_cost))
         order = PurchaseOrder(
             company_id=company_id, supplier_id=supplier.id, order_number=order_number,
