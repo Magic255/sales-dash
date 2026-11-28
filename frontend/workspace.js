@@ -2042,7 +2042,7 @@ async function loadExpenses() {
       textCell(row,item.expense_date);textCell(row,item.description);textCell(row,item.category.replaceAll("_"," "));
       textCell(row,amount(item.currency,item.amount));textCell(row,item.payment_method);textCell(row,item.status);
       const actions=document.createElement("td");
-      if(item.status==="recorded" && workspaceRole==="admin") {
+      if(item.status==="recorded" && ["admin","manager"].includes(workspaceRole)) {
         addCatalogAction(actions,"Void",async()=>{
           const reason=window.prompt("Reason for voiding this expense");
           if(reason===null)return;
@@ -2055,7 +2055,8 @@ async function loadExpenses() {
       row.append(actions);body.append(row);
     }
     message.textContent="Showing "+data.items.length+" expense records (maximum 500).";
-    document.querySelector("#expenses-totals").textContent="Recorded totals: "+(data.totals_by_currency||[]).map(item=>amount(item.currency,item.amount)).join(" · ")||"Recorded totals: —";
+    const totals=(data.totals_by_currency||[]).map(item=>amount(item.currency,item.amount));
+    document.querySelector("#expenses-totals").textContent="Recorded totals: "+(totals.length?totals.join(" · "):"—");
   } catch(error) {
     emptyRow(body,7,"Expenses could not be loaded.");message.textContent=error.message;
   }
