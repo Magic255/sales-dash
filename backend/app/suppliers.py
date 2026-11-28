@@ -82,6 +82,16 @@ def _https_url(value, field):
     return value
 
 
+def _territories(value):
+    result = _string_list(value, "authorised_territories", upper=True)
+    if any(
+        len(code) != 2 or not code.isascii() or not code.isalpha()
+        for code in result
+    ):
+        raise ValueError("Authorised territories must use two-letter ISO country codes.")
+    return result
+
+
 def _optional_date(value, field):
     if value in (None, ""):
         return None
@@ -176,9 +186,7 @@ def create_supplier(user):
             authorised_brands=_string_list(
                 data.get("authorised_brands"), "authorised_brands"
             ),
-            authorised_territories=_string_list(
-                data.get("authorised_territories"), "authorised_territories", upper=True
-            ),
+            authorised_territories=_territories(data.get("authorised_territories")),
             licence_number=_text(data, "licence_number", 160),
             licence_issuer=_text(data, "licence_issuer", 180),
             licence_source_url=_https_url(_text(data, "licence_source_url", 500), "Licence source URL"),
@@ -250,12 +258,11 @@ def update_supplier(_user, supplier_id):
             ("authorised_territories", True, False),
         ):
             if key in data:
-                values = _string_list(data[key], key, upper=upper, lower=lower)
-                if key == "authorised_territories" and any(
-                    len(value) != 2 or not value.isascii() or not value.isalpha()
-                    for value in values
-                ):
-                    raise ValueError("Authorised territories must use two-letter ISO country codes.")
+                values = (
+                    _territories(data[key])
+                    if key == "authorised_territories"
+                    else _string_list(data[key], key, upper=upper, lower=lower)
+                )
                 setattr(item, key, values)
         if "licence_valid_until" in data:
             item.licence_valid_until = _optional_date(
@@ -317,11 +324,7 @@ def review_supplier(user, supplier_id):
                 raise ValueError("A current, unexpired supplier licence is required.")
             if not item.authorised_categories or not item.authorised_territories:
                 raise ValueError("At least one authorised category and territory are required.")
-            if any(
-                len(value) != 2 or not value.isascii() or not value.isalpha()
-                for value in item.authorised_territories
-            ):
-                raise ValueError("Authorised territories must use two-letter ISO country codes.")
+
             if item.country not in item.authorised_territories:
                 raise ValueError("The supplier's registered country must be included in its authorised territories.")
             item.status = "approved"
