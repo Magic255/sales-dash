@@ -1,6 +1,6 @@
 """Add scanned supplier documents and bind receipts to approved suppliers.
 
-Revision ID: 0030_supplier_documents_receipt_gate
+Revision ID: 0030_supplier_docs_gate
 Revises: 0029_supplier_onboarding
 """
 
@@ -9,7 +9,7 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = "0030_supplier_documents_receipt_gate"
+revision = "0030_supplier_docs_gate"
 down_revision = "0029_supplier_onboarding"
 branch_labels = None
 depends_on = None
