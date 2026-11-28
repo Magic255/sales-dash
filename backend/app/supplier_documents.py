@@ -71,7 +71,7 @@ def _clamav_scan(data):
     result = bytes(response).strip()
     if result.endswith(b": OK"):
         return "clean"
-    if result.endswith(b": FOUND"):
+    if result.endswith(b" FOUND"):
         return "infected"
     raise RuntimeError("Malware scanner returned an invalid response; upload was blocked.")
 
