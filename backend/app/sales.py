@@ -835,6 +835,16 @@ def list_stock_batches(_user, product_id):
         items.append({
             "id": str(batch.id),
             "batch_code": batch.batch_code,
+            "serial_reference": batch.serial_reference,
+            "duplicate_certificate_reference": bool(
+                batch.certificate_reference and db.session.scalar(
+                    select(StockBatch.id).where(
+                        StockBatch.company_id == company_id,
+                        StockBatch.certificate_reference == batch.certificate_reference,
+                        StockBatch.id != batch.id,
+                    ).limit(1)
+                )
+            ),
             "expiry_date": batch.expiry_date.isoformat() if batch.expiry_date else None,
             "compliance_status": batch.compliance_status,
             "supplier_id": str(batch.supplier_id) if batch.supplier_id else None,
@@ -1198,6 +1208,19 @@ def verify_stock_batch_compliance(user, batch_id):
                 "issuer_confirmation", "document_review",
             }:
                 raise ValueError("Unsupported verification method.")
+            duplicate_certificate = db.session.scalar(
+                select(StockBatch.id).where(
+                    StockBatch.company_id == company_id,
+                    StockBatch.certificate_reference == certificate_reference,
+                    StockBatch.id != batch.id,
+                ).limit(1)
+            ) is not None
+            if duplicate_certificate and verification_method not in {
+                "official_registry", "issuer_confirmation"
+            }:
+                raise ValueError(
+                    "A duplicated certificate reference requires official-registry or direct issuer confirmation."
+                )
             verification_source_url = _text(data, "verification_source_url", 500)
             verification_reference = _text(data, "verification_reference", 200)
             verified_product_identifier = _text(
