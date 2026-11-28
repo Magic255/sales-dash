@@ -56,7 +56,8 @@ def _quantity(value, field, places, allow_zero=False):
         number = Decimal(str(value))
     except (InvalidOperation, TypeError, ValueError):
         raise ValueError(f"{field} must be a valid number.") from None
-    if (not number.is_finite() or number < 0 or (number == 0 and not allow_zero)\n            or number.as_tuple().exponent < -places):
+    if (not number.is_finite() or number < 0 or (number == 0 and not allow_zero)
+            or number.as_tuple().exponent < -places):
         raise ValueError(f"{field} must be positive with at most {places} decimal places.")
     if number > Decimal("999999999.999"):
         raise ValueError(f"{field} is too large.")
