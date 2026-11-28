@@ -86,7 +86,16 @@ async function loadAuditLogs(generation = workspaceGeneration) {
       company_settings_updated: "Company settings updated",
       team_member_role_changed: "Team role changed",
       team_member_suspended: "Team member suspended",
-      team_member_reactivated: "Team member reactivated",\n      expense_created: "Expense recorded",\n      expense_voided: "Expense voided",\n      supplier_created: "Supplier registered",\n      supplier_approved: "Supplier approved",\n      supplier_restricted: "Supplier restricted",\n      supplier_suspended: "Supplier suspended",\n      supplier_rejected: "Supplier rejected",\n      purchase_order_created: "Purchase order created",\n      purchase_order_receipt_recorded: "Goods received against purchase order",
+      team_member_reactivated: "Team member reactivated",
+      expense_created: "Expense recorded",
+      expense_voided: "Expense voided",
+      supplier_created: "Supplier registered",
+      supplier_approved: "Supplier approved",
+      supplier_restricted: "Supplier restricted",
+      supplier_suspended: "Supplier suspended",
+      supplier_rejected: "Supplier rejected",
+      purchase_order_created: "Purchase order created",
+      purchase_order_receipt_recorded: "Goods received against purchase order",
     };
     for (const item of data.items) {
       const row = document.createElement("tr");
