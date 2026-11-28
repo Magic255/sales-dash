@@ -69,6 +69,15 @@ def create_app(test_config=None):
             )
 
     if app.config.get("APP_ENV") == "production":
+        encryption_key = app.config.get("MFA_ENCRYPTION_KEY")
+        if not isinstance(encryption_key, str) or not encryption_key:
+            raise RuntimeError("MFA_ENCRYPTION_KEY must be set in production.")
+        try:
+            Fernet(encryption_key.encode("ascii"))
+        except (ValueError, UnicodeEncodeError) as error:
+            raise RuntimeError("MFA_ENCRYPTION_KEY must be a valid Fernet key.") from error
+
+    if app.config.get("APP_ENV") == "production":
         supplier_key = app.config.get("SUPPLIER_DOCUMENT_ENCRYPTION_KEY")
         if not isinstance(supplier_key, str) or not supplier_key:
             raise RuntimeError("SUPPLIER_DOCUMENT_ENCRYPTION_KEY must be set in production.")
@@ -83,15 +92,6 @@ def create_app(test_config=None):
             raise RuntimeError(
                 "Supplier document encryption key must be distinct from compliance evidence and MFA keys."
             )
-
-    if app.config.get("APP_ENV") == "production":
-        encryption_key = app.config.get("MFA_ENCRYPTION_KEY")
-        if not isinstance(encryption_key, str) or not encryption_key:
-            raise RuntimeError("MFA_ENCRYPTION_KEY must be set in production.")
-        try:
-            Fernet(encryption_key.encode("ascii"))
-        except (ValueError, UnicodeEncodeError) as error:
-            raise RuntimeError("MFA_ENCRYPTION_KEY must be a valid Fernet key.") from error
 
     db.init_app(app)
     migrate.init_app(app, db)
