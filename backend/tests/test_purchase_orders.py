@@ -2,7 +2,6 @@ from datetime import date, datetime, timedelta, timezone
 from uuid import UUID
 
 from argon2 import PasswordHasher
-from flask import url_for
 
 from app import create_app
 from app.extensions import db
