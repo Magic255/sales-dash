@@ -62,8 +62,6 @@ def record_audit_event(
         "purchase_order_receipt_recorded",
         "expense_created",
         "expense_voided",
-        "expense_created",
-        "expense_voided",
     }
     if event_type not in allowed_events:
         raise ValueError("Unsupported audit event.")
