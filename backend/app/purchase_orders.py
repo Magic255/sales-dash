@@ -305,7 +305,10 @@ def receive_purchase_order(user, purchase_order_id):
                 raise ValueError(
                     "Country of origin must be a two-letter ISO country code."
                 )
-            if origin.lower() not in [str(x).lower() for x in (supplier.authorised_territories or [])]:
+            authorised_origins = {
+                str(value).lower() for value in (supplier.authorised_territories or [])
+            }
+            if origin.lower() not in authorised_origins:
                 raise ValueError("Supplier is not authorised for this country of origin.")
             expiry_raw = raw.get("expiry_date")
             if expiry_raw in (None, ""):
@@ -317,7 +320,10 @@ def receive_purchase_order(user, purchase_order_id):
                     raise ValueError("Expiry date must use YYYY-MM-DD.") from None
             else:
                 raise ValueError("Expiry date must use YYYY-MM-DD.")
-            parsed.append((line, product, quantity, batch_code, serial_reference, certificate_reference, duplicate_certificate, manufacturer, origin, expiry))
+            parsed.append((
+                line, product, quantity, batch_code, serial_reference,
+                certificate_reference, duplicate_certificate, manufacturer, origin, expiry,
+            ))
         receipt = PurchaseOrderReceipt(
             company_id=company_id, purchase_order_id=order.id, supplier_id=supplier.id,
             delivery_note_reference=delivery_note, supplier_invoice_reference=invoice,
@@ -327,7 +333,10 @@ def receive_purchase_order(user, purchase_order_id):
         db.session.flush()
         receipt_items = []
         movements = []
-        for line, product, quantity, batch_code, serial_reference, certificate_reference, duplicate_certificate, manufacturer, origin, expiry in parsed:
+        for (
+            line, product, quantity, batch_code, serial_reference,
+            certificate_reference, duplicate_certificate, manufacturer, origin, expiry,
+        ) in parsed:
             batch = StockBatch(
                 company_id=company_id, product_id=product.id, batch_code=batch_code,
                 expiry_date=expiry, serial_reference=serial_reference,
@@ -336,7 +345,8 @@ def receive_purchase_order(user, purchase_order_id):
                 manufacturer_name=manufacturer, country_of_origin=origin,
                 certificate_reference=certificate_reference,
                 verification_notes=(
-                    "Duplicate certificate reference detected; independent issuer/registry verification required."
+                    "Duplicate certificate reference detected; independent issuer/registry "
+                    "verification required."
                     if duplicate_certificate else None
                 ),
                 compliance_status="pending_verification", received_by_user_id=user.id,
@@ -357,7 +367,10 @@ def receive_purchase_order(user, purchase_order_id):
             line.received_quantity += quantity
         db.session.add_all(receipt_items + movements)
         order.status = (
-            "received" if all(line.received_quantity == line.ordered_quantity for line in order_lines)
+            "received"
+            if all(
+                line.received_quantity == line.ordered_quantity for line in order_lines
+            )
             else "partially_received"
         )
         db.session.flush()
@@ -375,13 +388,25 @@ def receive_purchase_order(user, purchase_order_id):
                 "purchase_order_line_id": str(item.purchase_order_line_id),
                 "batch_id": str(item.batch_id), "quantity": str(item.quantity),
                 "serial_reference": next(
-                    (entry[4] for entry in parsed if entry[0].id == item.purchase_order_line_id), None
+                    (
+                        entry[4] for entry in parsed
+                        if entry[0].id == item.purchase_order_line_id
+                    ),
+                    None,
                 ),
                 "certificate_reference": next(
-                    (entry[5] for entry in parsed if entry[0].id == item.purchase_order_line_id), None
+                    (
+                        entry[5] for entry in parsed
+                        if entry[0].id == item.purchase_order_line_id
+                    ),
+                    None,
                 ),
                 "duplicate_certificate_reference": next(
-                    (entry[6] for entry in parsed if entry[0].id == item.purchase_order_line_id), False
+                    (
+                        entry[6] for entry in parsed
+                        if entry[0].id == item.purchase_order_line_id
+                    ),
+                    False,
                 ),
             } for item in receipt_items],
             "inventory_status": "quarantined_pending_compliance",
@@ -392,5 +417,7 @@ def receive_purchase_order(user, purchase_order_id):
         return jsonify({"error": str(error)}), 400
     except IntegrityError:
         db.session.rollback()
-        return jsonify({"error": "Duplicate delivery note, batch code or invalid receipt reference."}), 409
+        return jsonify({
+            "error": "Duplicate delivery note, batch code or invalid receipt reference."
+        }), 409
     return jsonify({"item": result, "purchase_order": _order_json(order)}), 201
