@@ -174,7 +174,7 @@ class AuditLog(db.Model):
             "'supplier_rejected', 'supplier_re_review_required', "
             "'supplier_document_uploaded', 'supplier_document_rejected', "
             "'supplier_document_downloaded', 'purchase_order_created', "
-            "'purchase_order_receipt_recorded', 'supplier_invoice_recorded', 'expense_created', 'expense_voided')",
+            "'purchase_order_receipt_recorded', 'supplier_invoice_recorded', 'supplier_invoice_matched', 'expense_created', 'expense_voided')",
             name="event_type_is_supported",
         ),
         db.Index("ix_audit_logs_company_time", "company_id", "occurred_at"),
