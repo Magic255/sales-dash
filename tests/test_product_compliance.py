@@ -1,4 +1,5 @@
 # ruff: noqa: I001
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from io import BytesIO
 from uuid import UUID
@@ -15,6 +16,7 @@ from app.models import (
     Customer,
     Product,
     StockBatch,
+    Supplier,
     User,
 )
 
@@ -93,6 +95,22 @@ def test_compliance_required_stock_is_received_to_quarantine_until_independent_v
                     role="salesperson", status="active",
                 ),
             ])
+            supplier = Supplier(
+                company_id=company.id,
+                legal_name="Synthetic Approved Supplier Ltd",
+                country="TZ",
+                authorised_categories=["general", "food", "tools", "medical-device", "stationery", "unconfigured"],
+                authorised_brands=[],
+                authorised_territories=["TZ", "CN", "DE"],
+                licence_number="LIC-SYNTHETIC-001",
+                licence_issuer="Synthetic Authority",
+                licence_valid_until=date.today() + timedelta(days=180),
+                status="approved",
+                submitted_by_user_id=admin.id,
+                reviewed_by_user_id=verifier.id,
+                reviewed_at=datetime.now(timezone.utc),
+            )
+            db.session.add(supplier)
             product = Product(
                 company_id=company.id, created_by_user_id=admin.id,
                 sku="REGULATED-001", name="Synthetic regulated item",
@@ -105,6 +123,7 @@ def test_compliance_required_stock_is_received_to_quarantine_until_independent_v
             company_id = str(company.id)
             product_id = str(product.id)
             customer_id = str(customer.id)
+            supplier_id = str(supplier.id)
 
         admin_client = app.test_client()
         _login(admin_client, "compliance-admin@example.test", company_id)
@@ -121,7 +140,7 @@ def test_compliance_required_stock_is_received_to_quarantine_until_independent_v
         receipt = admin_client.post(
             f"/api/products/{product_id}/stock-movements",
             json={
-                "movement_type": "received",
+                "movement_type": "received", "supplier_id": supplier_id,
                 "quantity": "8",
                 "reason": "Synthetic receipt for compliance test",
                 "batch_code": "BATCH-TEST-001",
@@ -341,6 +360,22 @@ def test_category_market_policy_enforces_quarantine_authorities_and_admin_except
                     role="manager", status="active",
                 ),
             ])
+            supplier = Supplier(
+                company_id=company.id,
+                legal_name="Synthetic Approved Supplier Ltd",
+                country="TZ",
+                authorised_categories=["general", "food", "tools", "medical-device", "stationery", "unconfigured"],
+                authorised_brands=[],
+                authorised_territories=["TZ", "CN", "DE"],
+                licence_number="LIC-SYNTHETIC-002",
+                licence_issuer="Synthetic Authority",
+                licence_valid_until=date.today() + timedelta(days=180),
+                status="approved",
+                submitted_by_user_id=admin.id,
+                reviewed_by_user_id=manager.id,
+                reviewed_at=datetime.now(timezone.utc),
+            )
+            db.session.add(supplier)
             product = Product(
                 company_id=company.id, created_by_user_id=admin.id,
                 sku="FOOD-001", name="Synthetic food product",
@@ -365,6 +400,7 @@ def test_category_market_policy_enforces_quarantine_authorities_and_admin_except
             product_id = str(product.id)
             exception_product_id = str(exception_product.id)
             unconfigured_product_id = str(unconfigured_product.id)
+            supplier_id = str(supplier.id)
 
         admin_client = app.test_client()
         manager_client = app.test_client()
