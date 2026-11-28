@@ -244,6 +244,7 @@ def receive_purchase_order(user, purchase_order_id):
         ).all()
         by_id = {line.id: line for line in order_lines}
         seen = set()
+        seen_certificate_refs = set()
         parsed = []
         for raw in raw_lines:
             if not isinstance(raw, dict):
@@ -272,17 +273,22 @@ def receive_purchase_order(user, purchase_order_id):
                 raise ValueError("Supplier authorisation no longer covers this product category.")
             batch_code = _text(raw, "batch_code", 80, required=True)
             serial_reference = _text(raw, "serial_reference", 160)
+            serial_reference = serial_reference.upper() if serial_reference else None
             certificate_reference = _text(raw, "certificate_reference", 160)
             if serial_reference and quantity != Decimal("1.000"):
                 raise ValueError("A serial-numbered receipt line must have a quantity of exactly one.")
             duplicate_certificate = False
             if certificate_reference:
-                duplicate_certificate = db.session.scalar(
-                    select(StockBatch.id).where(
-                        StockBatch.company_id == company_id,
-                        StockBatch.certificate_reference == certificate_reference,
-                    ).limit(1)
-                ) is not None
+                duplicate_certificate = (
+                    certificate_reference in seen_certificate_refs
+                    or db.session.scalar(
+                        select(StockBatch.id).where(
+                            StockBatch.company_id == company_id,
+                            StockBatch.certificate_reference == certificate_reference,
+                        ).limit(1)
+                    ) is not None
+                )
+                seen_certificate_refs.add(certificate_reference)
             manufacturer = _text(raw, "manufacturer_name", 160, required=True)
             origin = _text(raw, "country_of_origin", 2, required=True).upper()
             if len(origin) != 2 or not origin.isascii() or not origin.isalpha():
@@ -299,7 +305,7 @@ def receive_purchase_order(user, purchase_order_id):
                     raise ValueError("Expiry date must use YYYY-MM-DD.") from None
             else:
                 raise ValueError("Expiry date must use YYYY-MM-DD.")
-            parsed.append((line, product, quantity, batch_code, manufacturer, origin, expiry))
+            parsed.append((line, product, quantity, batch_code, serial_reference, certificate_reference, duplicate_certificate, manufacturer, origin, expiry))
         receipt = PurchaseOrderReceipt(
             company_id=company_id, purchase_order_id=order.id, supplier_id=supplier.id,
             delivery_note_reference=delivery_note, supplier_invoice_reference=invoice,
@@ -309,7 +315,7 @@ def receive_purchase_order(user, purchase_order_id):
         db.session.flush()
         receipt_items = []
         movements = []
-        for line, product, quantity, batch_code, manufacturer, origin, expiry in parsed:
+        for line, product, quantity, batch_code, serial_reference, certificate_reference, duplicate_certificate, manufacturer, origin, expiry in parsed:
             batch = StockBatch(
                 company_id=company_id, product_id=product.id, batch_code=batch_code,
                 expiry_date=expiry, serial_reference=serial_reference,
@@ -357,7 +363,13 @@ def receive_purchase_order(user, purchase_order_id):
                 "purchase_order_line_id": str(item.purchase_order_line_id),
                 "batch_id": str(item.batch_id), "quantity": str(item.quantity),
                 "serial_reference": next(
-                    (entry[3] for entry in parsed if entry[0].id == item.purchase_order_line_id), None
+                    (entry[4] for entry in parsed if entry[0].id == item.purchase_order_line_id), None
+                ),
+                "certificate_reference": next(
+                    (entry[5] for entry in parsed if entry[0].id == item.purchase_order_line_id), None
+                ),
+                "duplicate_certificate_reference": next(
+                    (entry[6] for entry in parsed if entry[0].id == item.purchase_order_line_id), False
                 ),
             } for item in receipt_items],
             "inventory_status": "quarantined_pending_compliance",
