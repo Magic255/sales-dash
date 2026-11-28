@@ -2,6 +2,7 @@
 
 from datetime import date, datetime, timezone
 from uuid import UUID
+from urllib.parse import urlsplit
 
 from flask import Blueprint, jsonify, request, session
 from sqlalchemy import select
@@ -66,6 +67,21 @@ def _string_list(value, field, *, upper=False, lower=False):
     return result
 
 
+def _https_url(value, field):
+    if value in (None, ""):
+        return None
+    if not isinstance(value, str):
+        raise ValueError(f"{field} must be an HTTPS URL.")
+    value = value.strip()
+    parsed = urlsplit(value)
+    if (
+        parsed.scheme != "https" or not parsed.hostname
+        or parsed.username or parsed.password
+    ):
+        raise ValueError(f"{field} must be an HTTPS URL.")
+    return value
+
+
 def _optional_date(value, field):
     if value in (None, ""):
         return None
@@ -78,9 +94,11 @@ def _optional_date(value, field):
 
 
 def _effective_status(supplier):
-    if supplier.status == "approved" and supplier.licence_valid_until:
-        if supplier.licence_valid_until < date.today():
+    if supplier.status == "approved":
+        if supplier.licence_valid_until and supplier.licence_valid_until < date.today():
             return "expired"
+        if supplier.next_review_date and supplier.next_review_date < date.today():
+            return "pending_review"
     return supplier.status
 
 
@@ -163,7 +181,7 @@ def create_supplier(user):
             ),
             licence_number=_text(data, "licence_number", 160),
             licence_issuer=_text(data, "licence_issuer", 180),
-            licence_source_url=_text(data, "licence_source_url", 500),
+            licence_source_url=_https_url(_text(data, "licence_source_url", 500), "Licence source URL"),
             licence_valid_until=_optional_date(data.get("licence_valid_until"), "Licence expiry"),
             next_review_date=_optional_date(data.get("next_review_date"), "Next review date"),
             submitted_by_user_id=user.id,
@@ -222,15 +240,23 @@ def update_supplier(_user, supplier_id):
                 ))
         if "country" in data:
             item.country = _country(data["country"])
+        if "licence_source_url" in data:
+            item.licence_source_url = _https_url(
+                item.licence_source_url, "Licence source URL"
+            )
         for key, upper, lower in (
             ("authorised_categories", False, True),
             ("authorised_brands", False, False),
             ("authorised_territories", True, False),
         ):
             if key in data:
-                setattr(item, key, _string_list(
-                    data[key], key, upper=upper, lower=lower
-                ))
+                values = _string_list(data[key], key, upper=upper, lower=lower)
+                if key == "authorised_territories" and any(
+                    len(value) != 2 or not value.isascii() or not value.isalpha()
+                    for value in values
+                ):
+                    raise ValueError("Authorised territories must use two-letter ISO country codes.")
+                setattr(item, key, values)
         if "licence_valid_until" in data:
             item.licence_valid_until = _optional_date(
                 data["licence_valid_until"], "Licence expiry"
@@ -291,6 +317,11 @@ def review_supplier(user, supplier_id):
                 raise ValueError("A current, unexpired supplier licence is required.")
             if not item.authorised_categories or not item.authorised_territories:
                 raise ValueError("At least one authorised category and territory are required.")
+            if any(
+                len(value) != 2 or not value.isascii() or not value.isalpha()
+                for value in item.authorised_territories
+            ):
+                raise ValueError("Authorised territories must use two-letter ISO country codes.")
             if item.country not in item.authorised_territories:
                 raise ValueError("The supplier's registered country must be included in its authorised territories.")
             item.status = "approved"
