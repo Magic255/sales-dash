@@ -28,7 +28,7 @@ AUDIT_EVENTS = (
     "'supplier_created', 'supplier_approved', 'supplier_restricted', 'supplier_suspended', "
     "'supplier_rejected', 'supplier_re_review_required', 'supplier_document_uploaded', "
     "'supplier_document_rejected', 'supplier_document_downloaded', 'purchase_order_created', "
-    "'purchase_order_receipt_recorded', 'supplier_invoice_recorded', "
+    "'purchase_order_receipt_recorded', 'supplier_invoice_recorded', 'supplier_invoice_matched', "
     "'expense_created', 'expense_voided')"
 )
 
