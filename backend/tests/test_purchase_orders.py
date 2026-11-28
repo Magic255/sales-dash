@@ -88,17 +88,23 @@ def _order(client, supplier_id, product_id, quantity="5.000"):
     })
 
 
-def _receipt(client, order_id, line_id, delivery, quantity, batch):
+def _receipt(client, order_id, line_id, delivery, quantity, batch,
+             serial_reference=None, certificate_reference=None):
+    line = {
+        "purchase_order_line_id": line_id,
+        "quantity": quantity,
+        "batch_code": batch,
+        "manufacturer_name": "Synthetic Manufacturer",
+        "country_of_origin": "TZ",
+    }
+    if serial_reference:
+        line["serial_reference"] = serial_reference
+    if certificate_reference:
+        line["certificate_reference"] = certificate_reference
     return client.post(f"/api/purchase-orders/{order_id}/receipts", json={
         "delivery_note_reference": delivery,
         "supplier_invoice_reference": "INV-SYNTH-001",
-        "lines": [{
-            "purchase_order_line_id": line_id,
-            "quantity": quantity,
-            "batch_code": batch,
-            "manufacturer_name": "Synthetic Manufacturer",
-            "country_of_origin": "TZ",
-        }],
+        "lines": [line],
     })
 
 
@@ -113,14 +119,15 @@ def test_purchase_order_supports_partial_receipts_and_quarantines_batches():
         line = order["lines"][0]
         assert order["status"] == "issued"
 
-        first = _receipt(client, order["id"], line["id"], "DN-SYNTH-001", "2.000", "BATCH-PO-001")
+        first = _receipt(client, order["id"], line["id"], "DN-SYNTH-001", "2.000", "BATCH-PO-001", certificate_reference="CERT-DUP-SYNTH-001")
         assert first.status_code == 201
         assert first.json["item"]["status"] == "partially_received"
         assert first.json["item"]["inventory_status"] == "quarantined_pending_compliance"
 
-        second = _receipt(client, order["id"], line["id"], "DN-SYNTH-002", "3.000", "BATCH-PO-002")
+        second = _receipt(client, order["id"], line["id"], "DN-SYNTH-002", "3.000", "BATCH-PO-002", certificate_reference="CERT-DUP-SYNTH-001")
         assert second.status_code == 201
         assert second.json["item"]["status"] == "received"
+        assert second.json["item"]["lines"][0]["duplicate_certificate_reference"] is True
         assert second.json["purchase_order"]["lines"][0]["received_quantity"] == "5.000"
 
         with app.app_context():
@@ -180,3 +187,33 @@ def test_purchase_order_rejects_supplier_without_approved_status():
         with app.app_context():
             db.session.remove()
             db.drop_all()
+
+def test_duplicate_serial_number_is_rejected_across_partial_receipts():
+    app, (company_id, supplier_id, product_id) = _app()
+    try:
+        client = app.test_client()
+        _login(client, company_id)
+        created = _order(client, supplier_id, product_id, quantity="2.000")
+        order = created.json["item"]
+        line_id = order["lines"][0]["id"]
+        first = _receipt(
+            client, order["id"], line_id, "DN-SERIAL-001", "1.000",
+            "BATCH-SERIAL-001", serial_reference="SERIAL-SYNTH-001",
+        )
+        assert first.status_code == 201
+        duplicate = _receipt(
+            client, order["id"], line_id, "DN-SERIAL-002", "1.000",
+            "BATCH-SERIAL-002", serial_reference="serial-synth-001",
+        )
+        assert duplicate.status_code == 409
+        with app.app_context():
+            assert db.session.query(StockBatch).filter(
+                StockBatch.serial_reference == "SERIAL-SYNTH-001"
+            ).count() == 1
+            assert db.session.query(PurchaseOrderReceipt).count() == 1
+            assert db.session.query(PurchaseOrderLine).one().received_quantity == 1
+    finally:
+        with app.app_context():
+            db.session.remove()
+            db.drop_all()
+
