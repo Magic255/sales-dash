@@ -168,7 +168,12 @@ class AuditLog(db.Model):
             "'product_compliance_recalled', 'product_compliance_exception', "
             "'product_compliance_policy_updated', 'product_compliance_not_required_release', "
             "'product_compliance_evidence_uploaded', "
-            "'product_compliance_evidence_downloaded', 'supplier_created', 'supplier_approved', 'supplier_restricted', 'supplier_suspended', 'supplier_rejected', 'supplier_re_review_required', 'supplier_document_uploaded', 'supplier_document_rejected', 'supplier_document_downloaded', 'purchase_order_created', 'purchase_order_receipt_recorded')",
+            "'product_compliance_evidence_downloaded', 'supplier_created', "
+            "'supplier_approved', 'supplier_restricted', 'supplier_suspended', "
+            "'supplier_rejected', 'supplier_re_review_required', "
+            "'supplier_document_uploaded', 'supplier_document_rejected', "
+            "'supplier_document_downloaded', 'purchase_order_created', "
+            "'purchase_order_receipt_recorded')",
             name="event_type_is_supported",
         ),
         db.Index("ix_audit_logs_company_time", "company_id", "occurred_at"),
@@ -1014,7 +1019,8 @@ class Supplier(db.Model):
             name="fk_suppliers_reviewer_membership",
         ),
         CheckConstraint(
-            "status IN ('pending_review', 'approved', 'restricted', 'suspended', 'rejected', 'expired')",
+            "status IN ('pending_review', 'approved', 'restricted', "
+            "'suspended', 'rejected', 'expired')",
             name="supplier_status_supported",
         ),
         CheckConstraint(
@@ -1039,7 +1045,9 @@ class Supplier(db.Model):
 
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
     company_id: Mapped[UUID] = mapped_column(
-        Uuid(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE", name="fk_suppliers_company"), nullable=False
+        Uuid(as_uuid=True),
+        ForeignKey("companies.id", ondelete="CASCADE", name="fk_suppliers_company"),
+        nullable=False
     )
     legal_name: Mapped[str] = mapped_column(String(180), nullable=False)
     registration_number: Mapped[str | None] = mapped_column(String(120))
