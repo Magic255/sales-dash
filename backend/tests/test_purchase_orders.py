@@ -9,7 +9,7 @@ from app.extensions import db
 from app.models import (
     Company, CompanyMembership, Product, PurchaseOrder, PurchaseOrderLine,
     PurchaseOrderReceipt, PurchaseOrderReceiptLine, StockBatch, StockMovement,
-    Supplier, User,
+    Supplier, SupplierInvoice, User,
 )
 
 
