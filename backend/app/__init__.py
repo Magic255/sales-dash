@@ -89,6 +89,7 @@ def create_app(test_config=None):
     from .sales import sales_bp
     from .sales_targets import targets_bp
     from .team import team_bp
+    from .suppliers import suppliers_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(company_settings_bp)
@@ -97,6 +98,7 @@ def create_app(test_config=None):
     app.register_blueprint(sales_bp)
     app.register_blueprint(targets_bp)
     app.register_blueprint(team_bp)
+    app.register_blueprint(suppliers_bp)
     register_commands(app)
 
     @app.errorhandler(CSRFError)
