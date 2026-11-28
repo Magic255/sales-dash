@@ -173,7 +173,7 @@ class AuditLog(db.Model):
             "'supplier_rejected', 'supplier_re_review_required', "
             "'supplier_document_uploaded', 'supplier_document_rejected', "
             "'supplier_document_downloaded', 'purchase_order_created', "
-            "'purchase_order_receipt_recorded')",
+            "'purchase_order_receipt_recorded', 'expense_created', 'expense_voided')",
             name="event_type_is_supported",
         ),
         db.Index("ix_audit_logs_company_time", "company_id", "occurred_at"),
@@ -227,6 +227,62 @@ class Customer(db.Model):
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=utc_now
+    )
+
+
+class Expense(db.Model):
+    """Append-only company expense record; voiding preserves the original entry."""
+
+    __tablename__ = "expenses"
+    __table_args__ = (
+        db.UniqueConstraint("company_id", "id", name="uq_expenses_company_id"),
+        db.ForeignKeyConstraint(
+            ["company_id", "created_by_user_id"],
+            ["company_memberships.company_id", "company_memberships.user_id"],
+            ondelete="NO ACTION",
+            name="fk_expenses_creator_membership",
+        ),
+        db.ForeignKeyConstraint(
+            ["company_id", "voided_by_user_id"],
+            ["company_memberships.company_id", "company_memberships.user_id"],
+            ondelete="NO ACTION",
+            name="fk_expenses_voider_membership",
+        ),
+        CheckConstraint("amount > 0", name="expense_amount_positive"),
+        CheckConstraint("length(trim(description)) > 0", name="expense_description_not_empty"),
+        CheckConstraint("length(trim(category)) > 0", name="expense_category_not_empty"),
+        CheckConstraint(
+            "currency = upper(currency) AND length(currency) = 3",
+            name="expense_currency_iso",
+        ),
+        CheckConstraint("status IN ('recorded', 'void')", name="expense_status_supported"),
+        CheckConstraint(
+            "(status = 'recorded' AND void_reason IS NULL AND voided_by_user_id IS NULL "
+            "AND voided_at IS NULL) OR (status = 'void' AND length(trim(void_reason)) > 0 "
+            "AND voided_by_user_id IS NOT NULL AND voided_at IS NOT NULL)",
+            name="expense_void_fields_consistent",
+        ),
+        db.Index("ix_expenses_company_date", "company_id", "expense_date"),
+        db.Index("ix_expenses_company_category", "company_id", "category"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    company_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    created_by_user_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    category: Mapped[str] = mapped_column(String(60), nullable=False)
+    description: Mapped[str] = mapped_column(String(500), nullable=False)
+    amount: Mapped[Decimal] = mapped_column(db.Numeric(12, 2), nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="TZS", server_default="TZS")
+    expense_date: Mapped[date] = mapped_column(Date, nullable=False)
+    payment_method: Mapped[str | None] = mapped_column(String(40))
+    reference: Mapped[str | None] = mapped_column(String(120))
+    notes: Mapped[str | None] = mapped_column(String(1000))
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="recorded", server_default="recorded")
+    void_reason: Mapped[str | None] = mapped_column(String(500))
+    voided_by_user_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True))
+    voided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
 
