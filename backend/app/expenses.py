@@ -61,7 +61,7 @@ def _payload():
         expense_date = date.fromisoformat(data.get("expense_date", ""))
     except (InvalidOperation, ValueError, TypeError):
         raise ValueError("Enter a valid amount and expense date.") from None
-    if not amount.is_finite() or amount <= 0 or amount.as_tuple().exponent < -2:
+    if (not amount.is_finite() or amount <= 0 or amount > Decimal("9999999999.99")\n            or amount.as_tuple().exponent < -2):
         raise ValueError("Expense amount must be positive and use no more than two decimal places.")
     payment_method = data.get("payment_method")
     reference = data.get("reference")
