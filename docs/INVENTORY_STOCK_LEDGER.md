@@ -82,6 +82,6 @@ copied onto the batch as the canonical provenance value. Legacy batches and non-
 movements remain readable; returns and Admin adjustments retain their existing workflow.
 
 Supplier approval requires at least one clean supplier document. Documents are signature-
-checked, malware-scanned with a configured ClamAV daemon, encrypted at rest, and tenant-
-scoped. If ClamAV or the evidence encryption key is unavailable, uploads fail closed and
+checked, malware-scanned with a configured ClamAV daemon, encrypted at rest with a dedicated supplier-document key, and tenant-
+scoped. If ClamAV or the supplier-document encryption key is unavailable, uploads fail closed and
 the supplier cannot complete approval without scanned evidence.
