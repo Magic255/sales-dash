@@ -475,6 +475,7 @@ def _supplier_invoice_json(invoice):
         "total_amount": str(invoice.total_amount),
         "match_status": invoice.match_status,
         "lines": [{
+            "id": str(line.id),
             "purchase_order_line_id": str(line.purchase_order_line_id),
             "quantity": str(line.quantity),
             "unit_price": str(line.unit_price),
