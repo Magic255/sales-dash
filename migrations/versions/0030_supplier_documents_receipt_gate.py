@@ -34,7 +34,10 @@ def upgrade():
         sa.Column("encrypted_content", sa.LargeBinary(), nullable=False),
         sa.Column("scan_status", sa.String(length=16), nullable=False, server_default="clean"),
         sa.Column("scanned_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True),
+            server_default=sa.func.now(), nullable=False,
+        ),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("company_id", "id", name="uq_supplier_documents_company_id"),
         sa.ForeignKeyConstraint(
@@ -50,7 +53,10 @@ def upgrade():
             "content_type IN ('application/pdf', 'image/jpeg', 'image/png', 'image/webp')",
             name="supplier_document_content_type_supported",
         ),
-        sa.CheckConstraint("size_bytes > 0 AND size_bytes <= 8388608", name="supplier_document_size_supported"),
+        sa.CheckConstraint(
+            "size_bytes > 0 AND size_bytes <= 8388608",
+            name="supplier_document_size_supported",
+        ),
         sa.CheckConstraint("length(sha256) = 64", name="supplier_document_sha256_length"),
         sa.CheckConstraint("scan_status = 'clean'", name="supplier_document_must_be_clean"),
     )
@@ -92,7 +98,8 @@ def upgrade():
 def downgrade():
     op.execute(
         "UPDATE audit_logs SET event_type = 'supplier_re_review_required' "
-        "WHERE event_type IN ('supplier_document_uploaded', 'supplier_document_rejected', 'supplier_document_downloaded')"
+        "WHERE event_type IN ('supplier_document_uploaded', 'supplier_document_rejected', "
+        "'supplier_document_downloaded')"
     )
     op.drop_constraint("event_type_is_supported", "audit_logs", type_="check")
     op.create_check_constraint(
@@ -118,5 +125,7 @@ def downgrade():
     op.drop_index("ix_supplier_documents_company_supplier", table_name="supplier_documents")
     op.drop_table("supplier_documents")
     op.execute("REVOKE UPDATE (supplier_id) ON stock_batches FROM sales_dash_app")
-    op.drop_constraint("fk_stock_batches_supplier_same_company", "stock_batches", type_="foreignkey")
+    op.drop_constraint(
+        "fk_stock_batches_supplier_same_company", "stock_batches", type_="foreignkey"
+    )
     op.drop_column("stock_batches", "supplier_id")
