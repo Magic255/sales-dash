@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from io import BytesIO
 from uuid import UUID
@@ -16,6 +16,7 @@ from app.models import (
     DiscountApprovalRequest,
     Product,
     Sale,
+    Supplier,
     User,
 )
 
@@ -52,6 +53,27 @@ def make_client(role="admin"):
                 user_id=verifier.id, company_id=company.id, role="manager", status="active"
             ),
         ])
+        supplier = Supplier(
+            company_id=company.id,
+            legal_name="Synthetic Test Supplier",
+            country="TZ",
+            authorised_categories=[
+                "general", "food", "tools", "stationery",
+                "medical-device", "medical_devices", "unconfigured",
+            ],
+            authorised_brands=[],
+            authorised_territories=["TZ", "CN", "DE", "KE", "US", "GB", "JP", "IN", "AE"],
+            licence_number="LIC-SYNTHETIC-TEST",
+            licence_issuer="Synthetic Test Authority",
+            licence_valid_until=date.today() + timedelta(days=180),
+            status="approved",
+            submitted_by_user_id=user.id,
+            reviewed_by_user_id=verifier.id,
+            reviewed_at=datetime.now(timezone.utc),
+        )
+        db.session.add(supplier)
+        db.session.flush()
+        supplier_id = str(supplier.id)
         db.session.add(CategoryCompliancePolicy(
             company_id=company.id,
             category_key="general",
@@ -85,6 +107,7 @@ def make_client(role="admin"):
             kwargs["json"] = payload
         if isinstance(payload, dict) and payload.get("movement_type") == "received":
             payload = dict(payload)
+            payload["supplier_id"] = supplier_id
             payload["supplier_name"] = payload.get("supplier_name") or "Synthetic Test Supplier"
             payload["supplier_invoice_reference"] = (
                 payload.get("supplier_invoice_reference") or "SYNTHETIC-INVOICE-001"
