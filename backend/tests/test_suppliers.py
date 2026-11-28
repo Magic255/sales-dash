@@ -307,3 +307,56 @@ def test_supplier_document_is_scanned_encrypted_and_download_audited(monkeypatch
         with app.app_context():
             db.session.remove()
             db.drop_all()
+
+
+def test_supplier_document_detected_as_malware_is_never_persisted(monkeypatch):
+    from app import supplier_documents
+
+    app, (company_id, _admin_id, _manager_id) = _seed_app()
+    try:
+        client = app.test_client()
+        _login(client, "supplier-admin@example.test", company_id)
+        created = client.post("/api/suppliers", json=_supplier_payload())
+        supplier_id = created.json["item"]["id"]
+        monkeypatch.setattr(supplier_documents, "_clamav_scan", lambda _data: "infected")
+        response = client.post(
+            f"/api/suppliers/{supplier_id}/documents",
+            data={"file": (BytesIO(b"%PDF-1.7\\nsynthetic malware sample"), "blocked.pdf", "application/pdf")},
+            content_type="multipart/form-data",
+        )
+        assert response.status_code == 422
+        with app.app_context():
+            assert db.session.query(SupplierDocument).count() == 0
+    finally:
+        with app.app_context():
+            db.session.remove()
+            db.drop_all()
+
+
+def test_supplier_document_rejects_mismatched_file_signature_before_scanning(monkeypatch):
+    from app import supplier_documents
+
+    app, (company_id, _admin_id, _manager_id) = _seed_app()
+    try:
+        client = app.test_client()
+        _login(client, "supplier-admin@example.test", company_id)
+        created = client.post("/api/suppliers", json=_supplier_payload())
+        supplier_id = created.json["item"]["id"]
+        scanner_called = []
+        monkeypatch.setattr(
+            supplier_documents, "_clamav_scan",
+            lambda _data: scanner_called.append(True) or "clean",
+        )
+        response = client.post(
+            f"/api/suppliers/{supplier_id}/documents",
+            data={"file": (BytesIO(b"not a PDF"), "spoofed.pdf", "application/pdf")},
+            content_type="multipart/form-data",
+        )
+        assert response.status_code == 400
+        assert scanner_called == []
+        with app.app_context():
+            assert db.session.query(SupplierDocument).count() == 0
+    finally:
+        with app.app_context():
+            db.session.remove()
+            db.drop_all()
