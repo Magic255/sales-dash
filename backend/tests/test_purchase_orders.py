@@ -1,3 +1,4 @@
+# ruff: noqa: I001
 from datetime import date, datetime, timedelta, timezone
 from uuid import UUID
 
@@ -29,8 +30,12 @@ def _app():
         db.session.add_all([admin, manager, company])
         db.session.flush()
         db.session.add_all([
-            CompanyMembership(user_id=admin.id, company_id=company.id, role="admin", status="active"),
-            CompanyMembership(user_id=manager.id, company_id=company.id, role="manager", status="active"),
+            CompanyMembership(
+                user_id=admin.id, company_id=company.id, role="admin", status="active"
+            ),
+            CompanyMembership(
+                user_id=manager.id, company_id=company.id, role="manager", status="active"
+            ),
         ])
         supplier = Supplier(
             company_id=company.id,
@@ -119,12 +124,18 @@ def test_purchase_order_supports_partial_receipts_and_quarantines_batches():
         line = order["lines"][0]
         assert order["status"] == "issued"
 
-        first = _receipt(client, order["id"], line["id"], "DN-SYNTH-001", "2.000", "BATCH-PO-001", certificate_reference="CERT-DUP-SYNTH-001")
+        first = _receipt(
+            client, order["id"], line["id"], "DN-SYNTH-001", "2.000",
+            "BATCH-PO-001", certificate_reference="CERT-DUP-SYNTH-001",
+        )
         assert first.status_code == 201
         assert first.json["item"]["status"] == "partially_received"
         assert first.json["item"]["inventory_status"] == "quarantined_pending_compliance"
 
-        second = _receipt(client, order["id"], line["id"], "DN-SYNTH-002", "3.000", "BATCH-PO-002", certificate_reference="CERT-DUP-SYNTH-001")
+        second = _receipt(
+            client, order["id"], line["id"], "DN-SYNTH-002", "3.000",
+            "BATCH-PO-002", certificate_reference="CERT-DUP-SYNTH-001",
+        )
         assert second.status_code == 201
         assert second.json["item"]["status"] == "received"
         assert second.json["item"]["lines"][0]["duplicate_certificate_reference"] is True
