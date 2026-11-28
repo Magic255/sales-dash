@@ -269,3 +269,41 @@ def test_supplier_document_upload_fails_closed_without_malware_scanner():
         with app.app_context():
             db.session.remove()
             db.drop_all()
+
+
+def test_supplier_document_is_scanned_encrypted_and_download_audited(monkeypatch):
+    from app import supplier_documents
+
+    app, (company_id, _admin_id, _manager_id) = _seed_app()
+    try:
+        client = app.test_client()
+        _login(client, "supplier-admin@example.test", company_id)
+        created = client.post("/api/suppliers", json=_supplier_payload())
+        supplier_id = created.json["item"]["id"]
+        monkeypatch.setattr(supplier_documents, "_clamav_scan", lambda _data: "clean")
+
+        original = b"%PDF-1.7\\nsynthetic supplier licence\\n"
+        uploaded = client.post(
+            f"/api/suppliers/{supplier_id}/documents",
+            data={"file": (BytesIO(original), "synthetic-licence.pdf", "application/pdf")},
+            content_type="multipart/form-data",
+        )
+        assert uploaded.status_code == 201
+        document_id = uploaded.json["item"]["id"]
+        assert uploaded.json["item"]["scan_status"] == "clean"
+
+        with app.app_context():
+            stored = db.session.query(SupplierDocument).one()
+            assert stored.encrypted_content != original
+            assert stored.sha256 == __import__("hashlib").sha256(original).hexdigest()
+
+        downloaded = client.get(
+            f"/api/suppliers/{supplier_id}/documents/{document_id}"
+        )
+        assert downloaded.status_code == 200
+        assert downloaded.data == original
+        assert downloaded.headers["Cache-Control"] == "no-store"
+    finally:
+        with app.app_context():
+            db.session.remove()
+            db.drop_all()
