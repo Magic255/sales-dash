@@ -1199,7 +1199,7 @@ def verify_stock_batch_compliance(user, batch_id):
                 raise ValueError("Unsupported issuing authority role.")
             certificate_reference = _text(
                 data, "certificate_reference", 160, required=True
-            )
+            ).upper()
             verification_method = _text(
                 data, "verification_method", 32, required=True, lower=True
             )
