@@ -6,7 +6,7 @@ from argon2 import PasswordHasher
 
 from app import create_app
 from app.extensions import db
-from app.models import Company, CompanyMembership, Expense, User
+from app.models import AuditLog, Company, CompanyMembership, Expense, User
 
 
 def _app():
@@ -102,6 +102,10 @@ def test_admin_and_manager_can_record_expenses_and_admin_can_void_with_reason():
             assert stored.status == "void"
             assert stored.amount == Decimal("450000.00")
             assert stored.void_reason.startswith("Duplicate")
+            events = {
+                event.event_type for event in db.session.query(AuditLog).all()
+            }
+            assert events == {"expense_created", "expense_voided"}
     finally:
         with app.app_context():
             db.session.remove()
