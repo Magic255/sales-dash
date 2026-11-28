@@ -358,6 +358,58 @@ class CategoryCompliancePolicy(db.Model):
     )
 
 
+class SupplierDocument(db.Model):
+    """Encrypted, malware-scanned supplier licence and business evidence."""
+
+    __tablename__ = "supplier_documents"
+    __table_args__ = (
+        db.UniqueConstraint("company_id", "id", name="uq_supplier_documents_company_id"),
+        db.ForeignKeyConstraint(
+            ["company_id", "supplier_id"],
+            ["suppliers.company_id", "suppliers.id"],
+            ondelete="NO ACTION",
+            name="fk_supplier_documents_supplier_same_company",
+        ),
+        db.ForeignKeyConstraint(
+            ["company_id", "uploaded_by_user_id"],
+            ["company_memberships.company_id", "company_memberships.user_id"],
+            ondelete="NO ACTION",
+            name="fk_supplier_documents_uploader_membership",
+        ),
+        CheckConstraint(
+            "content_type IN ('application/pdf', 'image/jpeg', 'image/png', 'image/webp')",
+            name="supplier_document_content_type_supported",
+        ),
+        CheckConstraint(
+            "size_bytes > 0 AND size_bytes <= 8388608",
+            name="supplier_document_size_supported",
+        ),
+        CheckConstraint("length(sha256) = 64", name="supplier_document_sha256_length"),
+        CheckConstraint("scan_status = 'clean'", name="supplier_document_must_be_clean"),
+        db.Index(
+            "ix_supplier_documents_company_supplier",
+            "company_id", "supplier_id", "created_at",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    company_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    supplier_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    uploaded_by_user_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    original_filename: Mapped[str] = mapped_column(String(180), nullable=False)
+    content_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    encrypted_content: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    scan_status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="clean", server_default="clean"
+    )
+    scanned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 class StockBatch(db.Model):
     """A traceable stock receipt batch with an optional expiry date."""
 
@@ -373,6 +425,12 @@ class StockBatch(db.Model):
             ["products.company_id", "products.id"],
             ondelete="NO ACTION",
             name="fk_stock_batches_product_same_company",
+        ),
+        db.ForeignKeyConstraint(
+            ["company_id", "supplier_id"],
+            ["suppliers.company_id", "suppliers.id"],
+            ondelete="NO ACTION",
+            name="fk_stock_batches_supplier_same_company",
         ),
         db.ForeignKeyConstraint(
             ["company_id", "received_by_user_id"],
@@ -422,6 +480,7 @@ class StockBatch(db.Model):
     product_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
     batch_code: Mapped[str] = mapped_column(String(80), nullable=False)
     expiry_date: Mapped[date | None] = mapped_column(db.Date)
+    supplier_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True))
     supplier_name: Mapped[str | None] = mapped_column(String(160))
     supplier_invoice_reference: Mapped[str | None] = mapped_column(String(120))
     delivery_note_reference: Mapped[str | None] = mapped_column(String(120))
