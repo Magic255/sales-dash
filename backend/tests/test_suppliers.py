@@ -15,6 +15,8 @@ def _seed_app():
         "SQLALCHEMY_DATABASE_URI": "sqlite://",
         "WTF_CSRF_ENABLED": False,
         "RATELIMIT_ENABLED": False,
+        "COMPLIANCE_EVIDENCE_ENCRYPTION_KEY": Fernet.generate_key().decode("ascii"),
+        "SUPPLIER_DOCUMENT_CLAMD_HOST": None,
     })
     with app.app_context():
         db.create_all()
@@ -238,6 +240,28 @@ def test_supplier_approval_requires_clean_scanned_document():
         )
         assert response.status_code == 400
         assert "malware-scanned" in response.json["error"]
+    finally:
+        with app.app_context():
+            db.session.remove()
+            db.drop_all()
+
+
+def test_supplier_document_upload_fails_closed_without_malware_scanner():
+    app, (company_id, _admin_id, _manager_id) = _seed_app()
+    try:
+        client = app.test_client()
+        _login(client, "supplier-admin@example.test", company_id)
+        created = client.post("/api/suppliers", json=_supplier_payload())
+        supplier_id = created.json["item"]["id"]
+        response = client.post(
+            f"/api/suppliers/{supplier_id}/documents",
+            data={"file": (BytesIO(b"%PDF-1.7\\nsynthetic supplier licence\\n"), "licence.pdf")},
+            content_type="multipart/form-data",
+        )
+        assert response.status_code == 503
+        assert "Malware scanning is unavailable" in response.json["error"]
+        with app.app_context():
+            assert db.session.query(SupplierDocument).count() == 0
     finally:
         with app.app_context():
             db.session.remove()
